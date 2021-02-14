@@ -1,20 +1,27 @@
 [package]
-name = "estar"
+name = "eszip"
 version = "0.1.0"
 authors = ["Ryan Dahl <ry@tinyclouds.org>"]
 edition = "2018"
+description = "A utility that can download JavaScript and TypeScript module graphs and store them locally in a special zip file."
+license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "eszip"
+path = "src/lib.rs"
+
+[[bin]]
+name = "eszip"
+path = "src/main.rs"
 
 [dependencies]
-tar = "0.4"
-reqwest = "0.11"
-tokio = { version = "1", features = ["full"] }
 anyhow = "1"
-url = "2"
-futures = "0.3"
-
-# For JSX/TS transform
-swc_common = { version = "0.10", features = ["sourcemap"] }
-swc_ecmascript = { version = "0.20", features = ["dep_graph", "codegen", "parser", "react", "transforms", "visit", "proposal", "typescript"] }
 base64 = "0.13"
+futures = "0.3"
+indicatif = "0.15"
+reqwest = "0.11"
+swc_common = "0.10"
+swc_ecmascript = { version = "0.21", features = ["dep_graph", "parser"] }
+tokio = { version = "1", features = ["full"] }
+url = "2"
+zip = "0.5"

@@ -1,49 +1,70 @@
 use anyhow::Error;
+use eszip::load_modules;
 use std::fs::File;
-
-mod load_modules;
-mod parse_deps;
-mod resolve_import;
-
-use load_modules::load_modules;
 use url::Url;
 
 fn usage() -> ! {
   eprintln!("Bad subcommand. Do something like this:");
   eprintln!(
-        "> estar new kament.tar https://raw.githubusercontent.com/satyarohith/kament/main/mod.ts"
-    );
-  eprintln!(
-        "> estar read kament.tar https://raw.githubusercontent.com/satyarohith/kament/main/mod.ts"
-    );
+    "> eszip get https://raw.githubusercontent.com/satyarohith/kament/main/mod.ts"
+  );
+  eprintln!("> eszip list es.zip");
+  eprintln!("> eszip read es.zip https://deno.land/x/djwt@v2.1/mod.ts");
   std::process::exit(1)
 }
 
-async fn subcommand_new(
-  tar_filename: String,
+fn subcommand_read(zip_filename: String, url: String) -> Result<(), Error> {
+  let zip_file = File::open(zip_filename)?;
+  let mut zip = eszip::ZipReader::new(zip_file)?;
+
+  let url = Url::parse(&url)?;
+  let source = zip.get_source(&url)?;
+  print!("{}", source);
+  Ok(())
+}
+
+fn subcommand_list(zip_filename: String) -> Result<(), Error> {
+  let zip_file = File::open(zip_filename)?;
+  let mut zip = eszip::ZipReader::new(zip_file)?;
+
+  for i in 0..zip.len() {
+    let url = zip.url_by_index(i)?;
+    println!("{}", url);
+    // std::io::copy(&mut file, &mut std::io::stdout());
+  }
+  Ok(())
+}
+
+async fn subcommand_get(
+  zip_filename: String,
   root: String,
 ) -> Result<(), Error> {
-  println!("tar file: {}", tar_filename);
-  // println!("url: {}", url);
-
   let root = Url::parse(&root)?;
 
-  let modules = load_modules(root).await?;
+  let zip_file = File::create(&zip_filename)?;
+  let mut zip = eszip::ZipWriter::new(zip_file);
 
-  let tar_file = File::create(tar_filename).unwrap();
-  let mut ar = tar::Builder::new(tar_file);
+  use futures::stream::TryStreamExt;
+  let mut stream = load_modules(root);
+  let mut seen = 0;
 
-  for (url, info) in modules.iter() {
-    let source_bytes = info.source.as_bytes();
-    let mut header = tar::Header::new_gnu();
-    // header.set_path(url.as_str()).unwrap();
-    header.set_size(source_bytes.len() as u64);
-    header.set_cksum();
-    ar.append_data(&mut header, url.as_str(), source_bytes)
-      .unwrap();
+  let bar = indicatif::ProgressBar::new(stream.total as u64).with_style(
+    indicatif::ProgressStyle::default_bar().template("{pos:>3}/{len:3} {msg}"),
+  );
+
+  while let Some(info) = stream.try_next().await? {
+    seen += 1;
+    bar.set_position(seen as u64);
+    bar.set_length(stream.total as u64);
+    bar.set_message(info.url.as_str());
+
+    zip.add_module(&info.url, &info.source)?;
   }
+  bar.finish();
 
-  ar.finish().unwrap();
+  println!("Wrote {}", zip_filename);
+
+  zip.finish()?;
   Ok(())
 }
 
@@ -51,11 +72,35 @@ async fn subcommand_new(
 async fn main() {
   let mut args = std::env::args();
   match args.nth(1).as_deref() {
-    Some("new") => {
-      let tar_filename = match args.next() {
+    Some("get") => {
+      let url = match args.next() {
         Some(t) => t,
         None => {
-          eprintln!("First arg should be tarball");
+          eprintln!("Expected a URL argument");
+          usage()
+        }
+      };
+      let zip_filename = match args.next() {
+        Some(t) => t,
+        None => "es.zip".to_string(),
+      };
+      subcommand_get(zip_filename, url).await.unwrap()
+    }
+    Some("list") => {
+      let zip_filename = match args.next() {
+        Some(t) => t,
+        None => {
+          eprintln!("Expected a zip filename");
+          usage()
+        }
+      };
+      subcommand_list(zip_filename).unwrap()
+    }
+    Some("read") => {
+      let zip_filename = match args.next() {
+        Some(t) => t,
+        None => {
+          eprintln!("Expected a zip filename");
           usage()
         }
       };
@@ -66,10 +111,7 @@ async fn main() {
           usage()
         }
       };
-      subcommand_new(tar_filename, url).await.unwrap()
-    }
-    Some("read") => {
-      todo!()
+      subcommand_read(zip_filename, url).unwrap()
     }
     _ => {
       usage();
