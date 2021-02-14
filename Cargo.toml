@@ -1,0 +1,20 @@
+[package]
+name = "estar"
+version = "0.1.0"
+authors = ["Ryan Dahl <ry@tinyclouds.org>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tar = "0.4"
+reqwest = "0.11"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+url = "2"
+futures = "0.3"
+
+# For JSX/TS transform
+swc_common = { version = "0.10", features = ["sourcemap"] }
+swc_ecmascript = { version = "0.20", features = ["dep_graph", "codegen", "parser", "react", "transforms", "visit", "proposal", "typescript"] }
+base64 = "0.13"
