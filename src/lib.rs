@@ -7,3 +7,5 @@ pub use crate::zip::ZipError;
 pub use crate::zip::ZipReader;
 pub use crate::zip::ZipWriter;
 pub use load_modules::load_modules;
+pub use load_modules::ModuleInfo;
+pub use load_modules::ModuleStream;
