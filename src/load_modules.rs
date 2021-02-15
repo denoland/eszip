@@ -27,7 +27,6 @@ pub struct ModuleInfo {
 pub struct ModuleStream {
   started: HashSet<Url>,
   pending: FuturesUnordered<ModuleInfoFuture>,
-  pub total: usize,
 }
 
 impl Stream for ModuleStream {
@@ -54,16 +53,18 @@ impl ModuleStream {
     let mut g = Self {
       started: HashSet::new(),
       pending: FuturesUnordered::new(),
-      total: 0,
     };
     g.append_module(root);
     g
   }
 
+  pub fn total(&self) -> usize {
+    self.started.len()
+  }
+
   fn append_module(&mut self, url: Url) {
     if !self.started.contains(&url) {
       self.started.insert(url.clone());
-      self.total += 1;
       self.pending.push(Box::pin(async move {
         let module_info = fetch(&url).await?;
         Ok(module_info)

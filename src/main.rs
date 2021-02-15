@@ -48,14 +48,14 @@ async fn subcommand_get(
   let mut stream = load_modules(root);
   let mut seen = 0;
 
-  let bar = indicatif::ProgressBar::new(stream.total as u64).with_style(
+  let bar = indicatif::ProgressBar::new(0).with_style(
     indicatif::ProgressStyle::default_bar().template("{pos:>3}/{len:3} {msg}"),
   );
 
   while let Some(info) = stream.try_next().await? {
     seen += 1;
     bar.set_position(seen as u64);
-    bar.set_length(stream.total as u64);
+    bar.set_length(stream.total() as u64);
     bar.set_message(info.url.as_str());
 
     zip.add_module(&info.url, &info.source)?;
