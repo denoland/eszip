@@ -1,5 +1,5 @@
 use anyhow::Error;
-use eszip::load_modules;
+use eszip::load_reqwest;
 use std::fs::File;
 use url::Url;
 
@@ -45,7 +45,7 @@ async fn subcommand_get(
   let mut zip = eszip::ZipWriter::new(zip_file);
 
   use futures::stream::TryStreamExt;
-  let mut stream = load_modules(root);
+  let mut stream = load_reqwest(root);
   let mut seen = 0;
 
   let bar = indicatif::ProgressBar::new(0).with_style(
