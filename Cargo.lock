@@ -238,6 +238,7 @@ dependencies = [
  "indicatif",
  "reqwest",
  "swc_common",
+ "swc_ecma_parser",
  "swc_ecmascript",
  "tokio",
  "url",
@@ -1385,9 +1386,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_parser"
-version = "0.47.1"
+version = "0.47.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6eeea6ddf9fe40476fb6ae2a74680885c9bd8c9227caeb1b94d83aef66b27951"
+checksum = "1a9cdcd4485d329a1c463917ad73e2c2709ae456070eb45ed5f44541f362aa87"
 dependencies = [
  "either",
  "enum_kind",
@@ -1424,7 +1425,6 @@ checksum = "148b91b5228d501121b7dbb6de8eaab530618fe7a167499f6e3fa2519cbf7141"
 dependencies = [
  "swc_ecma_ast",
  "swc_ecma_dep_graph",
- "swc_ecma_parser",
 ]
 
 [[package]]

@@ -49,7 +49,8 @@ async fn subcommand_get(
   let mut seen = 0;
 
   let bar = indicatif::ProgressBar::new(0).with_style(
-    indicatif::ProgressStyle::default_bar().template("{pos:>3}/{len:3} {msg}"),
+    indicatif::ProgressStyle::default_bar()
+      .template("{pos:>3}/{len:3} {wide_msg}"),
   );
 
   while let Some(info) = stream.try_next().await? {

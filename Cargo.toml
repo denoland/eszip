@@ -21,7 +21,8 @@ futures = "0.3"
 indicatif = "0.15"
 reqwest = "0.11"
 swc_common = "0.10"
-swc_ecmascript = { version = "0.21", features = ["dep_graph", "parser"] }
+swc_ecmascript = { version = "0.21", features = ["dep_graph"] }
+swc_ecma_parser = "0.47.2"
 tokio = { version = "1", features = ["full"] }
 url = "2"
 zip = "0.5"
