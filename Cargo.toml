@@ -16,7 +16,6 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-async-trait = "0.1"
 base64 = "0.13"
 futures = "0.3"
 indicatif = "0.15"
