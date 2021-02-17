@@ -25,4 +25,4 @@ swc_ecmascript = { version = "0.21", features = ["dep_graph"] }
 swc_ecma_parser = "0.47.2"
 tokio = { version = "1", features = ["full"] }
 url = "2"
-zip = "0.5"
+zip = "=0.5.10"

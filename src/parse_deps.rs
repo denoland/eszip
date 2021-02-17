@@ -130,7 +130,7 @@ mod tests {
       export default UserPage;
     "#;
     let deps = parse_deps(&url, source).unwrap();
-    assert_eq!(deps.len(), 2);
+    assert_eq!(deps.len(), 1);
   }
 
   #[test]
