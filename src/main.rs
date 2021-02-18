@@ -1,5 +1,6 @@
 use anyhow::Error;
 use eszip::load_reqwest;
+use futures::stream::TryStreamExt;
 use std::fs::File;
 use url::Url;
 
@@ -10,6 +11,10 @@ fn usage() -> ! {
   );
   eprintln!("> eszip list es.zip");
   eprintln!("> eszip read es.zip https://deno.land/x/djwt@v2.1/mod.ts");
+
+  eprintln!();
+  eprintln!("The following send line delimited JSON updates over stderr");
+  eprintln!("> eszip programmatic https://deno.land/x/djwt@v2.1/mod.ts");
   std::process::exit(1)
 }
 
@@ -35,6 +40,69 @@ fn subcommand_list(zip_filename: String) -> Result<(), Error> {
   Ok(())
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+enum GetProgress {
+  Error {
+    err: String,
+  },
+  Load {
+    url: String,
+    seen: usize,
+    total: usize,
+  },
+}
+
+async fn subcommand_programmatic(
+  zip_filename: String,
+  root: String,
+) -> Result<(), Error> {
+  let root = Url::parse(&root)?;
+
+  let zip_file = File::create(&zip_filename)?;
+  let mut zip = eszip::ZipWriter::new(zip_file);
+
+  let mut stream = load_reqwest(root);
+  let mut seen = 0;
+  let mut is_last = false;
+
+  loop {
+    match stream.try_next().await {
+      Ok(Some(info)) => {
+        seen += 1;
+        zip.add_module(&info.url, &info.source)?;
+        if seen == stream.total() {
+          is_last = true;
+        }
+        println!(
+          "{}",
+          serde_json::to_string(&GetProgress::Load {
+            url: info.url.to_string(),
+            seen,
+            total: stream.total()
+          })
+          .unwrap()
+        );
+      }
+      Ok(None) => {
+        zip.finish()?;
+        assert!(is_last);
+        return Ok(());
+      }
+      Err(err) => {
+        println!(
+          "{}",
+          serde_json::to_string(&GetProgress::Error {
+            err: err.to_string()
+          })
+          .unwrap()
+        );
+        return Err(err);
+      }
+    }
+  }
+}
+
 async fn subcommand_get(
   zip_filename: String,
   root: String,
@@ -44,7 +112,6 @@ async fn subcommand_get(
   let zip_file = File::create(&zip_filename)?;
   let mut zip = eszip::ZipWriter::new(zip_file);
 
-  use futures::stream::TryStreamExt;
   let mut stream = load_reqwest(root);
   let mut seen = 0;
 
@@ -86,6 +153,20 @@ async fn main() {
         None => "es.zip".to_string(),
       };
       subcommand_get(zip_filename, url).await.unwrap()
+    }
+    Some("programmatic") => {
+      let url = match args.next() {
+        Some(t) => t,
+        None => {
+          eprintln!("Expected a URL argument");
+          usage()
+        }
+      };
+      let zip_filename = match args.next() {
+        Some(t) => t,
+        None => "es.zip".to_string(),
+      };
+      subcommand_programmatic(zip_filename, url).await.unwrap()
     }
     Some("list") => {
       let zip_filename = match args.next() {

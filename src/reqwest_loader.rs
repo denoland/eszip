@@ -10,7 +10,7 @@ pub struct ReqwestLoader;
 impl ModuleLoader for ReqwestLoader {
   fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>> {
     async move {
-      let source = reqwest::get(url).await?.text().await?;
+      let source = reqwest::get(url).await?.error_for_status()?.text().await?;
       Ok(source)
     }
     .boxed_local()
