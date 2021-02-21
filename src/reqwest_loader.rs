@@ -1,7 +1,6 @@
 use crate::loader::ModuleLoader;
 use crate::loader::ModuleSourceFuture;
 use crate::loader::ModuleStream;
-use futures::FutureExt;
 use std::pin::Pin;
 use url::Url;
 
@@ -9,11 +8,10 @@ pub struct ReqwestLoader;
 
 impl ModuleLoader for ReqwestLoader {
   fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>> {
-    async move {
+    Box::pin(async move {
       let source = reqwest::get(url).await?.error_for_status()?.text().await?;
       Ok(source)
-    }
-    .boxed_local()
+    })
   }
 }
 
@@ -26,6 +24,12 @@ pub fn load_reqwest(root: Url) -> ModuleStream<ReqwestLoader> {
 mod tests {
   use super::*;
   use crate::loader::ModuleInfo;
+
+  #[test]
+  fn stream_is_send() {
+    fn is_send<T: Send>() {}
+    is_send::<ModuleStream<ReqwestLoader>>();
+  }
 
   // Requires internet access!
   #[tokio::test]

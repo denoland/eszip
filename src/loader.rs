@@ -1,11 +1,11 @@
 use crate::parse_deps::parse_deps;
 use anyhow::anyhow;
 use anyhow::Error;
-use futures::future::FutureExt;
 use futures::stream::FuturesUnordered;
 use futures::task::Poll;
 use futures::Stream;
 use futures::StreamExt;
+use futures::TryFutureExt;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
@@ -17,10 +17,10 @@ pub trait ModuleLoader: Unpin {
   fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>>;
 }
 
-pub type ModuleSourceFuture = dyn Future<Output = Result<String, Error>>;
+pub type ModuleSourceFuture = dyn Send + Future<Output = Result<String, Error>>;
 
 type ModuleInfoFuture =
-  Pin<Box<dyn Future<Output = Result<ModuleInfo, Error>>>>;
+  Pin<Box<dyn Send + Future<Output = Result<ModuleInfo, Error>>>>;
 
 #[derive(Clone, Debug)]
 pub struct ModuleInfo {
@@ -54,19 +54,14 @@ impl<L: ModuleLoader> ModuleStream<L> {
     if !self.started.contains(&url) {
       self.started.insert(url.clone());
       let url_ = url.clone();
-      use futures::TryFutureExt;
-      let fut = self
-        .loader
-        .load(url)
-        .and_then(|source| async move {
-          let deps = parse_deps(&url_, &source)?;
-          Ok(ModuleInfo {
-            url: url_,
-            source: source.to_string(),
-            deps,
-          })
+      let fut = Box::pin(self.loader.load(url).and_then(|source| async move {
+        let deps = parse_deps(&url_, &source)?;
+        Ok(ModuleInfo {
+          url: url_,
+          source: source.to_string(),
+          deps,
         })
-        .boxed_local();
+      }));
       self.pending.push(fut);
     }
   }
