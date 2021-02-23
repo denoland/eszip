@@ -1,5 +1,6 @@
 //! Wrappers around zip utilities
 use anyhow::Error;
+use std::collections::HashMap;
 use std::io::Read;
 use std::io::Seek;
 use std::io::Write;
@@ -28,6 +29,16 @@ impl<R: Read + Seek> ZipReader<R> {
 
   pub fn is_empty(&self) -> bool {
     self.0.is_empty()
+  }
+
+  pub fn into_hashmap(mut self) -> Result<HashMap<Url, String>, ZipError> {
+    let mut hm = HashMap::new();
+    for i in 0..self.len() {
+      let url = self.url_by_index(i)?;
+      let source = self.get_source(&url)?;
+      hm.insert(url, source);
+    }
+    Ok(hm)
   }
 
   pub fn url_by_index(&mut self, idx: usize) -> Result<Url, ZipError> {
@@ -90,4 +101,22 @@ fn url_to_filename_and_back() {
   let filename = url_to_filename(&url);
   let url_ = filename_to_url(filename).unwrap();
   assert_eq!(url, url_);
+}
+
+#[test]
+fn there_and_back_again() {
+  let mut w = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+  let foo_url = Url::parse("file:///foo.ts").unwrap();
+  let foo_source = "let a = 1";
+  w.add_module(&foo_url, &foo_source).unwrap();
+  let bar_url = Url::parse("file:///bar.js").unwrap();
+  let bar_source = "let b = 'hi';";
+  w.add_module(&bar_url, &bar_source).unwrap();
+  let cursor = w.finish().unwrap();
+
+  let r = ZipReader::new(cursor).unwrap();
+  let hm = r.into_hashmap().unwrap();
+  assert_eq!(hm.len(), 2);
+  assert_eq!(hm.get(&foo_url).unwrap(), foo_source);
+  assert_eq!(hm.get(&bar_url).unwrap(), bar_source);
 }
