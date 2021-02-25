@@ -9,8 +9,10 @@ pub struct ReqwestLoader;
 impl ModuleLoader for ReqwestLoader {
   fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>> {
     Box::pin(async move {
-      let source = reqwest::get(url).await?.error_for_status()?.text().await?;
-      Ok(source)
+      let res = reqwest::get(url.clone()).await?;
+      let final_url = res.url().clone();
+      let source = res.error_for_status()?.text().await?;
+      Ok((final_url, source))
     })
   }
 }

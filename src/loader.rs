@@ -17,7 +17,9 @@ pub trait ModuleLoader: Unpin {
   fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>>;
 }
 
-pub type ModuleSourceFuture = dyn Send + Future<Output = Result<String, Error>>;
+// Returns final url (after redirects) and source code.
+pub type ModuleSourceFuture =
+  dyn Send + Future<Output = Result<(Url, String), Error>>;
 
 type ModuleInfoFuture =
   Pin<Box<dyn Send + Future<Output = Result<ModuleInfo, Error>>>>;
@@ -25,6 +27,7 @@ type ModuleInfoFuture =
 #[derive(Clone, Debug)]
 pub struct ModuleInfo {
   pub url: Url,
+  pub final_url: Url,
   pub deps: Vec<Url>,
   pub source: String,
 }
@@ -54,14 +57,17 @@ impl<L: ModuleLoader> ModuleStream<L> {
     if !self.started.contains(&url) {
       self.started.insert(url.clone());
       let url_ = url.clone();
-      let fut = Box::pin(self.loader.load(url).and_then(|source| async move {
-        let deps = parse_deps(&url_, &source)?;
-        Ok(ModuleInfo {
-          url: url_,
-          source: source.to_string(),
-          deps,
-        })
-      }));
+      let fut = Box::pin(self.loader.load(url).and_then(
+        |(final_url, source)| async move {
+          let deps = parse_deps(&final_url, &source)?;
+          Ok(ModuleInfo {
+            url: url_,
+            final_url,
+            source: source.to_string(),
+            deps,
+          })
+        },
+      ));
       self.pending.push(fut);
     }
   }
@@ -91,7 +97,7 @@ impl ModuleLoader for MemoryLoader {
   fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>> {
     Box::pin(futures::future::ready(
       if let Some(source) = self.0.get(&url) {
-        Ok(source.clone())
+        Ok((url, source.clone()))
       } else {
         Err(anyhow!("not found"))
       },
