@@ -60,4 +60,20 @@ mod tests {
       .source
       .contains("function printHello(): void"));
   }
+
+  // Requires internet access!
+  #[tokio::test]
+  async fn redirect() {
+    let root = Url::parse(
+    "https://gist.githubusercontent.com/satyarohith/76affa966ff919369dd74421749863c2/raw/dcfae001eb1f1c8a350080f4e2e3a8e09e3ab4ce/redirect_example.ts",
+  )
+  .unwrap();
+
+    let module_stream = load_reqwest(root.clone());
+
+    use futures::stream::TryStreamExt;
+    let modules: Vec<ModuleInfo> = module_stream.try_collect().await.unwrap();
+
+    assert_eq!(modules.len(), 6);
+  }
 }
