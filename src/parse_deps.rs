@@ -36,7 +36,9 @@ pub fn parse_deps(url: &Url, source: &str) -> Result<Vec<Url>, Error> {
     .map_err(|e| ParseError::new(e, &source_map))?;
   let mut deps = Vec::new();
   for import in analyze_dependencies(&module, &source_map, &comments) {
-    if import.kind == DependencyKind::Import {
+    if import.kind == DependencyKind::Import
+      || import.kind == DependencyKind::Export
+    {
       let specifier = import.specifier.to_string();
       deps.push(resolve_import(&specifier, url.as_str())?);
     }
