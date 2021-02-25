@@ -81,7 +81,7 @@ fn get_syntax(url: &Url) -> Syntax {
     Some("jsx") => Syntax::Es(get_es_config(true)),
     Some("ts") => Syntax::Typescript(get_ts_config(false, false)),
     Some("tsx") => Syntax::Typescript(get_ts_config(true, false)),
-    _ => Syntax::Es(get_es_config(false)),
+    _ => Syntax::Typescript(get_ts_config(false, false)),
   }
 }
 
