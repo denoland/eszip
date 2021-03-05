@@ -4,12 +4,13 @@ use crate::loader::ModuleStream;
 use std::pin::Pin;
 use url::Url;
 
-pub struct ReqwestLoader;
+pub struct ReqwestLoader(reqwest::Client);
 
 impl ModuleLoader for ReqwestLoader {
   fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>> {
+    let client = self.0.clone();
     Box::pin(async move {
-      let res = reqwest::get(url.clone()).await?;
+      let res = client.get(url.clone()).send().await?;
       let final_url = res.url().clone();
       let source = res.error_for_status()?.text().await?;
       Ok((final_url, source))
@@ -18,8 +19,11 @@ impl ModuleLoader for ReqwestLoader {
 }
 
 /// Loads modules over HTTP using reqwest
-pub fn load_reqwest(root: Url) -> ModuleStream<ReqwestLoader> {
-  ModuleStream::new(root, ReqwestLoader)
+pub fn load_reqwest(
+  root: Url,
+  client: reqwest::Client,
+) -> ModuleStream<ReqwestLoader> {
+  ModuleStream::new(root, ReqwestLoader(client))
 }
 
 #[cfg(test)]
@@ -41,7 +45,7 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream = load_reqwest(root.clone());
+    let module_stream = load_reqwest(root.clone(), reqwest::Client::new());
 
     use futures::stream::TryStreamExt;
     let modules: Vec<ModuleInfo> = module_stream.try_collect().await.unwrap();
@@ -69,7 +73,7 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream = load_reqwest(root.clone());
+    let module_stream = load_reqwest(root.clone(), reqwest::Client::new());
 
     use futures::stream::TryStreamExt;
     let modules: Vec<ModuleInfo> = module_stream.try_collect().await.unwrap();

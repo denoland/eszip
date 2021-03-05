@@ -45,7 +45,7 @@ async fn subcommand_get(
   let zip_file = File::create(&zip_filename)?;
   let mut zip = eszip::ZipWriter::new(zip_file);
 
-  let mut stream = load_reqwest(root);
+  let mut stream = load_reqwest(root, reqwest::Client::new());
   let mut seen = 0;
 
   let bar = indicatif::ProgressBar::new(0).with_style(
