@@ -11,14 +11,14 @@ use swc_common::errors::HandlerFlags;
 use swc_common::input::StringInput;
 use swc_common::FileName;
 use swc_common::SourceMap;
-use swc_ecma_parser::lexer::Lexer;
-use swc_ecma_parser::EsConfig;
-use swc_ecma_parser::JscTarget;
-use swc_ecma_parser::Parser;
-use swc_ecma_parser::Syntax;
-use swc_ecma_parser::TsConfig;
 use swc_ecmascript::dep_graph::analyze_dependencies;
 use swc_ecmascript::dep_graph::DependencyKind;
+use swc_ecmascript::parser::lexer::Lexer;
+use swc_ecmascript::parser::EsConfig;
+use swc_ecmascript::parser::JscTarget;
+use swc_ecmascript::parser::Parser;
+use swc_ecmascript::parser::Syntax;
+use swc_ecmascript::parser::TsConfig;
 use url::Url;
 
 pub fn parse_deps(url: &Url, source: &str) -> Result<Vec<Url>, Error> {
@@ -90,7 +90,10 @@ struct ParseError {
 }
 
 impl ParseError {
-  fn new(err: swc_ecma_parser::error::Error, source_map: &SourceMap) -> Self {
+  fn new(
+    err: swc_ecmascript::parser::error::Error,
+    source_map: &SourceMap,
+  ) -> Self {
     let error_buffer = ErrorBuffer::default();
     let handler = Handler::with_emitter_and_flags(
       Box::new(error_buffer.clone()),

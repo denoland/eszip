@@ -1,6 +1,6 @@
 [package]
 name = "eszip"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Ryan Dahl <ry@tinyclouds.org>"]
 edition = "2018"
 description = "A utility that can download JavaScript and TypeScript module graphs and store them locally in a special zip file."
@@ -20,11 +20,10 @@ base64 = "0.13"
 futures = "0.3"
 indicatif = "0.15"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
-serde_json = "1"
 serde = "1"
+serde_json = "1"
 swc_common = "0.10"
-swc_ecmascript = { version = "0.21", features = ["dep_graph"] }
-swc_ecma_parser = "0.47.2"
+swc_ecmascript = { version = "0.25.0", features = ["dep_graph", "parser"] }
 tokio = { version = "1", features = ["full"] }
 url = "2"
-zip = "=0.5.10"
+zip = "0.5"
