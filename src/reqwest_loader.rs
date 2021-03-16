@@ -71,24 +71,32 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream = load_reqwest(root.clone(), reqwest::Client::new());
+    let module_stream =
+      load_reqwest(root.clone(), reqwest::ClientBuilder::new());
 
     use futures::stream::TryStreamExt;
-    let modules: Vec<ModuleInfo> = module_stream.try_collect().await.unwrap();
+    let modules: Vec<(Url, ModuleInfo)> =
+      module_stream.try_collect().await.unwrap();
 
     assert_eq!(modules.len(), 2);
 
-    let root_info = &modules[0];
-    assert_eq!(root_info.deps.len(), 1);
-    assert!(root_info.source.contains("printHello"));
+    let (_url, root_info) = &modules[0];
+    if let ModuleInfo::Source { deps, source, .. } = root_info {
+      assert_eq!(deps.len(), 1);
+      assert!(source.contains("printHello"));
+    } else {
+      unreachable!()
+    }
 
-    let print_hello_info = &modules[1];
-    assert_eq!(print_hello_info.deps.len(), 0);
-    assert_eq!(print_hello_info.url.as_str(),
+    let (url, print_hello_info) = &modules[1];
+    assert_eq!(url.as_str(),
     "https://raw.githubusercontent.com/denoland/deno/5873adeb5e6ec2113eeb5adc964b7ce129d4905d/cli/tests/subdir/print_hello.ts");
-    assert!(print_hello_info
-      .source
-      .contains("function printHello(): void"));
+    if let ModuleInfo::Source { deps, source, .. } = print_hello_info {
+      assert_eq!(deps.len(), 0);
+      assert!(source.contains("function printHello(): void"));
+    } else {
+      unreachable!()
+    }
   }
 
   // Requires internet access!
@@ -99,11 +107,13 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream = load_reqwest(root.clone(), reqwest::Client::new());
+    let module_stream =
+      load_reqwest(root.clone(), reqwest::ClientBuilder::new());
 
     use futures::stream::TryStreamExt;
-    let modules: Vec<ModuleInfo> = module_stream.try_collect().await.unwrap();
+    let modules: Vec<(Url, ModuleInfo)> =
+      module_stream.try_collect().await.unwrap();
 
-    assert_eq!(modules.len(), 6);
+    assert_eq!(modules.len(), 7);
   }
 }

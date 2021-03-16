@@ -37,7 +37,7 @@ type ModuleInfoFuture =
 pub enum ModuleInfo {
   Redirect(Url),
   Source {
-    original: String,
+    source: String,
     transpiled: String,
     deps: Vec<Url>,
     content_type: Option<String>,
@@ -77,10 +77,11 @@ impl<L: ModuleLoader> ModuleStream<L> {
               source,
               content_type,
             } => {
-              let deps = parse_deps(&url_, &source)?;
+              let (deps, transpiled) =
+                parse_deps(&url_, &source, &content_type)?;
               ModuleInfo::Source {
-                original: source.to_string(),
-                transpiled: "FIXME".to_string(),
+                source: source.to_string(),
+                transpiled,
                 content_type,
                 deps,
               }
@@ -159,19 +160,27 @@ mod tests {
       std::task::Context::from_waker(futures::task::noop_waker_ref());
 
     let r = Pin::new(&mut stream).poll_next(&mut cx);
-    if let Poll::Ready(Some(Ok(module_info))) = r {
-      assert_eq!(module_info.url, root);
-      assert_eq!(module_info.deps.len(), 1);
-      assert!(module_info.source.contains("foo()"));
+    if let Poll::Ready(Some(Ok((url, module_info)))) = r {
+      assert_eq!(url, root);
+      if let ModuleInfo::Source { deps, source, .. } = module_info {
+        assert_eq!(deps.len(), 1);
+        assert!(source.contains("foo()"));
+      } else {
+        unreachable!()
+      }
     } else {
       panic!("unexpected");
     }
 
     let r = Pin::new(&mut stream).poll_next(&mut cx);
-    if let Poll::Ready(Some(Ok(module_info))) = r {
-      assert_eq!(module_info.url.as_str(), "http://deno.land/std/http/foo.ts");
-      assert_eq!(module_info.deps.len(), 0);
-      assert!(module_info.source.contains("console.log('hi')"));
+    if let Poll::Ready(Some(Ok((url, module_info)))) = r {
+      assert_eq!(url.as_str(), "http://deno.land/std/http/foo.ts");
+      if let ModuleInfo::Source { deps, source, .. } = module_info {
+        assert_eq!(deps.len(), 0);
+        assert!(source.contains("console.log('hi')"));
+      } else {
+        unreachable!()
+      }
     } else {
       panic!("unexpected");
     }

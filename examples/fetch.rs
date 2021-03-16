@@ -11,9 +11,6 @@ use url::Url;
 type ModuleGraph = HashMap<Url, ModuleInfo>;
 
 async fn fetch(root: Url) -> Result<(), Error> {
-  //let zip_file = File::create(&zip_filename)?;
-  //let mut zip = eszip::ZipWriter::new(zip_file);
-
   let mut stream = load_reqwest(root, reqwest::ClientBuilder::new());
   let mut seen = 0;
 

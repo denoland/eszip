@@ -17,8 +17,8 @@ futures = "0.3"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
 serde = "1"
 serde_json = "1"
-swc_common = "0.10"
-swc_ecmascript = { version = "0.25.0", features = ["dep_graph", "parser"] }
+swc_common = { version = "0.10", features = ["sourcemap"] }
+swc_ecmascript = { version = "0.25", features = ["codegen", "dep_graph","parser", "react", "transforms", "visit", "proposal", "typescript"] }
 tokio = { version = "1", features = ["full"] }
 url = { version = "2", features = ["serde"] }
 
