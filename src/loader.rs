@@ -1,4 +1,4 @@
-use crate::parse_deps::parse_deps;
+use crate::parser::get_deps_and_transpile;
 use anyhow::anyhow;
 use anyhow::Error;
 use futures::stream::FuturesUnordered;
@@ -78,7 +78,7 @@ impl<L: ModuleLoader> ModuleStream<L> {
               content_type,
             } => {
               let (deps, transpiled) =
-                parse_deps(&url_, &source, &content_type)?;
+                get_deps_and_transpile(&url_, &source, &content_type)?;
               ModuleInfo::Source {
                 source,
                 transpiled,

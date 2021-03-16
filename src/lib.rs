@@ -1,5 +1,5 @@
 mod loader;
-mod parse_deps;
+mod parser;
 mod reqwest_loader;
 mod resolve_import;
 

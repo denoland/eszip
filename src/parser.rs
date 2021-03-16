@@ -23,7 +23,7 @@ use swc_ecmascript::parser::TsConfig;
 use url::Url;
 
 // Returns (deps, transpiled source code)
-pub fn parse_deps(
+pub fn get_deps_and_transpile(
   url: &Url,
   source: &str,
   content_type: &Option<String>,
@@ -309,7 +309,8 @@ mod tests {
 
       export default UserPage;
     "#;
-    let (deps, _transpiled) = parse_deps(&url, source, &None).unwrap();
+    let (deps, _transpiled) =
+      get_deps_and_transpile(&url, source, &None).unwrap();
     assert_eq!(deps.len(), 1);
   }
 
@@ -324,7 +325,8 @@ mod tests {
         ...middleware: RouterMiddleware<P, S>[]
       ): Router<P extends RP ? P : (P & RP), S extends RS ? S : (S & RS)>;
     "#;
-    let (deps, _transpiled) = parse_deps(&url, source, &None).unwrap();
+    let (deps, _transpiled) =
+      get_deps_and_transpile(&url, source, &None).unwrap();
     assert_eq!(deps.len(), 0);
   }
 }
