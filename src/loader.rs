@@ -6,6 +6,7 @@ use futures::task::Poll;
 use futures::Stream;
 use futures::StreamExt;
 use futures::TryFutureExt;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
@@ -17,19 +18,30 @@ pub trait ModuleLoader: Unpin {
   fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>>;
 }
 
+pub enum ModuleSource {
+  Redirect(Url),
+  Source {
+    source: String,
+    content_type: Option<String>,
+  },
+}
+
 // Returns final url (after redirects) and source code.
 pub type ModuleSourceFuture =
-  dyn Send + Future<Output = Result<(Url, String), Error>>;
+  dyn Send + Future<Output = Result<ModuleSource, Error>>;
 
 type ModuleInfoFuture =
-  Pin<Box<dyn Send + Future<Output = Result<ModuleInfo, Error>>>>;
+  Pin<Box<dyn Send + Future<Output = Result<(Url, ModuleInfo), Error>>>>;
 
-#[derive(Clone, Debug)]
-pub struct ModuleInfo {
-  pub url: Url,
-  pub final_url: Url,
-  pub deps: Vec<Url>,
-  pub source: String,
+#[derive(Clone, Debug, Serialize)]
+pub enum ModuleInfo {
+  Redirect(Url),
+  Source {
+    original: String,
+    transpiled: String,
+    deps: Vec<Url>,
+    content_type: Option<String>,
+  },
 }
 
 pub struct ModuleStream<L: ModuleLoader> {
@@ -57,33 +69,48 @@ impl<L: ModuleLoader> ModuleStream<L> {
     if !self.started.contains(&url) {
       self.started.insert(url.clone());
       let url_ = url.clone();
-      let fut = Box::pin(self.loader.load(url).and_then(
-        |(final_url, source)| async move {
-          let deps = parse_deps(&final_url, &source)?;
-          Ok(ModuleInfo {
-            url: url_,
-            final_url,
-            source: source.to_string(),
-            deps,
-          })
-        },
-      ));
+      let fut =
+        Box::pin(self.loader.load(url).and_then(|module_source| async move {
+          let module_info = match module_source {
+            ModuleSource::Redirect(url) => ModuleInfo::Redirect(url),
+            ModuleSource::Source {
+              source,
+              content_type,
+            } => {
+              let deps = parse_deps(&url_, &source)?;
+              ModuleInfo::Source {
+                original: source.to_string(),
+                transpiled: "FIXME".to_string(),
+                content_type,
+                deps,
+              }
+            }
+          };
+          Ok((url_, module_info))
+        }));
       self.pending.push(fut);
     }
   }
 }
 
 impl<L: ModuleLoader> Stream for ModuleStream<L> {
-  type Item = Result<ModuleInfo, Error>;
+  type Item = Result<(Url, ModuleInfo), Error>;
 
   fn poll_next(
     mut self: Pin<&mut Self>,
     cx: &mut Context<'_>,
   ) -> Poll<Option<Self::Item>> {
     let r = self.pending.poll_next_unpin(cx);
-    if let Poll::Ready(Some(Ok(ref module_info))) = r {
-      for dep in &module_info.deps {
-        self.append_module(dep.clone());
+    if let Poll::Ready(Some(Ok((ref _url, ref module_info)))) = r {
+      match module_info {
+        ModuleInfo::Redirect(url) => {
+          self.append_module(url.clone());
+        }
+        ModuleInfo::Source { deps, .. } => {
+          for dep in deps {
+            self.append_module(dep.clone());
+          }
+        }
       }
     }
     r
@@ -97,7 +124,10 @@ impl ModuleLoader for MemoryLoader {
   fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>> {
     Box::pin(futures::future::ready(
       if let Some(source) = self.0.get(&url) {
-        Ok((url, source.clone()))
+        Ok(ModuleSource::Source {
+          source: source.clone(),
+          content_type: None,
+        })
       } else {
         Err(anyhow!("not found"))
       },

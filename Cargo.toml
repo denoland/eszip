@@ -10,20 +10,17 @@ license = "MIT"
 name = "eszip"
 path = "src/lib.rs"
 
-[[bin]]
-name = "eszip"
-path = "src/main.rs"
-
 [dependencies]
 anyhow = "1"
 base64 = "0.13"
 futures = "0.3"
-indicatif = "0.15"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
 serde = "1"
 serde_json = "1"
 swc_common = "0.10"
 swc_ecmascript = { version = "0.25.0", features = ["dep_graph", "parser"] }
 tokio = { version = "1", features = ["full"] }
-url = "2"
-zip = "0.5"
+url = { version = "2", features = ["serde"] }
+
+[dev-dependencies]
+indicatif = "0.15"

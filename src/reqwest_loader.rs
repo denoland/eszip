@@ -1,6 +1,10 @@
 use crate::loader::ModuleLoader;
+use crate::loader::ModuleSource;
 use crate::loader::ModuleSourceFuture;
 use crate::loader::ModuleStream;
+use crate::resolve_import::resolve_import;
+use reqwest::header::CONTENT_TYPE;
+use reqwest::header::LOCATION;
 use std::pin::Pin;
 use url::Url;
 
@@ -11,9 +15,27 @@ impl ModuleLoader for ReqwestLoader {
     let client = self.0.clone();
     Box::pin(async move {
       let res = client.get(url.clone()).send().await?;
-      let final_url = res.url().clone();
-      let source = res.error_for_status()?.text().await?;
-      Ok((final_url, source))
+
+      if res.status().is_redirection() {
+        let location = res.headers().get(LOCATION).unwrap().to_str().unwrap();
+        let location_resolved = resolve_import(&location, url.as_str())?;
+        Ok(ModuleSource::Redirect(location_resolved))
+      } else if res.status().is_success() {
+        let content_type = res
+          .headers()
+          .get(CONTENT_TYPE)
+          .map(|v| v.to_str().unwrap().to_string());
+        let source = res.text().await?;
+        Ok(ModuleSource::Source {
+          source,
+          content_type,
+        })
+      } else {
+        res.error_for_status()?;
+        unreachable!()
+      }
+
+      // Ok((final_url, source))
     })
   }
 }
@@ -21,8 +43,12 @@ impl ModuleLoader for ReqwestLoader {
 /// Loads modules over HTTP using reqwest
 pub fn load_reqwest(
   root: Url,
-  client: reqwest::Client,
+  client_builder: reqwest::ClientBuilder,
 ) -> ModuleStream<ReqwestLoader> {
+  let client = client_builder
+    .redirect(reqwest::redirect::Policy::none())
+    .build()
+    .unwrap();
   ModuleStream::new(root, ReqwestLoader(client))
 }
 
