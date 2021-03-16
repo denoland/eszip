@@ -80,7 +80,7 @@ impl<L: ModuleLoader> ModuleStream<L> {
               let (deps, transpiled) =
                 parse_deps(&url_, &source, &content_type)?;
               ModuleInfo::Source {
-                source: source.to_string(),
+                source,
                 transpiled,
                 content_type,
                 deps,
