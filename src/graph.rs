@@ -1,4 +1,5 @@
 use crate::ModuleInfo;
+use crate::ModuleSource;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -15,11 +16,13 @@ pub struct ModuleGraph {
 
 impl ModuleGraph {
   /// Follow redirects until arriving at the final url and module info.
-  pub fn get_redirect(&self, url: &Url) -> Option<(Url, &ModuleInfo)> {
+  pub fn get_redirect(&self, url: &Url) -> Option<(Url, &ModuleSource)> {
     let mut seen = HashSet::<Url>::new();
     let mut current = url.clone();
+    let max = self.modules.len();
+    let mut i = 0;
     loop {
-      if seen.insert(current.clone()) {
+      if !seen.insert(current.clone()) {
         return None; // infinite loop detected
       }
       match self.modules.get(&current) {
@@ -29,10 +32,12 @@ impl ModuleGraph {
         Some(ModuleInfo::Redirect(to)) => {
           current = to.clone();
         }
-        Some(info) => {
-          return Some((current, &info));
+        Some(ModuleInfo::Source(module_source)) => {
+          return Some((current, module_source));
         }
       }
+      i += 1;
+      assert!(i <= max);
     }
   }
 
@@ -94,5 +99,33 @@ mod tests {
     let u2 = Url::parse("http://deno.land/std/http/bar.ts").unwrap();
     g.insert(u, ModuleInfo::Redirect(u2));
     assert!(!g.is_complete());
+  }
+
+  #[test]
+  fn get_redirect() {
+    let mut g = ModuleGraph::default();
+    let u1 = Url::parse("http://deno.land/u1.js").unwrap();
+    let u2 = Url::parse("http://deno.land/u2.js").unwrap();
+    let u3 = Url::parse("http://deno.land/u3.js").unwrap();
+
+    g.insert(u1.clone(), ModuleInfo::Redirect(u2.clone()));
+    g.insert(
+      u2.clone(),
+      ModuleInfo::Source(ModuleSource {
+        source: "source".to_string(),
+        transpiled: "transpiled".to_string(),
+        deps: Vec::new(),
+        content_type: None,
+      }),
+    );
+    let (final_url, module_source) = g.get_redirect(&u1).unwrap();
+    assert_eq!(final_url, u2);
+    assert_eq!(module_source.source, "source");
+
+    let (final_url, module_source) = g.get_redirect(&u2).unwrap();
+    assert_eq!(final_url, u2);
+    assert_eq!(module_source.source, "source");
+
+    assert!(g.get_redirect(&u3).is_none());
   }
 }
