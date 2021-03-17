@@ -1,19 +1,41 @@
+use crate::loader::ModuleLoad;
+use crate::loader::ModuleLoadFuture;
 use crate::loader::ModuleLoader;
-use crate::loader::ModuleSourceFuture;
 use crate::loader::ModuleStream;
+use crate::resolve_import::resolve_import;
+use reqwest::header::CONTENT_TYPE;
+use reqwest::header::LOCATION;
 use std::pin::Pin;
 use url::Url;
 
 pub struct ReqwestLoader(reqwest::Client);
 
 impl ModuleLoader for ReqwestLoader {
-  fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>> {
+  fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>> {
     let client = self.0.clone();
     Box::pin(async move {
       let res = client.get(url.clone()).send().await?;
-      let final_url = res.url().clone();
-      let source = res.error_for_status()?.text().await?;
-      Ok((final_url, source))
+
+      if res.status().is_redirection() {
+        let location = res.headers().get(LOCATION).unwrap().to_str().unwrap();
+        let location_resolved = resolve_import(&location, url.as_str())?;
+        Ok(ModuleLoad::Redirect(location_resolved))
+      } else if res.status().is_success() {
+        let content_type = res
+          .headers()
+          .get(CONTENT_TYPE)
+          .map(|v| v.to_str().unwrap().to_string());
+        let source = res.text().await?;
+        Ok(ModuleLoad::Source {
+          source,
+          content_type,
+        })
+      } else {
+        res.error_for_status()?;
+        unreachable!()
+      }
+
+      // Ok((final_url, source))
     })
   }
 }
@@ -21,8 +43,12 @@ impl ModuleLoader for ReqwestLoader {
 /// Loads modules over HTTP using reqwest
 pub fn load_reqwest(
   root: Url,
-  client: reqwest::Client,
+  client_builder: reqwest::ClientBuilder,
 ) -> ModuleStream<ReqwestLoader> {
+  let client = client_builder
+    .redirect(reqwest::redirect::Policy::none())
+    .build()
+    .unwrap();
   ModuleStream::new(root, ReqwestLoader(client))
 }
 
@@ -45,24 +71,32 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream = load_reqwest(root.clone(), reqwest::Client::new());
+    let module_stream =
+      load_reqwest(root.clone(), reqwest::ClientBuilder::new());
 
     use futures::stream::TryStreamExt;
-    let modules: Vec<ModuleInfo> = module_stream.try_collect().await.unwrap();
+    let modules: Vec<(Url, ModuleInfo)> =
+      module_stream.try_collect().await.unwrap();
 
     assert_eq!(modules.len(), 2);
 
-    let root_info = &modules[0];
-    assert_eq!(root_info.deps.len(), 1);
-    assert!(root_info.source.contains("printHello"));
+    let (_url, root_info) = &modules[0];
+    if let ModuleInfo::Source(module_source) = root_info {
+      assert_eq!(module_source.deps.len(), 1);
+      assert!(module_source.source.contains("printHello"));
+    } else {
+      unreachable!()
+    }
 
-    let print_hello_info = &modules[1];
-    assert_eq!(print_hello_info.deps.len(), 0);
-    assert_eq!(print_hello_info.url.as_str(),
+    let (url, print_hello_info) = &modules[1];
+    assert_eq!(url.as_str(),
     "https://raw.githubusercontent.com/denoland/deno/5873adeb5e6ec2113eeb5adc964b7ce129d4905d/cli/tests/subdir/print_hello.ts");
-    assert!(print_hello_info
-      .source
-      .contains("function printHello(): void"));
+    if let ModuleInfo::Source(module_source) = print_hello_info {
+      assert_eq!(module_source.deps.len(), 0);
+      assert!(module_source.source.contains("function printHello(): void"));
+    } else {
+      unreachable!()
+    }
   }
 
   // Requires internet access!
@@ -73,11 +107,13 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream = load_reqwest(root.clone(), reqwest::Client::new());
+    let module_stream =
+      load_reqwest(root.clone(), reqwest::ClientBuilder::new());
 
     use futures::stream::TryStreamExt;
-    let modules: Vec<ModuleInfo> = module_stream.try_collect().await.unwrap();
+    let modules: Vec<(Url, ModuleInfo)> =
+      module_stream.try_collect().await.unwrap();
 
-    assert_eq!(modules.len(), 6);
+    assert_eq!(modules.len(), 7);
   }
 }
