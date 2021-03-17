@@ -3,18 +3,15 @@
 
 use anyhow::Error;
 use eszip::load_reqwest;
-use eszip::ModuleInfo;
+use eszip::ModuleGraph;
 use futures::stream::TryStreamExt;
-use std::collections::HashMap;
 use url::Url;
-
-type ModuleGraph = HashMap<Url, ModuleInfo>;
 
 async fn fetch(root: Url) -> Result<(), Error> {
   let mut stream = load_reqwest(root, reqwest::ClientBuilder::new());
   let mut seen = 0;
 
-  let mut graph = ModuleGraph::new();
+  let mut graph = ModuleGraph::default();
 
   let bar = indicatif::ProgressBar::new(0).with_style(
     indicatif::ProgressStyle::default_bar()
@@ -30,6 +27,8 @@ async fn fetch(root: Url) -> Result<(), Error> {
     graph.insert(url, info);
   }
   bar.finish();
+
+  assert!(graph.is_complete());
 
   serde_json::to_writer_pretty(std::io::stdout(), &graph).unwrap();
   println!();

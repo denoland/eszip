@@ -6,6 +6,7 @@ use futures::task::Poll;
 use futures::Stream;
 use futures::StreamExt;
 use futures::TryFutureExt;
+use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -33,7 +34,7 @@ pub type ModuleSourceFuture =
 type ModuleInfoFuture =
   Pin<Box<dyn Send + Future<Output = Result<(Url, ModuleInfo), Error>>>>;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ModuleInfo {
   Redirect(Url),
   Source {
