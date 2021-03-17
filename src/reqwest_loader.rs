@@ -1,6 +1,6 @@
+use crate::loader::ModuleLoad;
+use crate::loader::ModuleLoadFuture;
 use crate::loader::ModuleLoader;
-use crate::loader::ModuleSource;
-use crate::loader::ModuleSourceFuture;
 use crate::loader::ModuleStream;
 use crate::resolve_import::resolve_import;
 use reqwest::header::CONTENT_TYPE;
@@ -11,7 +11,7 @@ use url::Url;
 pub struct ReqwestLoader(reqwest::Client);
 
 impl ModuleLoader for ReqwestLoader {
-  fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>> {
+  fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>> {
     let client = self.0.clone();
     Box::pin(async move {
       let res = client.get(url.clone()).send().await?;
@@ -19,14 +19,14 @@ impl ModuleLoader for ReqwestLoader {
       if res.status().is_redirection() {
         let location = res.headers().get(LOCATION).unwrap().to_str().unwrap();
         let location_resolved = resolve_import(&location, url.as_str())?;
-        Ok(ModuleSource::Redirect(location_resolved))
+        Ok(ModuleLoad::Redirect(location_resolved))
       } else if res.status().is_success() {
         let content_type = res
           .headers()
           .get(CONTENT_TYPE)
           .map(|v| v.to_str().unwrap().to_string());
         let source = res.text().await?;
-        Ok(ModuleSource::Source {
+        Ok(ModuleLoad::Source {
           source,
           content_type,
         })
@@ -81,9 +81,9 @@ mod tests {
     assert_eq!(modules.len(), 2);
 
     let (_url, root_info) = &modules[0];
-    if let ModuleInfo::Source { deps, source, .. } = root_info {
-      assert_eq!(deps.len(), 1);
-      assert!(source.contains("printHello"));
+    if let ModuleInfo::Source(module_source) = root_info {
+      assert_eq!(module_source.deps.len(), 1);
+      assert!(module_source.source.contains("printHello"));
     } else {
       unreachable!()
     }
@@ -91,9 +91,9 @@ mod tests {
     let (url, print_hello_info) = &modules[1];
     assert_eq!(url.as_str(),
     "https://raw.githubusercontent.com/denoland/deno/5873adeb5e6ec2113eeb5adc964b7ce129d4905d/cli/tests/subdir/print_hello.ts");
-    if let ModuleInfo::Source { deps, source, .. } = print_hello_info {
-      assert_eq!(deps.len(), 0);
-      assert!(source.contains("function printHello(): void"));
+    if let ModuleInfo::Source(module_source) = print_hello_info {
+      assert_eq!(module_source.deps.len(), 0);
+      assert!(module_source.source.contains("function printHello(): void"));
     } else {
       unreachable!()
     }

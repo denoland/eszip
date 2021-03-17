@@ -14,6 +14,28 @@ pub struct ModuleGraph {
 }
 
 impl ModuleGraph {
+  /// Follow redirects until arriving at the final url and module info.
+  pub fn get_redirect(&self, url: &Url) -> Option<(Url, &ModuleInfo)> {
+    let mut seen = HashSet::<Url>::new();
+    let mut current = url.clone();
+    loop {
+      if seen.insert(current.clone()) {
+        return None; // infinite loop detected
+      }
+      match self.modules.get(&current) {
+        None => {
+          return None;
+        }
+        Some(ModuleInfo::Redirect(to)) => {
+          current = to.clone();
+        }
+        Some(info) => {
+          return Some((current, &info));
+        }
+      }
+    }
+  }
+
   pub fn is_complete(&self) -> bool {
     let mut references = HashSet::<Url>::new();
     for module_info in self.modules.values() {
@@ -21,20 +43,18 @@ impl ModuleGraph {
         ModuleInfo::Redirect(u) => {
           references.insert(u.clone());
         }
-        ModuleInfo::Source { deps, .. } => {
-          for d in deps {
+        ModuleInfo::Source(module_source) => {
+          for d in &module_source.deps {
             references.insert(d.clone());
           }
         }
       }
     }
-
     for reference in references {
       if !self.modules.contains_key(&reference) {
         return false;
       }
     }
-
     true
   }
 }

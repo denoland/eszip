@@ -16,10 +16,10 @@ use std::task::Context;
 use url::Url;
 
 pub trait ModuleLoader: Unpin {
-  fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>>;
+  fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>>;
 }
 
-pub enum ModuleSource {
+pub enum ModuleLoad {
   Redirect(Url),
   Source {
     source: String,
@@ -28,21 +28,24 @@ pub enum ModuleSource {
 }
 
 // Returns final url (after redirects) and source code.
-pub type ModuleSourceFuture =
-  dyn Send + Future<Output = Result<ModuleSource, Error>>;
+pub type ModuleLoadFuture =
+  dyn Send + Future<Output = Result<ModuleLoad, Error>>;
 
 type ModuleInfoFuture =
   Pin<Box<dyn Send + Future<Output = Result<(Url, ModuleInfo), Error>>>>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModuleSource {
+  pub source: String,
+  pub transpiled: String,
+  pub deps: Vec<Url>,
+  pub content_type: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ModuleInfo {
   Redirect(Url),
-  Source {
-    source: String,
-    transpiled: String,
-    deps: Vec<Url>,
-    content_type: Option<String>,
-  },
+  Source(ModuleSource),
 }
 
 pub struct ModuleStream<L: ModuleLoader> {
@@ -73,19 +76,19 @@ impl<L: ModuleLoader> ModuleStream<L> {
       let fut =
         Box::pin(self.loader.load(url).and_then(|module_source| async move {
           let module_info = match module_source {
-            ModuleSource::Redirect(url) => ModuleInfo::Redirect(url),
-            ModuleSource::Source {
+            ModuleLoad::Redirect(url) => ModuleInfo::Redirect(url),
+            ModuleLoad::Source {
               source,
               content_type,
             } => {
               let (deps, transpiled) =
                 get_deps_and_transpile(&url_, &source, &content_type)?;
-              ModuleInfo::Source {
+              ModuleInfo::Source(ModuleSource {
                 source,
                 transpiled,
                 content_type,
                 deps,
-              }
+              })
             }
           };
           Ok((url_, module_info))
@@ -108,8 +111,8 @@ impl<L: ModuleLoader> Stream for ModuleStream<L> {
         ModuleInfo::Redirect(url) => {
           self.append_module(url.clone());
         }
-        ModuleInfo::Source { deps, .. } => {
-          for dep in deps {
+        ModuleInfo::Source(module_source) => {
+          for dep in &module_source.deps {
             self.append_module(dep.clone());
           }
         }
@@ -123,10 +126,10 @@ impl<L: ModuleLoader> Stream for ModuleStream<L> {
 pub struct MemoryLoader(pub HashMap<Url, String>);
 
 impl ModuleLoader for MemoryLoader {
-  fn load(&self, url: Url) -> Pin<Box<ModuleSourceFuture>> {
+  fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>> {
     Box::pin(futures::future::ready(
       if let Some(source) = self.0.get(&url) {
-        Ok(ModuleSource::Source {
+        Ok(ModuleLoad::Source {
           source: source.clone(),
           content_type: None,
         })
@@ -163,9 +166,9 @@ mod tests {
     let r = Pin::new(&mut stream).poll_next(&mut cx);
     if let Poll::Ready(Some(Ok((url, module_info)))) = r {
       assert_eq!(url, root);
-      if let ModuleInfo::Source { deps, source, .. } = module_info {
-        assert_eq!(deps.len(), 1);
-        assert!(source.contains("foo()"));
+      if let ModuleInfo::Source(module_source) = module_info {
+        assert_eq!(module_source.deps.len(), 1);
+        assert!(module_source.source.contains("foo()"));
       } else {
         unreachable!()
       }
@@ -176,9 +179,9 @@ mod tests {
     let r = Pin::new(&mut stream).poll_next(&mut cx);
     if let Poll::Ready(Some(Ok((url, module_info)))) = r {
       assert_eq!(url.as_str(), "http://deno.land/std/http/foo.ts");
-      if let ModuleInfo::Source { deps, source, .. } = module_info {
-        assert_eq!(deps.len(), 0);
-        assert!(source.contains("console.log('hi')"));
+      if let ModuleInfo::Source(module_source) = module_info {
+        assert_eq!(module_source.deps.len(), 0);
+        assert!(module_source.source.contains("console.log('hi')"));
       } else {
         unreachable!()
       }
