@@ -320,6 +320,23 @@ mod tests {
   use super::*;
 
   #[test]
+  fn test_get_syntax() {
+    // Prefer content-type over extension.
+    let url = Url::parse("https://deno.land/x/foo@0.1.0/bar.js").unwrap();
+    let content_type = Some("text/jsx".to_string());
+    let syntax = get_syntax(&url, &content_type);
+    assert!(syntax.jsx());
+    assert!(!syntax.typescript());
+
+    // Fallback to extension if content-type is unsupported.
+    let url = Url::parse("https://deno.land/x/foo@0.1.0/bar.tsx").unwrap();
+    let content_type = Some("text/unsupported".to_string());
+    let syntax = get_syntax(&url, &content_type);
+    assert!(syntax.jsx());
+    assert!(syntax.typescript());
+  }
+
+  #[test]
   fn jsx() {
     let url = Url::parse(
       "https://deno.land/x/dext@0.10.3/example/pages/dynamic/%5Bname%5D.tsx",
