@@ -8,9 +8,11 @@ use std::ops::Deref;
 use std::ops::DerefMut;
 use url::Url;
 
+pub const GRAPH_VERSION: u32 = 1;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModuleGraph {
-  version: String,
+  version: u32,
   modules: HashMap<Url, ModuleInfo>,
 }
 
@@ -67,7 +69,7 @@ impl ModuleGraph {
 impl Default for ModuleGraph {
   fn default() -> Self {
     ModuleGraph {
-      version: format!("eszip/{}", env!("CARGO_PKG_VERSION")),
+      version: GRAPH_VERSION,
       modules: HashMap::new(),
     }
   }

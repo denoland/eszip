@@ -19,6 +19,9 @@ pub trait ModuleLoader: Unpin {
   fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>>;
 }
 
+// TODO(ry) Use ModuleSource instead? They're almost the same. Using ModuleSource would delegate
+// the job of parsing dependencies and transpiling to the ModuleLoader implementer; whereas this is
+// done generically at the moment.
 pub enum ModuleLoad {
   Redirect(Url),
   Source {
@@ -38,8 +41,8 @@ type ModuleInfoFuture =
 pub struct ModuleSource {
   pub source: String,
   pub transpiled: String,
-  pub deps: Vec<Url>,
   pub content_type: Option<String>,
+  pub deps: Vec<Url>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -5,6 +5,7 @@ mod reqwest_loader;
 mod resolve_import;
 
 pub use graph::ModuleGraph;
+pub use graph::GRAPH_VERSION;
 pub use loader::MemoryLoader;
 pub use loader::ModuleInfo;
 pub use loader::ModuleLoad;
