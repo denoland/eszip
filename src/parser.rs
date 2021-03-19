@@ -133,7 +133,7 @@ pub fn get_deps_and_transpile(
   Ok((deps, src))
 }
 
-fn get_syntax(url: &Url, _content_type: &Option<String>) -> Syntax {
+fn get_syntax(url: &Url, maybe_content_type: &Option<String>) -> Syntax {
   fn get_es_config(jsx: bool) -> EsConfig {
     EsConfig {
       class_private_methods: true,
@@ -162,10 +162,42 @@ fn get_syntax(url: &Url, _content_type: &Option<String>) -> Syntax {
     }
   }
 
-  // TODO(ry) use content_type
+  let maybe_extension = if let Some(content_type) = maybe_content_type {
+    match content_type
+      .split(";")
+      .next()
+      .unwrap()
+      .trim()
+      .to_lowercase()
+      .as_ref()
+    {
+      "application/typescript"
+      | "text/typescript"
+      | "video/vnd.dlna.mpeg-tts"
+      | "video/mp2t"
+      | "application/x-typescript" => Some("ts"),
+      "application/javascript"
+      | "text/javascript"
+      | "application/ecmascript"
+      | "text/ecmascript"
+      | "application/x-javascript"
+      | "application/node" => Some("js"),
+      "text/jsx" => Some("jsx"),
+      "text/tsx" => Some("tsx"),
+      _ => None,
+    }
+  } else {
+    None
+  };
 
-  let parts: Vec<&str> = url.as_str().split('.').collect();
-  match parts.last().copied() {
+  let extension = if maybe_extension.is_some() {
+    maybe_extension
+  } else {
+    let parts: Vec<&str> = url.as_str().split('.').collect();
+    parts.last().copied()
+  };
+
+  match extension {
     Some("js") => Syntax::Es(get_es_config(false)),
     Some("jsx") => Syntax::Es(get_es_config(true)),
     Some("ts") => Syntax::Typescript(get_ts_config(false, false)),
@@ -286,6 +318,23 @@ impl Default for EmitOptions {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn test_get_syntax() {
+    // Prefer content-type over extension.
+    let url = Url::parse("https://deno.land/x/foo@0.1.0/bar.js").unwrap();
+    let content_type = Some("text/jsx".to_string());
+    let syntax = get_syntax(&url, &content_type);
+    assert!(syntax.jsx());
+    assert!(!syntax.typescript());
+
+    // Fallback to extension if content-type is unsupported.
+    let url = Url::parse("https://deno.land/x/foo@0.1.0/bar.tsx").unwrap();
+    let content_type = Some("text/unsupported".to_string());
+    let syntax = get_syntax(&url, &content_type);
+    assert!(syntax.jsx());
+    assert!(syntax.typescript());
+  }
 
   #[test]
   fn jsx() {
