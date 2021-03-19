@@ -1,6 +1,5 @@
+use crate::error::Error;
 use crate::parser::get_deps_and_transpile;
-use anyhow::anyhow;
-use anyhow::Error;
 use futures::stream::FuturesUnordered;
 use futures::task::Poll;
 use futures::Stream;
@@ -129,15 +128,17 @@ impl<L: ModuleLoader> Stream for ModuleStream<L> {
 pub struct MemoryLoader(pub HashMap<Url, String>);
 
 impl ModuleLoader for MemoryLoader {
-  fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>> {
+  fn load(&self, specifier: Url) -> Pin<Box<ModuleLoadFuture>> {
     Box::pin(futures::future::ready(
-      if let Some(source) = self.0.get(&url) {
+      if let Some(source) = self.0.get(&specifier) {
         Ok(ModuleLoad::Source {
           source: source.clone(),
           content_type: None,
         })
       } else {
-        Err(anyhow!("not found"))
+        Err(Error::NotFound {
+          specifier: specifier.to_string(),
+        })
       },
     ))
   }

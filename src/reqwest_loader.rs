@@ -1,3 +1,5 @@
+use crate::error::reqwest_error;
+use crate::error::Error;
 use crate::loader::ModuleLoad;
 use crate::loader::ModuleLoadFuture;
 use crate::loader::ModuleLoader;
@@ -14,7 +16,16 @@ impl ModuleLoader for ReqwestLoader {
   fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>> {
     let client = self.0.clone();
     Box::pin(async move {
-      let res = client.get(url.clone()).send().await?;
+      let res = client.get(url.clone()).send().await.map_err(|err| {
+        if err.is_connect() || err.is_decode() {
+          Error::Download {
+            specifier: url.to_string(),
+            inner: err,
+          }
+        } else {
+          Error::Other(Box::new(err))
+        }
+      })?;
 
       if res.status().is_redirection() {
         let location = res.headers().get(LOCATION).unwrap().to_str().unwrap();
@@ -25,17 +36,20 @@ impl ModuleLoader for ReqwestLoader {
           .headers()
           .get(CONTENT_TYPE)
           .map(|v| v.to_str().unwrap().to_string());
-        let source = res.text().await?;
+        let source = res
+          .text()
+          .await
+          .map_err(|err| reqwest_error(url.to_string(), err))?;
         Ok(ModuleLoad::Source {
           source,
           content_type,
         })
       } else {
-        res.error_for_status()?;
-        unreachable!()
+        Err(reqwest_error(
+          url.to_string(),
+          res.error_for_status().unwrap_err(),
+        ))
       }
-
-      // Ok((final_url, source))
     })
   }
 }
