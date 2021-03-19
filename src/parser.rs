@@ -1,5 +1,5 @@
+use crate::error::Error;
 use crate::resolve_import::resolve_import;
-use anyhow::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
 use swc_common::comments::SingleThreadedComments;
@@ -115,15 +115,19 @@ pub fn get_deps_and_transpile(
       cm: source_map.clone(),
       wr: writer,
     };
-    program.emit_with(&mut emitter)?;
+    program
+      .emit_with(&mut emitter)
+      .map_err(|err| Error::Other(Box::new(err)))?;
   }
 
-  let mut src = String::from_utf8(buf)?;
+  let mut src =
+    String::from_utf8(buf).map_err(|err| Error::Other(Box::new(err)))?;
   {
     let mut buf = Vec::new();
     source_map
       .build_source_map_from(&mut src_map_buf, None)
-      .to_writer(&mut buf)?;
+      .to_writer(&mut buf)
+      .map_err(|err| Error::Other(Box::new(err)))?;
 
     src.push_str("//# sourceMappingURL=data:application/json;base64,");
     let encoded_map = base64::encode(buf);
@@ -206,7 +210,7 @@ fn get_syntax(url: &Url, maybe_content_type: &Option<String>) -> Syntax {
   }
 }
 
-struct ParseError {
+pub struct ParseError {
   lines: Vec<String>,
 }
 

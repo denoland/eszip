@@ -1,8 +1,8 @@
 // Downloads module graph and serializes it to JSON on stdout.
 // cargo run --example fetch https://deno.land/x/oak/router.ts
 
-use anyhow::Error;
 use eszip::load_reqwest;
+use eszip::Error;
 use eszip::ModuleGraph;
 use futures::stream::TryStreamExt;
 use url::Url;

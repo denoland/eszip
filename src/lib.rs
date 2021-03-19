@@ -3,7 +3,9 @@ mod loader;
 mod parser;
 mod reqwest_loader;
 mod resolve_import;
+mod error;
 
+pub use error::Error;
 pub use graph::ModuleGraph;
 pub use graph::GRAPH_VERSION;
 pub use loader::MemoryLoader;
