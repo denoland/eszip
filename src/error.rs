@@ -11,6 +11,10 @@ pub enum Error {
   Parse(#[from] ParseError),
   #[error(transparent)]
   ModuleResolution(#[from] ModuleResolutionError),
+  #[error(
+    "invalid redirect for '{specifier}': missing or invalid Location header"
+  )]
+  InvalidRedirect { specifier: String },
   #[error("failed to fetch '{specifier}': {inner}")]
   Download {
     specifier: String,

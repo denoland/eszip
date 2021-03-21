@@ -28,14 +28,23 @@ impl ModuleLoader for ReqwestLoader {
       })?;
 
       if res.status().is_redirection() {
-        let location = res.headers().get(LOCATION).unwrap().to_str().unwrap();
+        let location = res
+          .headers()
+          .get(LOCATION)
+          .ok_or_else(|| Error::InvalidRedirect {
+            specifier: url.to_string(),
+          })?
+          .to_str()
+          .map_err(|_| Error::InvalidRedirect {
+            specifier: url.to_string(),
+          })?;
         let location_resolved = resolve_import(&location, url.as_str())?;
         Ok(ModuleLoad::Redirect(location_resolved))
       } else if res.status().is_success() {
         let content_type = res
           .headers()
           .get(CONTENT_TYPE)
-          .map(|v| v.to_str().unwrap().to_string());
+          .map(|v| v.to_str().unwrap_or_default().to_string());
         let source = res
           .text()
           .await
