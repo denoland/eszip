@@ -21,7 +21,7 @@ pub enum Error {
     inner: reqwest::Error,
   },
   #[error(transparent)]
-  Other(Box<dyn std::error::Error + Send + 'static>),
+  Other(Box<dyn std::error::Error + Sync + Send + 'static>),
 }
 
 pub fn reqwest_error(specifier: String, error: reqwest::Error) -> Error {
