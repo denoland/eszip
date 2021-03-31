@@ -27,7 +27,7 @@ pub fn get_deps_and_transpile(
   url: &Url,
   source: &str,
   content_type: &Option<String>,
-) -> Result<(Vec<Url>, String), Error> {
+) -> Result<(Vec<Url>, Option<String>), Error> {
   let comments = SingleThreadedComments::default();
   let source_map = SourceMap::default();
   let source_file = source_map
@@ -48,6 +48,12 @@ pub fn get_deps_and_transpile(
       let specifier = import.specifier.to_string();
       deps.push(resolve_import(&specifier, url.as_str())?);
     }
+  }
+
+  // If the file is not jsx, ts, or tsx we do not need to transform it. In that
+  // case source == transformed.
+  if !syntax.jsx() && !syntax.typescript() {
+    return Ok((deps, None));
   }
 
   use swc_ecmascript::transforms::react;
@@ -134,7 +140,7 @@ pub fn get_deps_and_transpile(
     src.push_str(&encoded_map);
   }
 
-  Ok((deps, src))
+  Ok((deps, Some(src)))
 }
 
 fn get_syntax(url: &Url, maybe_content_type: &Option<String>) -> Syntax {

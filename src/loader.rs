@@ -39,9 +39,18 @@ type ModuleInfoFuture =
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModuleSource {
   pub source: String,
-  pub transpiled: String,
+  pub transpiled: Option<String>,
   pub content_type: Option<String>,
   pub deps: Vec<Url>,
+}
+
+impl ModuleSource {
+  pub fn get_code(&self) -> String {
+    self
+      .transpiled
+      .clone()
+      .unwrap_or_else(|| self.source.clone())
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
