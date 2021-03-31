@@ -115,7 +115,7 @@ mod tests {
       u2.clone(),
       ModuleInfo::Source(ModuleSource {
         source: "source".to_string(),
-        transpiled: "transpiled".to_string(),
+        transpiled: Some("transpiled".to_string()),
         deps: Vec::new(),
         content_type: None,
       }),
@@ -123,10 +123,12 @@ mod tests {
     let (final_url, module_source) = g.get_redirect(&u1).unwrap();
     assert_eq!(final_url, u2);
     assert_eq!(module_source.source, "source");
+    assert_eq!(module_source.get_code(), "transpiled");
 
     let (final_url, module_source) = g.get_redirect(&u2).unwrap();
     assert_eq!(final_url, u2);
     assert_eq!(module_source.source, "source");
+    assert_eq!(module_source.get_code(), "transpiled");
 
     assert!(g.get_redirect(&u3).is_none());
   }
