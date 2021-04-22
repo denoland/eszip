@@ -389,4 +389,17 @@ mod tests {
       get_deps_and_transpile(&url, source, &None).unwrap();
     assert_eq!(deps.len(), 0);
   }
+
+  #[test]
+  #[ignore]
+  fn dynamic_import() {
+    let url = Url::parse("https://deno.land/x/oak@v6.4.2/router.ts").unwrap();
+    let source = r#"
+    await import("fs");
+    await import("https://deno.land/std/version.ts");
+    "#;
+    let (deps, _transpiled) =
+      get_deps_and_transpile(&url, source, &None).unwrap();
+    assert_eq!(deps.len(), 0);
+  }
 }
