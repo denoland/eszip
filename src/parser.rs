@@ -42,8 +42,9 @@ pub fn get_deps_and_transpile(
     .map_err(|e| ParseError::new(e, &source_map))?;
   let mut deps = Vec::new();
   for import in analyze_dependencies(&module, &source_map, &comments) {
-    if import.kind == DependencyKind::Import
-      || import.kind == DependencyKind::Export
+    if (import.kind == DependencyKind::Import
+      || import.kind == DependencyKind::Export)
+      && import.is_dynamic == false
     {
       let specifier = import.specifier.to_string();
       deps.push(resolve_import(&specifier, url.as_str())?);
@@ -383,6 +384,19 @@ mod tests {
         path: string,
         ...middleware: RouterMiddleware<P, S>[]
       ): Router<P extends RP ? P : (P & RP), S extends RS ? S : (S & RS)>;
+    "#;
+    let (deps, _transpiled) =
+      get_deps_and_transpile(&url, source, &None).unwrap();
+    assert_eq!(deps.len(), 0);
+  }
+
+  #[test]
+  #[ignore]
+  fn dynamic_import() {
+    let url = Url::parse("https://deno.land/x/oak@v6.4.2/router.ts").unwrap();
+    let source = r#"
+    await import("fs");
+    await import("https://deno.land/std/version.ts");
     "#;
     let (deps, _transpiled) =
       get_deps_and_transpile(&url, source, &None).unwrap();
