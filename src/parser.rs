@@ -42,8 +42,9 @@ pub fn get_deps_and_transpile(
     .map_err(|e| ParseError::new(e, &source_map))?;
   let mut deps = Vec::new();
   for import in analyze_dependencies(&module, &source_map, &comments) {
-    if import.kind == DependencyKind::Import
-      || import.kind == DependencyKind::Export
+    if (import.kind == DependencyKind::Import
+      || import.kind == DependencyKind::Export)
+      && import.is_dynamic == false
     {
       let specifier = import.specifier.to_string();
       deps.push(resolve_import(&specifier, url.as_str())?);
