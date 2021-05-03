@@ -7,16 +7,29 @@ use crate::loader::ModuleStream;
 use crate::resolve_import::resolve_import;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::header::LOCATION;
+use reqwest::RequestBuilder;
 use std::pin::Pin;
 use url::Url;
 
-pub struct ReqwestLoader(reqwest::Client);
+#[inline]
+pub fn none_middleware(_: &Url, builder: RequestBuilder) -> RequestBuilder {
+  builder
+}
 
-impl ModuleLoader for ReqwestLoader {
+pub struct ReqwestLoader<T> {
+  client: reqwest::Client,
+  middleware: T,
+}
+
+impl<T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin>
+  ModuleLoader for ReqwestLoader<T>
+{
   fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>> {
-    let client = self.0.clone();
+    let req = self.client.get(url.clone());
+    let ref middleware = self.middleware;
+    let req = middleware(&url, req);
     Box::pin(async move {
-      let res = client.get(url.clone()).send().await.map_err(|err| {
+      let res = req.send().await.map_err(|err| {
         if err.is_connect() || err.is_decode() {
           Error::Download {
             specifier: url.to_string(),
@@ -64,15 +77,18 @@ impl ModuleLoader for ReqwestLoader {
 }
 
 /// Loads modules over HTTP using reqwest
-pub fn load_reqwest(
+pub fn load_reqwest<
+  T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin,
+>(
   root: Url,
   client_builder: reqwest::ClientBuilder,
-) -> ModuleStream<ReqwestLoader> {
+  middleware: T,
+) -> ModuleStream<ReqwestLoader<T>> {
   let client = client_builder
     .redirect(reqwest::redirect::Policy::none())
     .build()
     .unwrap();
-  ModuleStream::new(root, ReqwestLoader(client))
+  ModuleStream::new(root, ReqwestLoader { client, middleware })
 }
 
 #[cfg(test)]
@@ -82,8 +98,12 @@ mod tests {
 
   #[test]
   fn stream_is_send() {
-    fn is_send<T: Send>() {}
-    is_send::<ModuleStream<ReqwestLoader>>();
+    fn is_send<T: Send>(_: T) {}
+    is_send(load_reqwest(
+      "https://raw.githubusercontent.com".parse().unwrap(),
+      reqwest::ClientBuilder::new(),
+      none_middleware,
+    ));
   }
 
   // Requires internet access!
@@ -94,8 +114,11 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream =
-      load_reqwest(root.clone(), reqwest::ClientBuilder::new());
+    let module_stream = load_reqwest(
+      root.clone(),
+      reqwest::ClientBuilder::new(),
+      none_middleware,
+    );
 
     use futures::stream::TryStreamExt;
     let modules: Vec<(Url, ModuleInfo)> =
@@ -130,13 +153,45 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream =
-      load_reqwest(root.clone(), reqwest::ClientBuilder::new());
+    let module_stream = load_reqwest(
+      root.clone(),
+      reqwest::ClientBuilder::new(),
+      none_middleware,
+    );
 
     use futures::stream::TryStreamExt;
     let modules: Vec<(Url, ModuleInfo)> =
       module_stream.try_collect().await.unwrap();
 
     assert_eq!(modules.len(), 7);
+  }
+
+  // Requires internet access!
+  #[tokio::test]
+  async fn middleware() {
+    let root = Url::parse("https://eszip-tests.deno.dev/").unwrap();
+
+    fn middleware(url: &Url, builder: RequestBuilder) -> RequestBuilder {
+      assert_eq!(url, &Url::parse("https://eszip-tests.deno.dev/").unwrap());
+      builder.header("x-magic-auth", "foobar")
+    }
+
+    let module_stream = load_reqwest(
+      root.clone(),
+      reqwest::ClientBuilder::new(),
+      Box::new(middleware),
+    );
+
+    use futures::stream::TryStreamExt;
+    let modules: Vec<(Url, ModuleInfo)> =
+      module_stream.try_collect().await.unwrap();
+    assert_eq!(modules.len(), 1);
+
+    let (_url, info) = modules.get(0).unwrap();
+    let src = match info {
+      ModuleInfo::Source(src) => src,
+      _ => unreachable!(),
+    };
+    assert_eq!(src.source, r#""foobar""#)
   }
 }

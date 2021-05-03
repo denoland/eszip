@@ -2,13 +2,15 @@
 // cargo run --example fetch https://deno.land/x/oak/router.ts
 
 use eszip::load_reqwest;
+use eszip::none_middleware;
 use eszip::Error;
 use eszip::ModuleGraph;
 use futures::stream::TryStreamExt;
 use url::Url;
 
 async fn fetch(root: Url) -> Result<(), Error> {
-  let mut stream = load_reqwest(root, reqwest::ClientBuilder::new());
+  let mut stream =
+    load_reqwest(root, reqwest::ClientBuilder::new(), none_middleware);
   let mut seen = 0;
 
   let mut graph = ModuleGraph::default();
