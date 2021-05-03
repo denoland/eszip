@@ -8,7 +8,7 @@ use futures::stream::TryStreamExt;
 use url::Url;
 
 async fn fetch(root: Url) -> Result<(), Error> {
-  let mut stream = load_reqwest(root, reqwest::ClientBuilder::new());
+  let mut stream = load_reqwest(root, reqwest::ClientBuilder::new(), None);
   let mut seen = 0;
 
   let mut graph = ModuleGraph::default();
