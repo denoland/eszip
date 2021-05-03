@@ -11,22 +11,23 @@ use reqwest::RequestBuilder;
 use std::pin::Pin;
 use url::Url;
 
-pub type ReqwestMiddlewareFn =
-  Box<dyn Fn(RequestBuilder) -> RequestBuilder + Send + Sync>;
-
-pub struct ReqwestLoader {
-  client: reqwest::Client,
-  middleware: Option<ReqwestMiddlewareFn>,
+#[inline]
+pub fn none_middleware(_: &Url, builder: RequestBuilder) -> RequestBuilder {
+  builder
 }
 
-impl ModuleLoader for ReqwestLoader {
+pub struct ReqwestLoader<T> {
+  client: reqwest::Client,
+  middleware: T,
+}
+
+impl<T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin>
+  ModuleLoader for ReqwestLoader<T>
+{
   fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>> {
     let req = self.client.get(url.clone());
-    let req = if let Some(ref middleware) = self.middleware {
-      middleware(req)
-    } else {
-      req
-    };
+    let ref middleware = self.middleware;
+    let req = middleware(&url, req);
     Box::pin(async move {
       let res = req.send().await.map_err(|err| {
         if err.is_connect() || err.is_decode() {
@@ -76,11 +77,13 @@ impl ModuleLoader for ReqwestLoader {
 }
 
 /// Loads modules over HTTP using reqwest
-pub fn load_reqwest(
+pub fn load_reqwest<
+  T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin,
+>(
   root: Url,
   client_builder: reqwest::ClientBuilder,
-  middleware: Option<ReqwestMiddlewareFn>,
-) -> ModuleStream<ReqwestLoader> {
+  middleware: T,
+) -> ModuleStream<ReqwestLoader<T>> {
   let client = client_builder
     .redirect(reqwest::redirect::Policy::none())
     .build()
@@ -95,8 +98,12 @@ mod tests {
 
   #[test]
   fn stream_is_send() {
-    fn is_send<T: Send>() {}
-    is_send::<ModuleStream<ReqwestLoader>>();
+    fn is_send<T: Send>(_: T) {}
+    is_send(load_reqwest(
+      "https://raw.githubusercontent.com".parse().unwrap(),
+      reqwest::ClientBuilder::new(),
+      none_middleware,
+    ));
   }
 
   // Requires internet access!
@@ -107,8 +114,11 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream =
-      load_reqwest(root.clone(), reqwest::ClientBuilder::new(), None);
+    let module_stream = load_reqwest(
+      root.clone(),
+      reqwest::ClientBuilder::new(),
+      none_middleware,
+    );
 
     use futures::stream::TryStreamExt;
     let modules: Vec<(Url, ModuleInfo)> =
@@ -143,8 +153,11 @@ mod tests {
   )
   .unwrap();
 
-    let module_stream =
-      load_reqwest(root.clone(), reqwest::ClientBuilder::new(), None);
+    let module_stream = load_reqwest(
+      root.clone(),
+      reqwest::ClientBuilder::new(),
+      none_middleware,
+    );
 
     use futures::stream::TryStreamExt;
     let modules: Vec<(Url, ModuleInfo)> =
@@ -158,14 +171,15 @@ mod tests {
   async fn middleware() {
     let root = Url::parse("https://eszip-tests.deno.dev/").unwrap();
 
-    fn middleware(builder: RequestBuilder) -> RequestBuilder {
+    fn middleware(url: &Url, builder: RequestBuilder) -> RequestBuilder {
+      assert_eq!(url, &Url::parse("https://eszip-tests.deno.dev/").unwrap());
       builder.header("x-magic-auth", "foobar")
     }
 
     let module_stream = load_reqwest(
       root.clone(),
       reqwest::ClientBuilder::new(),
-      Some(Box::new(middleware)),
+      Box::new(middleware),
     );
 
     use futures::stream::TryStreamExt;
