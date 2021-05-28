@@ -22,6 +22,8 @@ pub enum Error {
   },
   #[error(transparent)]
   Other(Box<dyn std::error::Error + Sync + Send + 'static>),
+  #[error("invalid data url '{specifier}': '{error}'")]
+  InvalidDataUrl { specifier: String, error: String },
 }
 
 pub fn reqwest_error(specifier: String, error: reqwest::Error) -> Error {

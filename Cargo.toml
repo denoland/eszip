@@ -21,6 +21,7 @@ swc_ecmascript = { version = "0.31", features = ["codegen", "dep_graph","parser"
 thiserror = "1"
 tokio = { version = "1", features = ["full"] }
 url = { version = "2", features = ["serde"] }
+data-url = "0.1.0"
 
 [dev-dependencies]
 indicatif = "0.15"
