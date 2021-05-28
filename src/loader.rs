@@ -115,40 +115,43 @@ impl<L: ModuleLoader> ModuleStream<L> {
   fn append_module(&mut self, url: Url) {
     if !self.started.contains(&url) {
       self.started.insert(url.clone());
-      if url.scheme() == "data" {
-        self
-          .pending
-          .push(Box::pin(futures::future::ready(load_data_url(url))));
-      } else if matches!(url.scheme(), "http" | "https") {
-        let fut = Box::pin(self.loader.load(url.clone()).and_then(
-          |module_source| async move {
-            let module_info = match module_source {
-              ModuleLoad::Redirect(url) => ModuleInfo::Redirect(url),
-              ModuleLoad::Source {
-                source,
-                content_type,
-              } => {
-                let (deps, transpiled) =
-                  get_deps_and_transpile(&url, &source, &content_type)?;
-                ModuleInfo::Source(ModuleSource {
-                  source,
-                  transpiled,
-                  content_type,
-                  deps,
-                })
-              }
-            };
-            Ok((url, module_info))
-          },
-        ));
-        self.pending.push(fut);
-      } else {
-        self.pending.push(Box::pin(futures::future::ready(Err(
+      match url.scheme() {
+        "data" => {
+          self
+            .pending
+            .push(Box::pin(futures::future::ready(load_data_url(url))));
+        }
+        "https" | "http" => {
+          self
+            .pending
+            .push(Box::pin(self.loader.load(url.clone()).and_then(
+              |module_source| async move {
+                let module_info = match module_source {
+                  ModuleLoad::Redirect(url) => ModuleInfo::Redirect(url),
+                  ModuleLoad::Source {
+                    source,
+                    content_type,
+                  } => {
+                    let (deps, transpiled) =
+                      get_deps_and_transpile(&url, &source, &content_type)?;
+                    ModuleInfo::Source(ModuleSource {
+                      source,
+                      transpiled,
+                      content_type,
+                      deps,
+                    })
+                  }
+                };
+                Ok((url, module_info))
+              },
+            )));
+        }
+        _ => self.pending.push(Box::pin(futures::future::ready(Err(
           Error::InvalidScheme {
             scheme: url.scheme().to_string(),
             specifier: url.to_string(),
           },
-        ))))
+        )))),
       }
     }
   }
