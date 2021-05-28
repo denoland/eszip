@@ -67,23 +67,21 @@ pub struct ModuleStream<L: ModuleLoader> {
 }
 
 fn load_data_url(url: Url) -> Result<(Url, ModuleInfo), Error> {
-  let data_url = DataUrl::process(url.as_str()).map_err(|e| {
-    Error::InvalidDataUrl {
+  let data_url =
+    DataUrl::process(url.as_str()).map_err(|e| Error::InvalidDataUrl {
       specifier: url.to_string(),
       error: format!("{:?}", e),
-    }
-  })?;
-  let (body, _) = data_url.decode_to_vec().map_err(|e| {
-    Error::InvalidDataUrl {
-      specifier: url.to_string(),
-      error: format!("{:?}", e),
-    }
-  })?;
-  let source = String::from_utf8(body).map_err(|e| {
-    Error::InvalidDataUrl {
-      specifier: url.to_string(),
-      error: format!("{:?}", e),
-    }
+    })?;
+  let (body, _) =
+    data_url
+      .decode_to_vec()
+      .map_err(|e| Error::InvalidDataUrl {
+        specifier: url.to_string(),
+        error: format!("{:?}", e),
+      })?;
+  let source = String::from_utf8(body).map_err(|e| Error::InvalidDataUrl {
+    specifier: url.to_string(),
+    error: format!("{:?}", e),
   })?;
   let content_type = Some(data_url.mime_type().to_string());
   let (deps, transpiled) =
@@ -250,11 +248,13 @@ mod tests {
     }
   }
 
-
   #[test]
   fn data_url() {
-    let root = Url::parse("data:text/javascript;base64,Y29uc29sZS5sb2coJ2hpJyk7").unwrap();
-    let mut stream = ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
+    let root =
+      Url::parse("data:text/javascript;base64,Y29uc29sZS5sb2coJ2hpJyk7")
+        .unwrap();
+    let mut stream =
+      ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
     assert_eq!(stream.total(), 1);
 
     let mut cx =
@@ -262,10 +262,12 @@ mod tests {
 
     let r = Pin::new(&mut stream).poll_next(&mut cx);
     if let Poll::Ready(Some(Ok((url, module_info)))) = r {
-      assert_eq!(url.as_str(), "data:text/javascript;base64,Y29uc29sZS5sb2coJ2hpJyk7");
+      assert_eq!(
+        url.as_str(),
+        "data:text/javascript;base64,Y29uc29sZS5sb2coJ2hpJyk7"
+      );
       if let ModuleInfo::Source(module_source) = module_info {
         assert_eq!(module_source.deps.len(), 0);
-        println!("{:?}", module_source);
         assert!(module_source.source.contains("console.log('hi')"));
       } else {
         unreachable!()
