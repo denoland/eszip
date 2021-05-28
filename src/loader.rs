@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::parser::get_deps_and_transpile;
+use data_url::DataUrl;
 use futures::stream::FuturesUnordered;
 use futures::task::Poll;
 use futures::Stream;
@@ -65,6 +66,37 @@ pub struct ModuleStream<L: ModuleLoader> {
   loader: L,
 }
 
+fn load_data_url(url: Url) -> Result<(Url, ModuleInfo), Error> {
+  let data_url =
+    DataUrl::process(url.as_str()).map_err(|e| Error::InvalidDataUrl {
+      specifier: url.to_string(),
+      error: format!("{:?}", e),
+    })?;
+  let (body, _) =
+    data_url
+      .decode_to_vec()
+      .map_err(|e| Error::InvalidDataUrl {
+        specifier: url.to_string(),
+        error: format!("{:?}", e),
+      })?;
+  let source = String::from_utf8(body).map_err(|e| Error::InvalidDataUrl {
+    specifier: url.to_string(),
+    error: format!("{:?}", e),
+  })?;
+  let content_type = Some(data_url.mime_type().to_string());
+  let (deps, transpiled) =
+    get_deps_and_transpile(&url, &source, &content_type)?;
+  Ok((
+    url,
+    ModuleInfo::Source(ModuleSource {
+      source,
+      content_type,
+      deps,
+      transpiled,
+    }),
+  ))
+}
+
 impl<L: ModuleLoader> ModuleStream<L> {
   pub fn new(root: Url, loader: L) -> Self {
     let mut g = Self {
@@ -83,28 +115,44 @@ impl<L: ModuleLoader> ModuleStream<L> {
   fn append_module(&mut self, url: Url) {
     if !self.started.contains(&url) {
       self.started.insert(url.clone());
-      let url_ = url.clone();
-      let fut =
-        Box::pin(self.loader.load(url).and_then(|module_source| async move {
-          let module_info = match module_source {
-            ModuleLoad::Redirect(url) => ModuleInfo::Redirect(url),
-            ModuleLoad::Source {
-              source,
-              content_type,
-            } => {
-              let (deps, transpiled) =
-                get_deps_and_transpile(&url_, &source, &content_type)?;
-              ModuleInfo::Source(ModuleSource {
-                source,
-                transpiled,
-                content_type,
-                deps,
-              })
-            }
-          };
-          Ok((url_, module_info))
-        }));
-      self.pending.push(fut);
+      match url.scheme() {
+        "data" => {
+          self
+            .pending
+            .push(Box::pin(futures::future::ready(load_data_url(url))));
+        }
+        "https" | "http" => {
+          self
+            .pending
+            .push(Box::pin(self.loader.load(url.clone()).and_then(
+              |module_source| async move {
+                let module_info = match module_source {
+                  ModuleLoad::Redirect(url) => ModuleInfo::Redirect(url),
+                  ModuleLoad::Source {
+                    source,
+                    content_type,
+                  } => {
+                    let (deps, transpiled) =
+                      get_deps_and_transpile(&url, &source, &content_type)?;
+                    ModuleInfo::Source(ModuleSource {
+                      source,
+                      transpiled,
+                      content_type,
+                      deps,
+                    })
+                  }
+                };
+                Ok((url, module_info))
+              },
+            )));
+        }
+        _ => self.pending.push(Box::pin(futures::future::ready(Err(
+          Error::InvalidScheme {
+            scheme: url.scheme().to_string(),
+            specifier: url.to_string(),
+          },
+        )))),
+      }
     }
   }
 }
@@ -205,6 +253,91 @@ mod tests {
     let r = Pin::new(&mut stream).poll_next(&mut cx);
     if let Poll::Ready(None) = r {
       // expected
+    } else {
+      panic!("unexpected");
+    }
+  }
+
+  #[test]
+  fn data_url() {
+    let root =
+      Url::parse("data:text/javascript;base64,Y29uc29sZS5sb2coJ2hpJyk7")
+        .unwrap();
+    let mut stream =
+      ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
+    assert_eq!(stream.total(), 1);
+
+    let mut cx =
+      std::task::Context::from_waker(futures::task::noop_waker_ref());
+
+    let r = Pin::new(&mut stream).poll_next(&mut cx);
+    if let Poll::Ready(Some(Ok((url, module_info)))) = r {
+      assert_eq!(
+        url.as_str(),
+        "data:text/javascript;base64,Y29uc29sZS5sb2coJ2hpJyk7"
+      );
+      if let ModuleInfo::Source(module_source) = module_info {
+        assert_eq!(module_source.deps.len(), 0);
+        assert!(module_source.source.contains("console.log('hi')"));
+      } else {
+        unreachable!()
+      }
+    } else {
+      panic!("unexpected");
+    }
+  }
+
+  #[test]
+  fn data_url_typescript() {
+    let root = Url::parse(
+      "data:text/typescript;base64,Y29uc3QgbmFtZTogc3RyaW5nID0gJ2VzemlwJzsK",
+    )
+    .unwrap();
+    let mut stream =
+      ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
+    assert_eq!(stream.total(), 1);
+
+    let mut cx =
+      std::task::Context::from_waker(futures::task::noop_waker_ref());
+
+    let r = Pin::new(&mut stream).poll_next(&mut cx);
+    if let Poll::Ready(Some(Ok((url, module_info)))) = r {
+      assert_eq!(
+        url.as_str(),
+        "data:text/typescript;base64,Y29uc3QgbmFtZTogc3RyaW5nID0gJ2VzemlwJzsK"
+      );
+      if let ModuleInfo::Source(module_source) = module_info {
+        assert_eq!(module_source.deps.len(), 0);
+        assert!(module_source
+          .source
+          .contains("const name: string = 'eszip';"));
+        assert!(module_source
+          .transpiled
+          .unwrap()
+          .contains("const name = 'eszip';"));
+      } else {
+        unreachable!()
+      }
+    } else {
+      panic!("unexpected");
+    }
+  }
+
+  #[test]
+  fn error_on_invalid_scheme() {
+    let root = Url::parse("file:///mod.ts").unwrap();
+    let mut stream =
+      ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
+
+    let mut cx =
+      std::task::Context::from_waker(futures::task::noop_waker_ref());
+
+    let r = Pin::new(&mut stream).poll_next(&mut cx);
+    if let Poll::Ready(Some(Err(error))) = r {
+      assert_eq!(
+        error.to_string(),
+        "scheme 'file' is not supported: 'file:///mod.ts'"
+      )
     } else {
       panic!("unexpected");
     }
