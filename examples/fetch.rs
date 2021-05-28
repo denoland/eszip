@@ -24,7 +24,7 @@ async fn fetch(root: Url) -> Result<(), Error> {
     seen += 1;
     bar.set_position(seen as u64);
     bar.set_length(stream.total() as u64);
-    bar.set_message(url.as_str());
+    bar.set_message(url.to_string());
 
     graph.insert(url, info);
   }
