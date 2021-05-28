@@ -1,6 +1,6 @@
 [package]
 name = "eszip"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Ryan Dahl <ry@tinyclouds.org>"]
 edition = "2018"
 description = "A utility that can download JavaScript and TypeScript module graphs and store them locally in a special zip file"
