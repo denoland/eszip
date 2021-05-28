@@ -288,6 +288,42 @@ mod tests {
   }
 
   #[test]
+  fn data_url_typescript() {
+    let root = Url::parse(
+      "data:text/typescript;base64,Y29uc3QgbmFtZTogc3RyaW5nID0gJ2VzemlwJzsK",
+    )
+    .unwrap();
+    let mut stream =
+      ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
+    assert_eq!(stream.total(), 1);
+
+    let mut cx =
+      std::task::Context::from_waker(futures::task::noop_waker_ref());
+
+    let r = Pin::new(&mut stream).poll_next(&mut cx);
+    if let Poll::Ready(Some(Ok((url, module_info)))) = r {
+      assert_eq!(
+        url.as_str(),
+        "data:text/typescript;base64,Y29uc3QgbmFtZTogc3RyaW5nID0gJ2VzemlwJzsK"
+      );
+      if let ModuleInfo::Source(module_source) = module_info {
+        assert_eq!(module_source.deps.len(), 0);
+        assert!(module_source
+          .source
+          .contains("const name: string = 'eszip';"));
+        assert!(module_source
+          .transpiled
+          .unwrap()
+          .contains("const name = 'eszip';"));
+      } else {
+        unreachable!()
+      }
+    } else {
+      panic!("unexpected");
+    }
+  }
+
+  #[test]
   fn error_on_invalid_scheme() {
     let root = Url::parse("file:///mod.ts").unwrap();
     let mut stream =
