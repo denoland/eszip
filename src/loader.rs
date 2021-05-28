@@ -119,7 +119,7 @@ impl<L: ModuleLoader> ModuleStream<L> {
         self
           .pending
           .push(Box::pin(futures::future::ready(load_data_url(url))));
-      } else {
+      } else if matches!(url.scheme(), "http" | "https") {
         let fut = Box::pin(self.loader.load(url.clone()).and_then(
           |module_source| async move {
             let module_info = match module_source {
@@ -142,6 +142,13 @@ impl<L: ModuleLoader> ModuleStream<L> {
           },
         ));
         self.pending.push(fut);
+      } else {
+        self.pending.push(Box::pin(futures::future::ready(Err(
+          Error::InvalidScheme {
+            scheme: url.scheme().to_string(),
+            specifier: url.to_string(),
+          },
+        ))))
       }
     }
   }
@@ -272,6 +279,26 @@ mod tests {
       } else {
         unreachable!()
       }
+    } else {
+      panic!("unexpected");
+    }
+  }
+
+  #[test]
+  fn error_on_invalid_scheme() {
+    let root = Url::parse("file:///mod.ts").unwrap();
+    let mut stream =
+      ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
+
+    let mut cx =
+      std::task::Context::from_waker(futures::task::noop_waker_ref());
+
+    let r = Pin::new(&mut stream).poll_next(&mut cx);
+    if let Poll::Ready(Some(Err(error))) = r {
+      assert_eq!(
+        error.to_string(),
+        "scheme 'file' is not supported: 'file:///mod.ts'"
+      )
     } else {
       panic!("unexpected");
     }
