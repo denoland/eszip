@@ -17,3 +17,4 @@ pub use loader::ModuleSource;
 pub use loader::ModuleStream;
 pub use reqwest_loader::load_reqwest;
 pub use reqwest_loader::none_middleware;
+pub use reqwest_loader::ReqwestLoader;
