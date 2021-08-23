@@ -86,6 +86,10 @@ impl<T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin>
       }
     })
   }
+
+  fn supports_file_url(&self) -> bool {
+    false
+  }
 }
 
 /// Loads modules over HTTP using reqwest

@@ -17,6 +17,7 @@ use url::Url;
 
 pub trait ModuleLoader: Unpin {
   fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>>;
+  fn supports_file_url(&self) -> bool;
 }
 
 // TODO(ry) Use ModuleSource instead? They're almost the same. Using ModuleSource would delegate
@@ -115,40 +116,50 @@ impl<L: ModuleLoader> ModuleStream<L> {
   fn append_module(&mut self, url: Url) {
     if !self.started.contains(&url) {
       self.started.insert(url.clone());
-      match url.scheme() {
+      let scheme = url.scheme();
+      match scheme {
         "data" => {
           self
             .pending
             .push(Box::pin(futures::future::ready(load_data_url(url))));
         }
-        "https" | "http" => {
-          self
-            .pending
-            .push(Box::pin(self.loader.load(url.clone()).and_then(
-              |module_source| async move {
-                let module_info = match module_source {
-                  ModuleLoad::Redirect(url) => ModuleInfo::Redirect(url),
-                  ModuleLoad::Source {
-                    source,
-                    content_type,
-                  } => {
-                    let (deps, transpiled) =
-                      get_deps_and_transpile(&url, &source, &content_type)?;
-                    ModuleInfo::Source(ModuleSource {
-                      source,
-                      transpiled,
-                      content_type,
-                      deps,
-                    })
-                  }
-                };
-                Ok((url, module_info))
+        "https" | "http" | "file" => {
+          if !self.loader.supports_file_url() && scheme == "file" {
+            self.pending.push(Box::pin(futures::future::ready(Err(
+              Error::InvalidScheme {
+                scheme: scheme.to_string(),
+                specifier: url.to_string(),
               },
-            )));
+            ))))
+          } else {
+            self.pending.push(Box::pin(
+              self.loader.load(url.clone()).and_then(
+                |module_source| async move {
+                  let module_info = match module_source {
+                    ModuleLoad::Redirect(url) => ModuleInfo::Redirect(url),
+                    ModuleLoad::Source {
+                      source,
+                      content_type,
+                    } => {
+                      let (deps, transpiled) =
+                        get_deps_and_transpile(&url, &source, &content_type)?;
+                      ModuleInfo::Source(ModuleSource {
+                        source,
+                        transpiled,
+                        content_type,
+                        deps,
+                      })
+                    }
+                  };
+                  Ok((url, module_info))
+                },
+              ),
+            ));
+          }
         }
         _ => self.pending.push(Box::pin(futures::future::ready(Err(
           Error::InvalidScheme {
-            scheme: url.scheme().to_string(),
+            scheme: scheme.to_string(),
             specifier: url.to_string(),
           },
         )))),
@@ -198,6 +209,10 @@ impl ModuleLoader for MemoryLoader {
         })
       },
     ))
+  }
+
+  fn supports_file_url(&self) -> bool {
+    false
   }
 }
 
