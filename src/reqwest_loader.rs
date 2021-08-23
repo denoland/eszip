@@ -22,11 +22,23 @@ pub struct ReqwestLoader<T> {
 }
 
 impl<T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin>
+  ReqwestLoader<T>
+{
+  pub fn new(client_builder: reqwest::ClientBuilder, middleware: T) -> Self {
+    let client = client_builder
+      .redirect(reqwest::redirect::Policy::none())
+      .build()
+      .unwrap();
+    Self { client, middleware }
+  }
+}
+
+impl<T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin>
   ModuleLoader for ReqwestLoader<T>
 {
   fn load(&self, url: Url) -> Pin<Box<ModuleLoadFuture>> {
     let req = self.client.get(url.clone());
-    let ref middleware = self.middleware;
+    let middleware = &self.middleware;
     let req = middleware(&url, req);
     Box::pin(async move {
       let res = req.send().await.map_err(|err| {
@@ -51,7 +63,7 @@ impl<T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin>
           .map_err(|_| Error::InvalidRedirect {
             specifier: url.to_string(),
           })?;
-        let location_resolved = resolve_import(&location, url.as_str())?;
+        let location_resolved = resolve_import(location, url.as_str())?;
         Ok(ModuleLoad::Redirect(location_resolved))
       } else if res.status().is_success() {
         let content_type = res
@@ -74,6 +86,10 @@ impl<T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin>
       }
     })
   }
+
+  fn supports_file_url(&self) -> bool {
+    false
+  }
 }
 
 /// Loads modules over HTTP using reqwest
@@ -84,11 +100,7 @@ pub fn load_reqwest<
   client_builder: reqwest::ClientBuilder,
   middleware: T,
 ) -> ModuleStream<ReqwestLoader<T>> {
-  let client = client_builder
-    .redirect(reqwest::redirect::Policy::none())
-    .build()
-    .unwrap();
-  ModuleStream::new(root, ReqwestLoader { client, middleware })
+  ModuleStream::new(root, ReqwestLoader::new(client_builder, middleware))
 }
 
 #[cfg(test)]
