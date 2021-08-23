@@ -44,7 +44,7 @@ pub fn get_deps_and_transpile(
   for import in analyze_dependencies(&module, &source_map, &comments) {
     if (import.kind == DependencyKind::Import
       || import.kind == DependencyKind::Export)
-      && import.is_dynamic == false
+      && !import.is_dynamic
     {
       let specifier = import.specifier.to_string();
       deps.push(resolve_import(&specifier, url.as_str())?);
@@ -175,7 +175,7 @@ fn get_syntax(url: &Url, maybe_content_type: &Option<String>) -> Syntax {
 
   let maybe_extension = if let Some(content_type) = maybe_content_type {
     match content_type
-      .split(";")
+      .split(';')
       .next()
       .unwrap()
       .trim()
