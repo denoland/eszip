@@ -203,14 +203,11 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "427e7091c1fd8a13b002824f43773b6ef2d5c8ded445ee20013bea7f6ca8bc5b"
 dependencies = [
- "data-url",
- "dprint-swc-ecma-ast-view",
  "serde",
  "swc_atoms",
  "swc_common",
  "swc_ecmascript",
  "text_lines",
- "url",
 ]
 
 [[package]]
@@ -220,21 +217,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3dd60d1080a57a05ab032377049e0591415d2b31afd7028356dbf3cc6dcb066"
 dependencies = [
  "generic-array",
-]
-
-[[package]]
-name = "dprint-swc-ecma-ast-view"
-version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c561abeae30e338748557e2c85e7c73621877eba137951207a3fd32306d9ce2"
-dependencies = [
- "bumpalo",
- "fnv",
- "num-bigint",
- "swc_atoms",
- "swc_common",
- "swc_ecmascript",
- "text_lines",
 ]
 
 [[package]]
