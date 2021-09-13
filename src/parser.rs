@@ -1,25 +1,25 @@
 use crate::error::Error;
 use crate::resolve_import::resolve_import;
+use deno_ast::swc::ast::Program;
+use deno_ast::swc::common::comments::SingleThreadedComments;
+use deno_ast::swc::common::errors::Diagnostic;
+use deno_ast::swc::common::errors::DiagnosticBuilder;
+use deno_ast::swc::common::errors::Emitter;
+use deno_ast::swc::common::errors::Handler;
+use deno_ast::swc::common::errors::HandlerFlags;
+use deno_ast::swc::common::input::StringInput;
+use deno_ast::swc::common::FileName;
+use deno_ast::swc::common::SourceMap;
+use deno_ast::swc::dep_graph::analyze_dependencies;
+use deno_ast::swc::dep_graph::DependencyKind;
+use deno_ast::swc::parser::lexer::Lexer;
+use deno_ast::swc::parser::EsConfig;
+use deno_ast::swc::parser::JscTarget;
+use deno_ast::swc::parser::Parser;
+use deno_ast::swc::parser::Syntax;
+use deno_ast::swc::parser::TsConfig;
 use std::sync::Arc;
 use std::sync::Mutex;
-use swc_common::comments::SingleThreadedComments;
-use swc_common::errors::Diagnostic;
-use swc_common::errors::DiagnosticBuilder;
-use swc_common::errors::Emitter;
-use swc_common::errors::Handler;
-use swc_common::errors::HandlerFlags;
-use swc_common::input::StringInput;
-use swc_common::FileName;
-use swc_common::SourceMap;
-use swc_ecmascript::ast::Program;
-use swc_ecmascript::dep_graph::analyze_dependencies;
-use swc_ecmascript::dep_graph::DependencyKind;
-use swc_ecmascript::parser::lexer::Lexer;
-use swc_ecmascript::parser::EsConfig;
-use swc_ecmascript::parser::JscTarget;
-use swc_ecmascript::parser::Parser;
-use swc_ecmascript::parser::Syntax;
-use swc_ecmascript::parser::TsConfig;
 use url::Url;
 
 // Returns (deps, transpiled source code)
@@ -41,7 +41,7 @@ pub fn get_deps_and_transpile(
     .parse_module()
     .map_err(|e| ParseError::new(e, &source_map))?;
   let mut deps = Vec::new();
-  for import in analyze_dependencies(&module, &source_map, &comments) {
+  for import in analyze_dependencies(&module, &comments) {
     if (import.kind == DependencyKind::Import
       || import.kind == DependencyKind::Export)
       && !import.is_dynamic
@@ -57,7 +57,7 @@ pub fn get_deps_and_transpile(
     return Ok((deps, None));
   }
 
-  use swc_ecmascript::transforms::react;
+  use deno_ast::swc::transforms::react;
 
   let program = Program::Module(module);
 
@@ -77,14 +77,14 @@ pub fn get_deps_and_transpile(
     },
   );
 
-  use swc_common::chain;
-  use swc_common::Globals;
-  use swc_ecmascript::transforms::fixer;
-  use swc_ecmascript::transforms::helpers;
-  use swc_ecmascript::transforms::pass::Optional;
-  use swc_ecmascript::transforms::proposals;
-  use swc_ecmascript::transforms::typescript;
-  use swc_ecmascript::visit::FoldWith;
+  use deno_ast::swc::common::chain;
+  use deno_ast::swc::common::Globals;
+  use deno_ast::swc::transforms::fixer;
+  use deno_ast::swc::transforms::helpers;
+  use deno_ast::swc::transforms::pass::Optional;
+  use deno_ast::swc::transforms::proposals;
+  use deno_ast::swc::transforms::typescript;
+  use deno_ast::swc::visit::FoldWith;
 
   let mut passes = chain!(
     Optional::new(jsx_pass, options.transform_jsx),
@@ -97,14 +97,14 @@ pub fn get_deps_and_transpile(
     fixer(Some(&comments)),
   );
 
-  let program = swc_common::GLOBALS.set(&Globals::new(), || {
+  let program = deno_ast::swc::common::GLOBALS.set(&Globals::new(), || {
     helpers::HELPERS.set(&helpers::Helpers::new(false), || {
       program.fold_with(&mut passes)
     })
   });
 
-  use swc_ecmascript::codegen::text_writer::JsWriter;
-  use swc_ecmascript::codegen::Node;
+  use deno_ast::swc::codegen::text_writer::JsWriter;
+  use deno_ast::swc::codegen::Node;
 
   let mut src_map_buf = vec![];
   let mut buf = vec![];
@@ -115,8 +115,8 @@ pub fn get_deps_and_transpile(
       &mut buf,
       Some(&mut src_map_buf),
     ));
-    let config = swc_ecmascript::codegen::Config { minify: false };
-    let mut emitter = swc_ecmascript::codegen::Emitter {
+    let config = deno_ast::swc::codegen::Config { minify: false };
+    let mut emitter = deno_ast::swc::codegen::Emitter {
       cfg: config,
       comments: Some(&comments),
       cm: source_map.clone(),
@@ -223,7 +223,7 @@ pub struct ParseError {
 
 impl ParseError {
   fn new(
-    err: swc_ecmascript::parser::error::Error,
+    err: deno_ast::swc::parser::error::Error,
     source_map: &SourceMap,
   ) -> Self {
     let error_buffer = ErrorBuffer::default();
