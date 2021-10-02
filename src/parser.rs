@@ -18,16 +18,38 @@ use deno_ast::swc::parser::JscTarget;
 use deno_ast::swc::parser::Parser;
 use deno_ast::swc::parser::Syntax;
 use deno_ast::swc::parser::TsConfig;
+use serde::Deserialize;
+use serde::Serialize;
 use std::sync::Arc;
 use std::sync::Mutex;
 use url::Url;
+
+pub enum TranspileResult {
+  Transpiled {
+    transpiled: String,
+    source_map: FauxSourceMap,
+    deps: Vec<Url>,
+  },
+  NotTranspiled {
+    deps: Vec<Url>,
+  },
+}
+
+// Funny name to avoid shadowing swc::common::SourceMap.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FauxSourceMap {
+  pub version: u32, // 3
+  pub sources: Vec<String>,
+  pub names: Vec<String>,
+  pub mappings: String,
+}
 
 // Returns (deps, transpiled source code)
 pub fn get_deps_and_transpile(
   url: &Url,
   source: &str,
   content_type: &Option<String>,
-) -> Result<(Vec<Url>, Option<String>), Error> {
+) -> Result<TranspileResult, Error> {
   let comments = SingleThreadedComments::default();
   let source_map = SourceMap::default();
   let source_file = source_map
@@ -54,7 +76,7 @@ pub fn get_deps_and_transpile(
   // If the file is not jsx, ts, or tsx we do not need to transform it. In that
   // case source == transformed.
   if !syntax.jsx() && !syntax.typescript() {
-    return Ok((deps, None));
+    return Ok(TranspileResult::NotTranspiled { deps });
   }
 
   use deno_ast::swc::transforms::react;
@@ -127,21 +149,26 @@ pub fn get_deps_and_transpile(
       .map_err(|err| Error::Other(Box::new(err)))?;
   }
 
-  let mut src =
+  let transpiled =
     String::from_utf8(buf).map_err(|err| Error::Other(Box::new(err)))?;
-  {
+
+  let source_map: FauxSourceMap = {
     let mut buf = Vec::new();
     source_map
       .build_source_map_from(&mut src_map_buf, None)
       .to_writer(&mut buf)
       .map_err(|err| Error::Other(Box::new(err)))?;
+    // Decode the source map now so we don't end up encoding it twice,
+    // otherwise it ends up in the output as a JSON-encoded string of
+    // a JSON-encoded object.
+    serde_json::from_slice(&buf).map_err(|err| Error::Other(Box::new(err)))?
+  };
 
-    src.push_str("//# sourceMappingURL=data:application/json;base64,");
-    let encoded_map = base64::encode(buf);
-    src.push_str(&encoded_map);
-  }
-
-  Ok((deps, Some(src)))
+  Ok(TranspileResult::Transpiled {
+    transpiled,
+    source_map,
+    deps,
+  })
 }
 
 fn get_syntax(url: &Url, maybe_content_type: &Option<String>) -> Syntax {
@@ -328,6 +355,7 @@ impl Default for EmitOptions {
 
 #[cfg(test)]
 mod tests {
+  use super::TranspileResult::*;
   use super::*;
 
   #[test]
@@ -369,9 +397,21 @@ mod tests {
 
       export default UserPage;
     "#;
-    let (deps, _transpiled) =
-      get_deps_and_transpile(&url, source, &None).unwrap();
+    let result = get_deps_and_transpile(&url, source, &None).unwrap();
+    let (deps, transpiled, source_map) = match result {
+      NotTranspiled { .. } => unreachable!(),
+      Transpiled {
+        deps,
+        transpiled,
+        source_map,
+      } => (deps, transpiled, source_map),
+    };
     assert_eq!(deps.len(), 1);
+    assert!(!transpiled.contains("sourceMappingURL"));
+    assert_eq!(source_map.version, 3);
+    assert_eq!(source_map.sources, vec![format!("<{}>", url)]);
+    assert!(source_map.names.is_empty());
+    assert!(!source_map.mappings.is_empty());
   }
 
   #[test]
@@ -385,8 +425,11 @@ mod tests {
         ...middleware: RouterMiddleware<P, S>[]
       ): Router<P extends RP ? P : (P & RP), S extends RS ? S : (S & RS)>;
     "#;
-    let (deps, _transpiled) =
-      get_deps_and_transpile(&url, source, &None).unwrap();
+    let result = get_deps_and_transpile(&url, source, &None).unwrap();
+    let deps = match result {
+      NotTranspiled { deps } => deps,
+      Transpiled { .. } => unreachable!(),
+    };
     assert_eq!(deps.len(), 0);
   }
 
@@ -398,8 +441,11 @@ mod tests {
     await import("fs");
     await import("https://deno.land/std/version.ts");
     "#;
-    let (deps, _transpiled) =
-      get_deps_and_transpile(&url, source, &None).unwrap();
+    let result = get_deps_and_transpile(&url, source, &None).unwrap();
+    let deps = match result {
+      NotTranspiled { deps } => deps,
+      Transpiled { .. } => unreachable!(),
+    };
     assert_eq!(deps.len(), 0);
   }
 }

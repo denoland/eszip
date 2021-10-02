@@ -92,6 +92,7 @@ impl DerefMut for ModuleGraph {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::parser::FauxSourceMap;
 
   #[test]
   fn is_complete() {
@@ -110,12 +111,20 @@ mod tests {
     let u2 = Url::parse("http://deno.land/u2.js").unwrap();
     let u3 = Url::parse("http://deno.land/u3.js").unwrap();
 
+    let source_map = FauxSourceMap {
+      version: 3,
+      sources: vec![],
+      names: vec![],
+      mappings: String::new(),
+    };
+
     g.insert(u1.clone(), ModuleInfo::Redirect(u2.clone()));
     g.insert(
       u2.clone(),
       ModuleInfo::Source(ModuleSource {
         source: "source".to_string(),
         transpiled: Some("transpiled".to_string()),
+        source_map: Some(source_map),
         deps: Vec::new(),
         content_type: None,
       }),

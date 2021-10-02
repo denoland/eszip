@@ -256,7 +256,6 @@ dependencies = [
 name = "eszip"
 version = "0.13.0"
 dependencies = [
- "base64 0.13.0",
  "data-url",
  "deno_ast",
  "futures",

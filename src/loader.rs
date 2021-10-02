@@ -1,5 +1,7 @@
 use crate::error::Error;
 use crate::parser::get_deps_and_transpile;
+use crate::parser::FauxSourceMap;
+use crate::parser::TranspileResult::*;
 use data_url::DataUrl;
 use futures::stream::FuturesUnordered;
 use futures::task::Poll;
@@ -42,6 +44,7 @@ type ModuleInfoFuture =
 pub struct ModuleSource {
   pub source: String,
   pub transpiled: Option<String>,
+  pub source_map: Option<FauxSourceMap>,
   pub content_type: Option<String>,
   pub deps: Vec<Url>,
 }
@@ -85,17 +88,32 @@ fn load_data_url(url: Url) -> Result<(Url, ModuleInfo), Error> {
     error: format!("{:?}", e),
   })?;
   let content_type = Some(data_url.mime_type().to_string());
-  let (deps, transpiled) =
-    get_deps_and_transpile(&url, &source, &content_type)?;
-  Ok((
-    url,
-    ModuleInfo::Source(ModuleSource {
-      source,
-      content_type,
+  let module_source = into_module_source(&url, source, content_type)?;
+  let module_info = ModuleInfo::Source(module_source);
+  Ok((url, module_info))
+}
+
+fn into_module_source(
+  url: &Url,
+  source: String,
+  content_type: Option<String>,
+) -> Result<ModuleSource, Error> {
+  let result = get_deps_and_transpile(url, &source, &content_type)?;
+  let (deps, transpiled, source_map) = match result {
+    NotTranspiled { deps } => (deps, None, None),
+    Transpiled {
       deps,
       transpiled,
-    }),
-  ))
+      source_map,
+    } => (deps, Some(transpiled), Some(source_map)),
+  };
+  Ok(ModuleSource {
+    source,
+    transpiled,
+    source_map,
+    content_type,
+    deps,
+  })
 }
 
 impl<L: ModuleLoader> ModuleStream<L> {
@@ -141,14 +159,9 @@ impl<L: ModuleLoader> ModuleStream<L> {
                       source,
                       content_type,
                     } => {
-                      let (deps, transpiled) =
-                        get_deps_and_transpile(&url, &source, &content_type)?;
-                      ModuleInfo::Source(ModuleSource {
-                        source,
-                        transpiled,
-                        content_type,
-                        deps,
-                      })
+                      let module_source =
+                        into_module_source(&url, source, content_type)?;
+                      ModuleInfo::Source(module_source)
                     }
                   };
                   Ok((url, module_info))
