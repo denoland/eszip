@@ -278,8 +278,7 @@ mod tests {
     let root =
       Url::parse("data:text/javascript;base64,Y29uc29sZS5sb2coJ2hpJyk7")
         .unwrap();
-    let mut stream =
-      ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
+    let mut stream = ModuleStream::new(root, MemoryLoader(HashMap::new()));
     assert_eq!(stream.total(), 1);
 
     let mut cx =
@@ -308,8 +307,7 @@ mod tests {
       "data:text/typescript;base64,Y29uc3QgbmFtZTogc3RyaW5nID0gJ2VzemlwJzsK",
     )
     .unwrap();
-    let mut stream =
-      ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
+    let mut stream = ModuleStream::new(root, MemoryLoader(HashMap::new()));
     assert_eq!(stream.total(), 1);
 
     let mut cx =
@@ -341,8 +339,7 @@ mod tests {
   #[test]
   fn error_on_invalid_scheme() {
     let root = Url::parse("file:///mod.ts").unwrap();
-    let mut stream =
-      ModuleStream::new(root.clone(), MemoryLoader(HashMap::new()));
+    let mut stream = ModuleStream::new(root, MemoryLoader(HashMap::new()));
 
     let mut cx =
       std::task::Context::from_waker(futures::task::noop_waker_ref());
