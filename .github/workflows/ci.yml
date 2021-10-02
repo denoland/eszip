@@ -5,6 +5,11 @@ jobs:
   build:
     runs-on: ubuntu-latest-xl
 
+    env:
+      RUST_BACKTRACE: full
+      # https://github.com/rust-unofficial/patterns/blob/master/anti_patterns/deny-warnings.md
+      RUSTFLAGS: -D warnings
+
     steps:
       - name: Checkout
         uses: actions/checkout@v1
