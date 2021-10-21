@@ -348,6 +348,15 @@ mod tests {
   }
 
   #[test]
+  fn syntax_error() {
+    let url = Url::parse("https://example.com/vanilla.js").unwrap();
+    let source = "const this = 42";
+    let err = get_deps_and_transpile(&url, source, &None).unwrap_err();
+    assert!(matches!(err, Error::Parse(_)));
+    assert!(err.to_string().contains("Expected ident at"));
+  }
+
+  #[test]
   fn jsx() {
     let url = Url::parse(
       "https://deno.land/x/dext@0.10.3/example/pages/dynamic/%5Bname%5D.tsx",
