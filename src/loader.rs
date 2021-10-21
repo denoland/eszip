@@ -302,6 +302,25 @@ mod tests {
   }
 
   #[test]
+  fn data_url_syntax_error() {
+    let root =
+      Url::parse("data:text/javascript;base64,Y29uc3QgdGhpcyA9IDQy").unwrap();
+    let mut stream = ModuleStream::new(root, MemoryLoader(HashMap::new()));
+    assert_eq!(stream.total(), 1);
+
+    let mut cx =
+      std::task::Context::from_waker(futures::task::noop_waker_ref());
+
+    let r = Pin::new(&mut stream).poll_next(&mut cx);
+    if let Poll::Ready(Some(Err(err))) = r {
+      assert!(matches!(err, Error::Parse(_)));
+      assert!(err.to_string().contains("Expected ident at"));
+    } else {
+      panic!("unexpected");
+    }
+  }
+
+  #[test]
   fn data_url_typescript() {
     let root = Url::parse(
       "data:text/typescript;base64,Y29uc3QgbmFtZTogc3RyaW5nID0gJ2VzemlwJzsK",
