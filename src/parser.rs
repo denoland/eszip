@@ -9,6 +9,10 @@ use deno_ast::swc::common::errors::Handler;
 use deno_ast::swc::common::errors::HandlerFlags;
 use deno_ast::swc::common::input::StringInput;
 use deno_ast::swc::common::FileName;
+use deno_ast::swc::common::Mark;
+use deno_ast::swc::transforms::react;
+use deno_ast::swc::common::chain;
+use deno_ast::swc::common::Globals;
 use deno_ast::swc::common::SourceMap;
 use deno_ast::swc::dep_graph::analyze_dependencies;
 use deno_ast::swc::dep_graph::DependencyKind;
@@ -18,6 +22,12 @@ use deno_ast::swc::parser::JscTarget;
 use deno_ast::swc::parser::Parser;
 use deno_ast::swc::parser::Syntax;
 use deno_ast::swc::parser::TsConfig;
+use deno_ast::swc::transforms::fixer;
+use deno_ast::swc::transforms::helpers;
+use deno_ast::swc::transforms::pass::Optional;
+use deno_ast::swc::transforms::proposals;
+use deno_ast::swc::transforms::typescript;
+use deno_ast::swc::visit::FoldWith;
 use std::sync::Arc;
 use std::sync::Mutex;
 use url::Url;
@@ -57,47 +67,44 @@ pub fn get_deps_and_transpile(
     return Ok((deps, None));
   }
 
-  use deno_ast::swc::transforms::react;
-
-  let program = Program::Module(module);
-
-  let options = EmitOptions::default();
   let source_map = std::rc::Rc::new(source_map);
 
-  let jsx_pass = react::react(
-    source_map.clone(),
-    Some(&comments),
-    react::Options {
-      pragma: options.jsx_factory.clone(),
-      pragma_frag: options.jsx_fragment_factory.clone(),
-      // this will use `Object.assign()` instead of the `_extends` helper
-      // when spreading props.
-      use_builtins: true,
-      ..Default::default()
-    },
-  );
-
-  use deno_ast::swc::common::chain;
-  use deno_ast::swc::common::Globals;
-  use deno_ast::swc::transforms::fixer;
-  use deno_ast::swc::transforms::helpers;
-  use deno_ast::swc::transforms::pass::Optional;
-  use deno_ast::swc::transforms::proposals;
-  use deno_ast::swc::transforms::typescript;
-  use deno_ast::swc::visit::FoldWith;
-
-  let mut passes = chain!(
-    Optional::new(jsx_pass, options.transform_jsx),
-    proposals::decorators::decorators(proposals::decorators::Config {
-      legacy: true,
-      emit_metadata: options.emit_metadata
-    }),
-    helpers::inject_helpers(),
-    typescript::strip(),
-    fixer(Some(&comments)),
-  );
-
   let program = deno_ast::swc::common::GLOBALS.set(&Globals::new(), || {
+    let program = Program::Module(module);
+    let top_level_mark = Mark::fresh(Mark::root());
+
+    let options = EmitOptions::default();
+
+    let jsx_pass = react::react(
+      source_map.clone(),
+      Some(&comments),
+      react::Options {
+        pragma: options.jsx_factory.clone(),
+        pragma_frag: options.jsx_fragment_factory.clone(),
+        // this will use `Object.assign()` instead of the `_extends` helper
+        // when spreading props.
+        use_builtins: true,
+        ..Default::default()
+      },
+      top_level_mark,
+    );
+
+    let mut passes = chain!(
+      proposals::decorators::decorators(proposals::decorators::Config {
+        legacy: true,
+        emit_metadata: options.emit_metadata
+      }),
+      helpers::inject_helpers(),
+      typescript::strip::strip_with_jsx(
+        source_map.clone(),
+        Default::default(),
+        &comments,
+        top_level_mark,
+      ),
+      Optional::new(jsx_pass, options.transform_jsx),
+      fixer(Some(&comments)),
+    );
+
     helpers::HELPERS.set(&helpers::Helpers::new(false), || {
       program.fold_with(&mut passes)
     })
@@ -410,5 +417,29 @@ mod tests {
     let (deps, _transpiled) =
       get_deps_and_transpile(&url, source, &None).unwrap();
     assert_eq!(deps.len(), 0);
+  }
+
+  #[test]
+  fn transpile_handle_code_nested_in_ts_nodes_with_jsx_pass() {
+    let specifier = Url::parse("https://deno.land/x/mod.ts").unwrap();
+    let source = r#"
+export function g() {
+  let algorithm: any
+  algorithm = {}
+
+  return <Promise>(
+    test(algorithm, false, keyUsages)
+  )
+}
+  "#;
+    let (_deps, code) =
+      get_deps_and_transpile(&specifier, source, &None).unwrap();
+    let expected = r#"export function g() {
+    let algorithm;
+    algorithm = {
+    };
+    return test(algorithm, false, keyUsages);
+}"#;
+    assert_eq!(&code.unwrap()[..expected.len()], expected);
   }
 }

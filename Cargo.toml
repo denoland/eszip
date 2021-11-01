@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 base64 = "0.13"
-deno_ast = { version = "0.2", features = ["codegen", "dep_graph", "proposal", "react", "sourcemap", "transforms", "typescript", "visit"] }
+deno_ast = { version = "0.5", features = ["codegen", "dep_graph", "proposal", "react", "sourcemap", "transforms", "typescript", "visit"] }
 futures = "0.3"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
 serde = "1"
