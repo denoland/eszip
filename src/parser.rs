@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::resolve_import::resolve_import;
 use deno_ast::swc::ast::Program;
+use deno_ast::swc::common::chain;
 use deno_ast::swc::common::comments::SingleThreadedComments;
 use deno_ast::swc::common::errors::Diagnostic;
 use deno_ast::swc::common::errors::DiagnosticBuilder;
@@ -9,10 +10,8 @@ use deno_ast::swc::common::errors::Handler;
 use deno_ast::swc::common::errors::HandlerFlags;
 use deno_ast::swc::common::input::StringInput;
 use deno_ast::swc::common::FileName;
-use deno_ast::swc::common::Mark;
-use deno_ast::swc::transforms::react;
-use deno_ast::swc::common::chain;
 use deno_ast::swc::common::Globals;
+use deno_ast::swc::common::Mark;
 use deno_ast::swc::common::SourceMap;
 use deno_ast::swc::dep_graph::analyze_dependencies;
 use deno_ast::swc::dep_graph::DependencyKind;
@@ -26,6 +25,7 @@ use deno_ast::swc::transforms::fixer;
 use deno_ast::swc::transforms::helpers;
 use deno_ast::swc::transforms::pass::Optional;
 use deno_ast::swc::transforms::proposals;
+use deno_ast::swc::transforms::react;
 use deno_ast::swc::transforms::typescript;
 use deno_ast::swc::visit::FoldWith;
 use std::sync::Arc;
@@ -44,7 +44,7 @@ pub fn get_deps_and_transpile(
     .new_source_file(FileName::Custom(url.to_string()), source.to_string());
   let input = StringInput::from(&*source_file);
   let syntax = get_syntax(url, content_type);
-  let lexer = Lexer::new(syntax, JscTarget::Es2020, input, Some(&comments));
+  let lexer = Lexer::new(syntax, JscTarget::Es2021, input, Some(&comments));
   let mut parser = Parser::new_from(lexer);
 
   let module = parser
@@ -97,7 +97,14 @@ pub fn get_deps_and_transpile(
       helpers::inject_helpers(),
       typescript::strip::strip_with_jsx(
         source_map.clone(),
-        Default::default(),
+        typescript::strip::Config {
+          pragma: Some(options.jsx_factory.clone()),
+          pragma_frag: Some(options.jsx_fragment_factory.clone()),
+          import_not_used_as_values:
+            typescript::strip::ImportsNotUsedAsValues::Remove,
+          use_define_for_class_fields: true,
+          no_empty_export: true,
+        },
         &comments,
         top_level_mark,
       ),
@@ -166,7 +173,12 @@ fn get_syntax(url: &Url, maybe_content_type: &Option<String>) -> Syntax {
       num_sep: true,
       optional_chaining: true,
       top_level_await: true,
-      ..EsConfig::default()
+      decorators: false,
+      decorators_before_export: false,
+      fn_bind: false,
+      import_assertions: true,
+      static_blocks: true,
+      private_in_object: true,
     }
   }
 
@@ -176,7 +188,8 @@ fn get_syntax(url: &Url, maybe_content_type: &Option<String>) -> Syntax {
       dts,
       dynamic_import: true,
       tsx,
-      ..TsConfig::default()
+      import_assertions: true,
+      no_early_errors: false,
     }
   }
 
@@ -439,6 +452,30 @@ export function g() {
     algorithm = {
     };
     return test(algorithm, false, keyUsages);
+}"#;
+    assert_eq!(&code.unwrap()[..expected.len()], expected);
+  }
+
+  #[test]
+  fn transform_use_define_class_fields() {
+    let specifier = Url::parse("https://deno.land/x/mod.ts").unwrap();
+    let source = r#"
+export class EventEmitter {
+  static #init() {
+  }
+
+  static call = function call(thisArg: any): void {
+    EventEmitter.#init(thisArg);
+  };
+}"#;
+    let (_deps, code) =
+      get_deps_and_transpile(&specifier, source, &None).unwrap();
+    let expected = r#"export class EventEmitter {
+    static  #init() {
+    }
+    static call = function call(thisArg) {
+        EventEmitter.#init(thisArg);
+    };
 }"#;
     assert_eq!(&code.unwrap()[..expected.len()], expected);
   }
