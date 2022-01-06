@@ -5,6 +5,7 @@ use crate::loader::ModuleLoadFuture;
 use crate::loader::ModuleLoader;
 use crate::loader::ModuleStream;
 use crate::resolve_import::resolve_import;
+use reqwest::header::ACCEPT;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::header::LOCATION;
 use reqwest::RequestBuilder;
@@ -25,8 +26,14 @@ impl<T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin>
   ReqwestLoader<T>
 {
   pub fn new(client_builder: reqwest::ClientBuilder, middleware: T) -> Self {
+    // reqwest::ClientBuilder adds "Accept: */*" as its sole default header
+    // but we override that here to encourage content negotiation.
+    let accept_header = reqwest::header::HeaderValue::from_static("application/javascript, application/typescript, text/javascript, text/typescript, text/jsx, text/tsx, application/json;q=0.9, text/plain;q=0.8, application/octet-stream;q=0.8");
+    let mut default_headers = reqwest::header::HeaderMap::new();
+    default_headers.insert(ACCEPT, accept_header);
     let client = client_builder
       .redirect(reqwest::redirect::Policy::none())
+      .default_headers(default_headers)
       .build()
       .unwrap();
     Self { client, middleware }
