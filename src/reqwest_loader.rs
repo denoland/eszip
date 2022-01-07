@@ -28,7 +28,7 @@ impl<T: Fn(&Url, RequestBuilder) -> RequestBuilder + Send + Sync + Unpin>
   pub fn new(client_builder: reqwest::ClientBuilder, middleware: T) -> Self {
     // reqwest::ClientBuilder adds "Accept: */*" as its sole default header
     // but we override that here to encourage content negotiation.
-    let accept_header = reqwest::header::HeaderValue::from_static("application/javascript, application/typescript, text/javascript, text/typescript, text/jsx, text/tsx, application/json;q=0.9, text/plain;q=0.8, application/octet-stream;q=0.8");
+    let accept_header = reqwest::header::HeaderValue::from_static("application/javascript, application/typescript, text/javascript, text/typescript, text/jsx, text/tsx, application/json;q=0.9, text/plain;q=0.8, application/octet-stream;q=0.8, */*;q=0.7");
     let mut default_headers = reqwest::header::HeaderMap::new();
     default_headers.insert(ACCEPT, accept_header);
     let client = client_builder
