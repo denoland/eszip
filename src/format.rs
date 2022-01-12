@@ -3,24 +3,28 @@ use bytes::BytesMut;
 use std::convert::TryFrom;
 use tokio_util::codec::Decoder;
 
-macro_rules! repr_u8 {
-  ($(#[$meta:meta])* $vis:vis enum $name:ident {
-    $($(#[$vmeta:meta])* $vname:ident $(= $val:expr)?,)*
-  }) => {
-    $(#[$meta])*
-    $vis enum $name {
-      $($(#[$vmeta])* $vname $(= $val)?,)*
-    }
+#[derive(Debug, PartialEq)]
+struct DataPointer(usize, usize);
 
-    impl std::convert::TryFrom<u8> for $name {
-      type Error = ();
+#[repr(u8)]
+#[derive(Debug, PartialEq)]
+pub enum ModuleKind {
+  TypeScript,
+  JavaScript,
+  JSX,
+  TSX,
+}
 
-      fn try_from(v: u8) -> Result<Self, Self::Error> {
-          match v {
-              $(x if x == $name::$vname as u8 => Ok($name::$vname),)*
-              _ => Err(()),
-          }
-      }
+impl std::convert::TryFrom<u8> for ModuleKind {
+  type Error = ();
+
+  fn try_from(v: u8) -> Result<Self, Self::Error> {
+    match v {
+      x if x == ModuleKind::TypeScript as u8 => Ok(ModuleKind::TypeScript),
+      x if x == ModuleKind::JavaScript as u8 => Ok(ModuleKind::JavaScript),
+      x if x == ModuleKind::JSX as u8 => Ok(ModuleKind::JSX),
+      x if x == ModuleKind::TSX as u8 => Ok(ModuleKind::TSX),
+      _ => Err(()),
     }
   }
 }
@@ -28,16 +32,29 @@ macro_rules! repr_u8 {
 #[derive(Debug, PartialEq)]
 pub enum HeaderFrame {
   // specifier => (offset, length) pointer to data section
-  Module(String, usize, usize),
+  // TODO(@littledivy): move this to a struct
+  Module(String, DataPointer, DataPointer, ModuleKind),
   // specifier => specifier
   Redirect(String, String),
 }
 
-repr_u8! {
-  #[repr(u8)]
-  pub enum HeaderFrameKind {
-    Module = 0,
-    Redirect = 1,
+#[repr(u8)]
+pub enum HeaderFrameKind {
+  Module = 0,
+  Redirect = 1,
+}
+
+impl std::convert::TryFrom<u8> for HeaderFrameKind {
+  type Error = ();
+
+  fn try_from(v: u8) -> Result<Self, Self::Error> {
+    match v {
+      x if x == HeaderFrameKind::Module as u8 => Ok(HeaderFrameKind::Module),
+      x if x == HeaderFrameKind::Redirect as u8 => {
+        Ok(HeaderFrameKind::Redirect)
+      }
+      _ => Err(()),
+    }
   }
 }
 
@@ -125,7 +142,34 @@ impl Decoder for Reader {
 
         Ok(Some(HeaderFrame::Redirect(specifier, source)))
       }
-      _ => Ok(None),
+      HeaderFrameKind::Module => {
+        const FRAME_SIZE: usize = 4 * 4 + 1;
+
+        // Whole frame exists
+        if buf.len() < offset + FRAME_SIZE {
+          // Reserve space
+          buf.reserve(offset + FRAME_SIZE - buf.len());
+          return Ok(None);
+        }
+
+        // Advance cursor, at point we are sure that we have enough data
+        // to read the whole frame.
+        buf.advance(offset);
+
+        let source_ptr =
+          DataPointer(buf.get_u32() as usize, buf.get_u32() as usize);
+        let source_map_ptr =
+          DataPointer(buf.get_u32() as usize, buf.get_u32() as usize);
+        let module_type =
+          ModuleKind::try_from(buf.get_u8()).expect("Invalid module type");
+
+        Ok(Some(HeaderFrame::Module(
+          specifier,
+          source_ptr,
+          source_map_ptr,
+          module_type,
+        )))
+      }
     }
   }
 }
@@ -133,8 +177,8 @@ impl Decoder for Reader {
 impl HeaderFrame {
   pub fn kind(&self) -> HeaderFrameKind {
     match self {
-      HeaderFrame::Module(_, _, _) => HeaderFrameKind::Module,
-      HeaderFrame::Redirect(_, _) => HeaderFrameKind::Redirect,
+      HeaderFrame::Module(..) => HeaderFrameKind::Module,
+      HeaderFrame::Redirect(..) => HeaderFrameKind::Redirect,
     }
   }
 }
