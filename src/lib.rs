@@ -1,4 +1,5 @@
 mod error;
+mod format;
 mod graph;
 mod loader;
 mod parser;
