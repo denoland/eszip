@@ -26,3 +26,5 @@ data-url = "0.1.0"
 
 [dev-dependencies]
 indicatif = "0.16"
+sha2 = "0.10.1"
+

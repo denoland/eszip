@@ -4,15 +4,15 @@ use std::convert::TryFrom;
 use tokio_util::codec::Decoder;
 
 #[derive(Debug, PartialEq)]
-struct DataPointer(usize, usize);
+pub struct DataPointer(usize, usize);
 
 #[repr(u8)]
 #[derive(Debug, PartialEq)]
 pub enum ModuleKind {
   TypeScript,
   JavaScript,
-  JSX,
-  TSX,
+  Jsx,
+  Tsx,
 }
 
 impl std::convert::TryFrom<u8> for ModuleKind {
@@ -22,8 +22,8 @@ impl std::convert::TryFrom<u8> for ModuleKind {
     match v {
       x if x == ModuleKind::TypeScript as u8 => Ok(ModuleKind::TypeScript),
       x if x == ModuleKind::JavaScript as u8 => Ok(ModuleKind::JavaScript),
-      x if x == ModuleKind::JSX as u8 => Ok(ModuleKind::JSX),
-      x if x == ModuleKind::TSX as u8 => Ok(ModuleKind::TSX),
+      x if x == ModuleKind::Jsx as u8 => Ok(ModuleKind::Jsx),
+      x if x == ModuleKind::Tsx as u8 => Ok(ModuleKind::Tsx),
       _ => Err(()),
     }
   }
@@ -38,6 +38,7 @@ pub enum HeaderFrame {
   Redirect(String, String),
 }
 
+#[derive(Debug, PartialEq)]
 #[repr(u8)]
 pub enum HeaderFrameKind {
   Module = 0,
@@ -58,7 +59,36 @@ impl std::convert::TryFrom<u8> for HeaderFrameKind {
   }
 }
 
-pub struct Reader;
+const ESZIP_V2: &[u8] = b"ESZIP_V2";
+
+pub struct Reader {
+  header_size: usize,
+  // Used to track the current position in the header
+  frame_offset: usize,
+  checksum: [u8; 32],
+}
+
+impl Default for Reader {
+  fn default() -> Self {
+    Self {
+      header_size: 0,
+      frame_offset: 0,
+      checksum: [0; 32],
+    }
+  }
+}
+
+impl Reader {
+  pub fn reset(&mut self) {
+    self.header_size = 0;
+    self.frame_offset = 0;
+    self.checksum = [0; 32];
+  }
+
+  pub fn checksum(&self) -> &[u8; 32] {
+    &self.checksum
+  }
+}
 
 // Eszip:
 // | Magic (8) | Header size (4) | Header (n) | Header hash (32) | Sources size (4) | Sources (n) | SourceMaps size (4) | SourceMaps (n) |
@@ -86,6 +116,44 @@ impl Decoder for Reader {
     &mut self,
     buf: &mut BytesMut,
   ) -> Result<Option<Self::Item>, Self::Error> {
+    if self.header_size == 0 {
+      // Enough to contain magic and header size
+      if buf.len() < 8 + 4 {
+        return Ok(None);
+      }
+
+      let magic = buf.split_to(8);
+      if magic != ESZIP_V2 {
+        return Err(std::io::Error::new(
+          std::io::ErrorKind::InvalidData,
+          "Invalid magic",
+        ));
+      }
+      self.header_size = buf.get_u32() as usize;
+    }
+
+    if self.frame_offset >= self.header_size {
+      if self.frame_offset > self.header_size + 32 {
+        // We're done.
+        return Ok(None);
+      }
+
+      // We've already read the header, but we're left with the
+      // checksum.
+      if buf.len() < 32 {
+        return Ok(None);
+      }
+
+      let mut checksum = [0; 32];
+      checksum.copy_from_slice(&buf.split_to(32));
+      self.checksum = checksum;
+      self.frame_offset += 32;
+
+      return Ok(None);
+    }
+
+    let initial_len = buf.len();
+
     // Not enough data
     if buf.len() < 4 {
       return Ok(None);
@@ -113,7 +181,7 @@ impl Decoder for Reader {
       HeaderFrameKind::try_from(entry_type).expect("Invalid entry type");
 
     let offset = 4 + specifier_size + 1;
-    match entry_kind {
+    let frame = match entry_kind {
       HeaderFrameKind::Redirect => {
         if buf.len() < offset + 4 {
           // Reserve space
@@ -140,7 +208,7 @@ impl Decoder for Reader {
 
         buf.advance(offset + 4 + source_size);
 
-        Ok(Some(HeaderFrame::Redirect(specifier, source)))
+        HeaderFrame::Redirect(specifier, source)
       }
       HeaderFrameKind::Module => {
         const FRAME_SIZE: usize = 4 * 4 + 1;
@@ -163,14 +231,12 @@ impl Decoder for Reader {
         let module_type =
           ModuleKind::try_from(buf.get_u8()).expect("Invalid module type");
 
-        Ok(Some(HeaderFrame::Module(
-          specifier,
-          source_ptr,
-          source_map_ptr,
-          module_type,
-        )))
+        HeaderFrame::Module(specifier, source_ptr, source_map_ptr, module_type)
       }
-    }
+    };
+
+    self.frame_offset += initial_len - buf.remaining();
+    Ok(Some(frame))
   }
 }
 
@@ -187,34 +253,80 @@ impl HeaderFrame {
 mod tests {
   use super::*;
   use bytes::BufMut;
+  use sha2::Digest;
 
-  fn encode_redirect(specifier: &str) -> BytesMut {
+  fn encode_redirect(specifier: &[u8], redirect: &[u8]) -> BytesMut {
     let mut buf = BytesMut::new();
-    let specifier = specifier.as_bytes();
 
     buf.put_u32(specifier.len() as u32);
     buf.put(specifier);
     buf.put_u8(HeaderFrameKind::Redirect as u8);
 
-    buf.put_u32(specifier.len() as u32);
-    buf.put(specifier);
+    buf.put_u32(redirect.len() as u32);
+    buf.put(redirect);
     buf
   }
 
+  fn wrap_header(header: &[BytesMut]) -> (BytesMut, Vec<u8>) {
+    let mut buf = BytesMut::new();
+    let headers = header.concat();
+    buf.put(ESZIP_V2);
+
+    buf.put_u32(headers.len() as u32);
+    buf.put(headers.as_ref());
+
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(headers);
+    let checksum = hasher.finalize();
+
+    buf.put(checksum.as_ref());
+    (buf, checksum.to_vec())
+  }
+
   #[test]
-  fn test_decode() {
-    let mut codec = Reader;
+  fn test_decode_header() {
+    let mut codec = Reader::default();
 
     let mut buf = BytesMut::new();
     assert_eq!(codec.decode(&mut buf).unwrap(), None);
 
-    let mut buf = encode_redirect("https://example.com/foo.js");
+    let (mut buf, _) = wrap_header(&[]);
+    assert_eq!(codec.decode(&mut buf).unwrap(), None);
+
+    codec.reset();
+    let (mut buf, _) = wrap_header(&[encode_redirect(
+      b"https://example.com/foo.js",
+      b"https://example.com/bar.js",
+    )]);
+
     assert_eq!(
       codec.decode(&mut buf).unwrap(),
       Some(HeaderFrame::Redirect(
         "https://example.com/foo.js".to_string(),
-        "https://example.com/foo.js".to_string()
+        "https://example.com/bar.js".to_string()
       ))
     );
+
+    codec.reset();
+    let redirect = encode_redirect(
+      b"https://example.com/foo.js",
+      b"https://example.com/bar.js",
+    );
+    let (mut buf, checksum) = wrap_header(&[redirect]);
+    buf.put(b"ignored".as_ref());
+    let frame = codec.decode(&mut buf).unwrap().unwrap();
+    assert_eq!(frame.kind(), HeaderFrameKind::Redirect);
+    assert_eq!(
+      frame,
+      HeaderFrame::Redirect(
+        "https://example.com/foo.js".to_string(),
+        "https://example.com/bar.js".to_string()
+      )
+    );
+    assert_eq!(buf.remaining(), 32 + 7);
+    assert_eq!(codec.decode(&mut buf).unwrap(), None);
+    assert_eq!(codec.checksum().to_vec(), checksum);
+    assert_eq!(buf.remaining(), 7);
+    assert_eq!(buf, b"ignored".as_ref());
   }
 }
