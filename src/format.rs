@@ -63,18 +63,16 @@ impl std::convert::TryFrom<u8> for HeaderFrameKind {
 const ESZIP_V2: &[u8] = b"ESZIP_V2";
 
 #[derive(Default)]
-pub struct Reader {
+pub struct Header {
   header_size: usize,
   // Used to track the current position in the header
   frame_offset: usize,
   checksum: [u8; 32],
 }
 
-impl Reader {
+impl Header {
   pub fn reset(&mut self) {
-    self.header_size = 0;
-    self.frame_offset = 0;
-    self.checksum = [0; 32];
+    *self = Default::default();
   }
 
   pub fn checksum(&self) -> &[u8; 32] {
@@ -100,7 +98,7 @@ impl Reader {
 // SourceMaps:
 // ( | SourceMap (n) | Hash (32) | )*
 //
-impl Decoder for Reader {
+impl Decoder for Header {
   type Item = HeaderFrame;
   type Error = std::io::Error;
 
@@ -338,7 +336,7 @@ mod tests {
 
   #[test]
   fn test_decode_header() {
-    let mut codec = Reader::default();
+    let mut codec = Header::default();
 
     let mut buf = BytesMut::new();
     assert_eq!(codec.decode(&mut buf).unwrap(), None);
@@ -408,7 +406,7 @@ mod tests {
 
   #[test]
   fn test_decode_mixed() {
-    let mut codec = Reader::default();
+    let mut codec = Header::default();
     let (module, data, maps) = encode_module(
       b"https://example.com/foo.js",
       b"source".as_ref(),
