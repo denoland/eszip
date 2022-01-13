@@ -1,6 +1,7 @@
 use bytes::Buf;
 use bytes::BytesMut;
 use std::convert::TryFrom;
+use std::ops::Range;
 use tokio_util::codec::Decoder;
 
 #[derive(Debug, PartialEq)]
@@ -61,21 +62,12 @@ impl std::convert::TryFrom<u8> for HeaderFrameKind {
 
 const ESZIP_V2: &[u8] = b"ESZIP_V2";
 
+#[derive(Default)]
 pub struct Reader {
   header_size: usize,
   // Used to track the current position in the header
   frame_offset: usize,
   checksum: [u8; 32],
-}
-
-impl Default for Reader {
-  fn default() -> Self {
-    Self {
-      header_size: 0,
-      frame_offset: 0,
-      checksum: [0; 32],
-    }
-  }
 }
 
 impl Reader {
@@ -247,6 +239,26 @@ impl HeaderFrame {
       HeaderFrame::Redirect(..) => HeaderFrameKind::Redirect,
     }
   }
+
+  pub fn source_range(&self) -> Option<Range<usize>> {
+    match self {
+      HeaderFrame::Module(_, source_ptr, _, _) => {
+        let DataPointer(start, size) = *source_ptr;
+        Some(start..start + size)
+      }
+      HeaderFrame::Redirect(..) => None,
+    }
+  }
+
+  pub fn source_map_range(&self) -> Option<Range<usize>> {
+    match self {
+      HeaderFrame::Module(_, _, source_map_ptr, _) => {
+        let DataPointer(start, size) = *source_map_ptr;
+        Some(start..start + size)
+      }
+      HeaderFrame::Redirect(..) => None,
+    }
+  }
 }
 
 #[cfg(test)]
@@ -265,6 +277,47 @@ mod tests {
     buf.put_u32(redirect.len() as u32);
     buf.put(redirect);
     buf
+  }
+
+  fn encode_module(
+    specifier: &[u8],
+    source: &[u8],
+    source_map: &[u8],
+    module_type: ModuleKind,
+    // Supply offset for the data section
+    maybe_offset: Option<u32>,
+    maybe_source_map_offset: Option<u32>,
+  ) -> (BytesMut, BytesMut, BytesMut) {
+    let mut buf = BytesMut::new();
+
+    buf.put_u32(specifier.len() as u32);
+    buf.put(specifier);
+    buf.put_u8(HeaderFrameKind::Module as u8);
+
+    let offset = maybe_offset.unwrap_or(0);
+    buf.put_u32(offset);
+    buf.put_u32(source.len() as u32);
+    let source_map_offset = maybe_source_map_offset.unwrap_or(0);
+    buf.put_u32(source_map_offset);
+    buf.put_u32(source_map.len() as u32);
+
+    buf.put_u8(module_type as u8);
+
+    let mut sources = BytesMut::new();
+    sources.put(source);
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(source);
+    let checksum = hasher.finalize();
+    sources.put(checksum.as_slice());
+
+    let mut source_maps = BytesMut::new();
+    source_maps.put(source_map);
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(source_map);
+    let checksum = hasher.finalize();
+    source_maps.put(checksum.as_slice());
+
+    (buf, sources, source_maps)
   }
 
   fn wrap_header(header: &[BytesMut]) -> (BytesMut, Vec<u8>) {
@@ -328,5 +381,105 @@ mod tests {
     assert_eq!(codec.checksum().to_vec(), checksum);
     assert_eq!(buf.remaining(), 7);
     assert_eq!(buf, b"ignored".as_ref());
+
+    codec.reset();
+    let (module, _, _) = encode_module(
+      b"https://example.com/foo.js",
+      b"source".as_ref(),
+      b"source_map".as_ref(),
+      ModuleKind::JavaScript,
+      None,
+      None,
+    );
+
+    let (mut buf, _) = wrap_header(&[module]);
+    let frame = codec.decode(&mut buf).unwrap().unwrap();
+    assert_eq!(frame.kind(), HeaderFrameKind::Module);
+    assert_eq!(
+      frame,
+      HeaderFrame::Module(
+        "https://example.com/foo.js".to_string(),
+        DataPointer(0, 6),
+        DataPointer(0, 10),
+        ModuleKind::JavaScript
+      )
+    );
+  }
+
+  #[test]
+  fn test_decode_mixed() {
+    let mut codec = Reader::default();
+    let (module, data, maps) = encode_module(
+      b"https://example.com/foo.js",
+      b"source".as_ref(),
+      b"source_map".as_ref(),
+      ModuleKind::JavaScript,
+      None,
+      None,
+    );
+    let (module2, data2, maps2) = encode_module(
+      b"https://example.com/bar.js",
+      b"source2".as_ref(),
+      b"source_map2".as_ref(),
+      ModuleKind::JavaScript,
+      Some(6),
+      Some(10),
+    );
+
+    let (mut buf, _) = wrap_header(&[
+      encode_redirect(
+        b"https://example.com/foo.js",
+        b"https://example.com/bar.js",
+      ),
+      module,
+      encode_redirect(
+        b"https://example.com/baz.js",
+        b"https://example.com/qux.js",
+      ),
+      module2,
+    ]);
+    buf.put(data.as_ref());
+    buf.put(data2.as_ref());
+    buf.put(maps.as_ref());
+    buf.put(maps2.as_ref());
+
+    let frame = codec.decode(&mut buf).unwrap().unwrap();
+    assert_eq!(frame.kind(), HeaderFrameKind::Redirect);
+    assert_eq!(
+      frame,
+      HeaderFrame::Redirect(
+        "https://example.com/foo.js".to_string(),
+        "https://example.com/bar.js".to_string()
+      )
+    );
+    let frame = codec.decode(&mut buf).unwrap().unwrap();
+    assert_eq!(frame.kind(), HeaderFrameKind::Module);
+    assert_eq!(&data[frame.source_range().unwrap()], b"source");
+    assert_eq!(
+      frame,
+      HeaderFrame::Module(
+        "https://example.com/foo.js".to_string(),
+        DataPointer(0, 6),
+        DataPointer(0, 10),
+        ModuleKind::JavaScript
+      )
+    );
+    assert_eq!(
+      codec.decode(&mut buf).unwrap(),
+      Some(HeaderFrame::Redirect(
+        "https://example.com/baz.js".to_string(),
+        "https://example.com/qux.js".to_string()
+      ))
+    );
+    assert_eq!(
+      codec.decode(&mut buf).unwrap(),
+      Some(HeaderFrame::Module(
+        "https://example.com/bar.js".to_string(),
+        DataPointer(6, 7),
+        DataPointer(10, 11),
+        ModuleKind::JavaScript
+      ))
+    );
+    assert_eq!(codec.decode(&mut buf).unwrap(), None);
   }
 }

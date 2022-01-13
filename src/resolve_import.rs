@@ -85,7 +85,7 @@ impl fmt::Display for ModuleResolutionError {
         specifier,
         match maybe_referrer {
           Some(referrer) => format!(" Imported from \"{}\"", referrer),
-          None => format!(""),
+          None => String::new(),
         }
       ),
     }
