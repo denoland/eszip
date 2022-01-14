@@ -335,6 +335,15 @@ mod tests {
   }
 
   #[test]
+  fn encode() {
+    let (mut buf, _) = wrap_header(&[encode_redirect(b"./a.js", b"./b.js")]);
+    // write to binary file
+    use std::io::Write;
+    let mut f = std::fs::File::create("loader.eszip").unwrap();
+    f.write_all(&buf).unwrap();
+  }
+
+  #[test]
   fn test_decode_header() {
     let mut codec = Header::default();
 

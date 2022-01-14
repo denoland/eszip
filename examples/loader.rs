@@ -1,5 +1,6 @@
 use deno_core::anyhow::Error;
 use deno_core::futures::FutureExt;
+use deno_core::futures::StreamExt;
 use deno_core::resolve_import;
 use deno_core::FsModuleLoader;
 use deno_core::JsRuntime;
@@ -8,19 +9,23 @@ use deno_core::ModuleSourceFuture;
 use deno_core::ModuleSpecifier;
 use deno_core::RuntimeOptions;
 use eszip::format::Header;
+use eszip::format::HeaderFrame;
 use eszip::load_reqwest;
 use eszip::none_middleware;
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::sync::Arc;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
+use tokio::sync::Mutex;
 use tokio_util::codec::Framed;
 
-pub struct StreamingLoader<T: AsyncRead + AsyncWrite> {
-  header: Framed<T, Header>,
+pub struct StreamingLoader {
+  headers: Arc<Mutex<HashMap<String, HeaderFrame>>>,
 }
 
-impl<T: AsyncRead + AsyncWrite> ModuleLoader for StreamingLoader<T> {
+impl ModuleLoader for StreamingLoader {
   fn resolve(
     &self,
     specifier: &str,
@@ -32,11 +37,23 @@ impl<T: AsyncRead + AsyncWrite> ModuleLoader for StreamingLoader<T> {
 
   fn load(
     &self,
-    _module_specifier: &ModuleSpecifier,
+    module_specifier: &ModuleSpecifier,
     _maybe_referrer: Option<ModuleSpecifier>,
     _is_dyn_import: bool,
   ) -> Pin<Box<ModuleSourceFuture>> {
-    async { unimplemented!() }.boxed_local()
+    let headers = Arc::clone(&self.headers);
+    let specifier = module_specifier.to_string();
+    async move {
+      let headers = headers.lock().await;
+      let frame = headers.get(specifier.as_str()).unwrap();
+      match frame {
+        HeaderFrame::Module(..) => {}
+        HeaderFrame::Redirect(..) => {}
+      };
+
+      unimplemented!()
+    }
+    .boxed_local()
   }
 }
 
@@ -55,8 +72,10 @@ async fn main() -> Result<(), Error> {
 
   let fd = tokio::fs::File::open(eszip).await?;
 
+  let framed = Framed::new(fd, Header::default());
+  let headers = Arc::new(Mutex::new(HashMap::new()));
   let loader = StreamingLoader {
-    header: Framed::new(fd, Header::default()),
+    headers: headers.clone(),
   };
 
   let mut js_runtime = JsRuntime::new(RuntimeOptions {
@@ -66,6 +85,17 @@ async fn main() -> Result<(), Error> {
 
   let main_module = deno_core::resolve_path(&main_url)?;
 
+  framed
+    .for_each(|frame| async {
+      let frame = frame.unwrap();
+      let specifier = match frame {
+        HeaderFrame::Module(ref specifier, ..) => specifier,
+        HeaderFrame::Redirect(ref specifier, ..) => specifier,
+      };
+
+      headers.lock().await.insert(specifier.to_string(), frame);
+    })
+    .await;
   let mod_id = js_runtime.load_main_module(&main_module, None).await?;
   let _ = js_runtime.mod_evaluate(mod_id);
   js_runtime.run_event_loop(false).await?;
