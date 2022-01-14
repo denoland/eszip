@@ -5,23 +5,29 @@ use deno_core::resolve_import;
 use deno_core::FsModuleLoader;
 use deno_core::JsRuntime;
 use deno_core::ModuleLoader;
+use deno_core::ModuleSource;
 use deno_core::ModuleSourceFuture;
 use deno_core::ModuleSpecifier;
+use deno_core::ModuleType;
 use deno_core::RuntimeOptions;
 use eszip::format::Header;
 use eszip::format::HeaderFrame;
 use eszip::load_reqwest;
 use eszip::none_middleware;
+use futures::future::poll_fn;
+use futures::task::Context;
+use futures::task::Poll;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::Mutex;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
-use tokio::sync::Mutex;
 use tokio_util::codec::Framed;
 
 pub struct StreamingLoader {
+  // TODO(@littledivy): Use `url::Url`
   headers: Arc<Mutex<HashMap<String, HeaderFrame>>>,
 }
 
@@ -44,14 +50,31 @@ impl ModuleLoader for StreamingLoader {
     let headers = Arc::clone(&self.headers);
     let specifier = module_specifier.to_string();
     async move {
-      let headers = headers.lock().await;
-      let frame = headers.get(specifier.as_str()).unwrap();
-      match frame {
-        HeaderFrame::Module(..) => {}
-        HeaderFrame::Redirect(..) => {}
+      let frame = poll_fn(|ctx| {
+        println!("polling for {}", specifier);
+        match headers.lock().unwrap().get(specifier.as_str()).cloned() {
+          Some(frame) => Poll::Ready(frame),
+          None => {
+            let waker = ctx.waker().clone();
+            waker.wake();
+            Poll::Pending
+          }
+        }
+      })
+      .await;
+
+      println!("{:?}", frame);
+      let url = match frame {
+        HeaderFrame::Module(specifier, ..) => specifier,
+        HeaderFrame::Redirect(..) => unimplemented!(),
       };
 
-      unimplemented!()
+      Ok(ModuleSource {
+        code: "".to_string(),
+        module_url_specified: specifier.to_string(),
+        module_url_found: url,
+        module_type: ModuleType::JavaScript,
+      })
     }
     .boxed_local()
   }
@@ -83,19 +106,21 @@ async fn main() -> Result<(), Error> {
     ..Default::default()
   });
 
-  let main_module = deno_core::resolve_path(&main_url)?;
+  let main_module = "file://main.js/".parse().unwrap();
+  tokio::spawn(async move {
+    framed
+      .for_each(|frame| async {
+        if let Ok(frame) = frame {
+          let specifier = match frame {
+            HeaderFrame::Module(ref specifier, ..) => specifier,
+            HeaderFrame::Redirect(ref specifier, ..) => specifier,
+          };
 
-  framed
-    .for_each(|frame| async {
-      let frame = frame.unwrap();
-      let specifier = match frame {
-        HeaderFrame::Module(ref specifier, ..) => specifier,
-        HeaderFrame::Redirect(ref specifier, ..) => specifier,
-      };
-
-      headers.lock().await.insert(specifier.to_string(), frame);
-    })
-    .await;
+          headers.lock().unwrap().insert(specifier.to_string(), frame);
+        }
+      })
+      .await;
+  });
   let mod_id = js_runtime.load_main_module(&main_module, None).await?;
   let _ = js_runtime.mod_evaluate(mod_id);
   js_runtime.run_event_loop(false).await?;

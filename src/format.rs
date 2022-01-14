@@ -4,11 +4,11 @@ use std::convert::TryFrom;
 use std::ops::Range;
 use tokio_util::codec::Decoder;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DataPointer(usize, usize);
 
 #[repr(u8)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ModuleKind {
   TypeScript,
   JavaScript,
@@ -30,7 +30,7 @@ impl std::convert::TryFrom<u8> for ModuleKind {
   }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum HeaderFrame {
   // specifier => (offset, length) pointer to data section
   // TODO(@littledivy): move this to a struct
