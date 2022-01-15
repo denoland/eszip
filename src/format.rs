@@ -5,7 +5,7 @@ use std::ops::Range;
 use tokio_util::codec::Decoder;
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct DataPointer(usize, usize);
+pub struct DataPointer(pub usize, pub usize);
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
@@ -64,7 +64,7 @@ const ESZIP_V2: &[u8] = b"ESZIP_V2";
 
 #[derive(Default)]
 pub struct Header {
-  header_size: usize,
+  pub header_size: usize,
   // Used to track the current position in the header
   frame_offset: usize,
   checksum: [u8; 32],

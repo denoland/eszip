@@ -2,7 +2,6 @@ use deno_core::anyhow::Error;
 use deno_core::futures::FutureExt;
 use deno_core::futures::StreamExt;
 use deno_core::resolve_import;
-use deno_core::FsModuleLoader;
 use deno_core::JsRuntime;
 use deno_core::ModuleLoader;
 use deno_core::ModuleSource;
@@ -12,7 +11,7 @@ use deno_core::ModuleType;
 use deno_core::RuntimeOptions;
 use eszip::format::Header;
 use eszip::format::HeaderFrame;
-use eszip::load_reqwest;
+use eszip::format::ModuleKind;
 use futures::future::poll_fn;
 use futures::task::Poll;
 use std::collections::HashMap;
@@ -23,18 +22,25 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncSeekExt;
+use tokio::sync::oneshot;
 use tokio_util::codec::Framed;
 
-pub struct StreamingLoader<R: AsyncReadExt + AsyncSeekExt + Unpin> {
+pub struct StreamingLoader {
   // TODO(@littledivy): Use `url::Url`
-  headers: Arc<Mutex<HashMap<String, HeaderFrame>>>,
-  buf: Arc<Mutex<R>>,
-  header_size: Arc<Mutex<usize>>,
+  headers: Arc<Mutex<HashMap<String, SourceSlot>>>,
 }
 
-impl<R: AsyncReadExt + AsyncSeekExt + Unpin + 'static> ModuleLoader
-  for StreamingLoader<R>
-{
+enum SourceSlot {
+  Ready(Source),
+  Needed(oneshot::Sender<()>),
+}
+
+enum Source {
+  Module { kind: ModuleKind, source: Vec<u8> },
+  Redirect(Vec<u8>),
+}
+
+impl ModuleLoader for StreamingLoader {
   fn resolve(
     &self,
     specifier: &str,
@@ -51,54 +57,35 @@ impl<R: AsyncReadExt + AsyncSeekExt + Unpin + 'static> ModuleLoader
     _is_dyn_import: bool,
   ) -> Pin<Box<ModuleSourceFuture>> {
     let headers = Arc::clone(&self.headers);
-    let buf = Arc::clone(&self.buf);
-    let header_size = Arc::clone(&self.header_size);
     let specifier = module_specifier.to_string();
     async move {
-      // FIXME: Can this be neater?
-      let (frame, header_size) = poll_fn(|ctx| {
-        match (
-          headers.lock().unwrap().get(specifier.as_str()).cloned(),
-          *header_size.lock().unwrap(),
-        ) {
-          (Some(frame), size) if size != 0 => Poll::Ready((frame, size)),
-          (None, _) | (Some(_), 0) | _ => {
-            // FIXME: Don't wake immediately
-            let waker = ctx.waker().clone();
-            waker.wake();
-            Poll::Pending
-          }
-        }
-      })
-      .await;
-
-      println!("{:?}", frame);
-      let (url, start, size) = match frame {
-        HeaderFrame::Module(specifier, source_ptr, ..) => {
-          (specifier, source_ptr.0, source_ptr.1)
-        }
-        // FIXME: Maybe poll here for source here?
-        HeaderFrame::Redirect(..) => unimplemented!(),
+      let mut sources = headers.lock().unwrap();
+      println!("load: {}", specifier);
+      if sources.get(&specifier).is_none() {
+        let (tx, rx) = oneshot::channel();
+        sources.insert(specifier.clone(), SourceSlot::Needed(tx));
+        // Drops the lock for the sender.
+        // Important otherwise it's a deadlock.
+        drop(sources);
+        rx.await.unwrap();
       };
 
-      let mut buf = buf.lock().unwrap();
-      // FIXME: Offset calculation hack.
-      // Maybe offsets should be from the beginning of the file
-      // instead of the data section?
-      buf
-        .seek(std::io::SeekFrom::Start(
-          (8 + 32 + 4 + header_size + start) as u64,
-        ))
-        .await?;
-      let mut source = vec![0u8; size];
-      buf.read(&mut source).await?;
-
-      let code = String::from_utf8_lossy(&source).to_string();
-      println!("Source: {} HeaderSize: {}", code, header_size);
+      // Re-acquire the lock.
+      let sources = headers.lock().unwrap();
+      let slot = sources.get(&specifier).unwrap();
+      let source = match slot {
+        SourceSlot::Ready(Source::Module { source, .. }) => source,
+        SourceSlot::Ready(Source::Redirect(source)) => source,
+        SourceSlot::Needed(_) => {
+          unreachable!()
+        }
+      };
+      let code = String::from_utf8_lossy(source).to_string();
+      println!("code: {}", code);
       Ok(ModuleSource {
         code,
         module_url_specified: specifier.to_string(),
-        module_url_found: url,
+        module_url_found: specifier.to_string(),
         module_type: ModuleType::JavaScript,
       })
     }
@@ -115,7 +102,7 @@ async fn main() -> Result<(), Error> {
   }
   let eszip = args[1].clone();
 
-  let fd = tokio::fs::File::open(eszip).await?;
+  let mut fd = tokio::fs::File::open(eszip).await?;
 
   let mut framed =
     Framed::new(fd.try_clone().await.unwrap(), Header::default());
@@ -123,9 +110,7 @@ async fn main() -> Result<(), Error> {
   let headers = Arc::new(Mutex::new(HashMap::new()));
   let size = Arc::new(Mutex::new(0));
   let loader = StreamingLoader {
-    headers: headers.clone(),
-    buf: Arc::new(Mutex::new(fd)),
-    header_size: size.clone(),
+    headers: Arc::clone(&headers),
   };
 
   let mut js_runtime = JsRuntime::new(RuntimeOptions {
@@ -135,22 +120,38 @@ async fn main() -> Result<(), Error> {
 
   let main_module = "file://main.js/".parse().unwrap();
   tokio::spawn(async move {
-    let mut sent_size = false;
     while let Some(frame) = framed.next().await {
       if let Ok(frame) = frame {
-        if !sent_size {
-          *size.lock().unwrap() = framed.codec().header_size;
-          sent_size = true;
-        }
-        let specifier = match frame {
-          HeaderFrame::Module(ref specifier, ..) => specifier,
-          HeaderFrame::Redirect(ref specifier, ..) => specifier,
+        let (specifier, start, size, kind) = match frame {
+          HeaderFrame::Module(ref specifier, ptr, _, kind) => {
+            (specifier, ptr.0, ptr.1, kind)
+          }
+          // TODO(@littledivy): Handle redirects
+          HeaderFrame::Redirect(ref specifier, ..) => continue,
         };
+        // TODO(@littledivy): Codec should calculate the offset
+        let start = 8 + 32 + 4 + framed.codec().header_size + start;
+        println!("start: {}", start);
+        fd.seek(std::io::SeekFrom::Start(start as u64))
+          .await
+          .unwrap();
+        let mut source = vec![0; size];
+        fd.read_exact(&mut source).await.unwrap();
 
-        headers.lock().unwrap().insert(specifier.to_string(), frame);
+        match headers.lock().unwrap().insert(
+          specifier.to_string(),
+          SourceSlot::Ready(Source::Module { kind, source }),
+        ) {
+          Some(SourceSlot::Needed(tx)) => {
+            println!("send: {}", specifier);
+            tx.send(()).unwrap()
+          }
+          _ => {}
+        };
       }
     }
   });
+
   let mod_id = js_runtime.load_main_module(&main_module, None).await?;
   let _ = js_runtime.mod_evaluate(mod_id);
   js_runtime.run_event_loop(false).await?;
