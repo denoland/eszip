@@ -5,7 +5,17 @@ use std::ops::Range;
 use tokio_util::codec::Decoder;
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct DataPointer(pub usize, pub usize);
+pub struct DataPointer(usize, usize);
+
+impl DataPointer {
+  pub fn offset(&self) -> usize {
+    self.0
+  }
+
+  pub fn size(&self) -> usize {
+    self.1
+  }
+}
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
@@ -64,7 +74,7 @@ const ESZIP_V2: &[u8] = b"ESZIP_V2";
 
 #[derive(Default)]
 pub struct Header {
-  pub header_size: usize,
+  header_size: usize,
   // Used to track the current position in the header
   frame_offset: usize,
   checksum: [u8; 32],
@@ -77,6 +87,13 @@ impl Header {
 
   pub fn checksum(&self) -> &[u8; 32] {
     &self.checksum
+  }
+
+  /// Size of the file header (in bytes) from the beginning.
+  /// Useful for calculating the offset of the data section.
+  pub fn header_size(&self) -> usize {
+    // magic + size marker (n) + n + checksum
+    8 + 4 + self.header_size + 32
   }
 }
 
@@ -332,6 +349,43 @@ mod tests {
 
     buf.put(checksum.as_ref());
     (buf, checksum.to_vec())
+  }
+
+  #[test]
+  fn encode() {
+    let main_source =
+      b"import { add } from 'file://add_redirect.js'; add(1, 2);";
+    let (module, data, maps) = encode_module(
+      b"file://main.js",
+      main_source.as_ref(),
+      b"".as_ref(),
+      ModuleKind::JavaScript,
+      None,
+      None,
+    );
+    let (module2, data2, maps2) = encode_module(
+      b"file://add.js",
+      b"export function add(a, b) { a + b }".as_ref(),
+      b"".as_ref(),
+      ModuleKind::JavaScript,
+      Some(data.len() as u32),
+      Some(maps.len() as u32),
+    );
+
+    let (mut buf, _) = wrap_header(&[
+      encode_redirect(b"file://add_redirect.js", b"file://add.js"),
+      module,
+      module2,
+    ]);
+    buf.put(data.as_ref());
+    buf.put(data2.as_ref());
+    buf.put(maps.as_ref());
+    buf.put(maps2.as_ref());
+
+    use std::fs::File;
+    use std::io::Write;
+    let mut f = File::create("loader.eszip").unwrap();
+    f.write_all(buf.as_ref()).unwrap();
   }
 
   #[test]
