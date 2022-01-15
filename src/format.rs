@@ -352,43 +352,6 @@ mod tests {
   }
 
   #[test]
-  fn encode() {
-    let main_source =
-      b"import { add } from 'file://add_redirect.js'; add(1, 2);";
-    let (module, data, maps) = encode_module(
-      b"file://main.js",
-      main_source.as_ref(),
-      b"".as_ref(),
-      ModuleKind::JavaScript,
-      None,
-      None,
-    );
-    let (module2, data2, maps2) = encode_module(
-      b"file://add.js",
-      b"export function add(a, b) { a + b }".as_ref(),
-      b"".as_ref(),
-      ModuleKind::JavaScript,
-      Some(data.len() as u32),
-      Some(maps.len() as u32),
-    );
-
-    let (mut buf, _) = wrap_header(&[
-      encode_redirect(b"file://add_redirect.js", b"file://add.js"),
-      module,
-      module2,
-    ]);
-    buf.put(data.as_ref());
-    buf.put(data2.as_ref());
-    buf.put(maps.as_ref());
-    buf.put(maps2.as_ref());
-
-    use std::fs::File;
-    use std::io::Write;
-    let mut f = File::create("loader.eszip").unwrap();
-    f.write_all(buf.as_ref()).unwrap();
-  }
-
-  #[test]
   fn test_decode_header() {
     let mut codec = Header::default();
 

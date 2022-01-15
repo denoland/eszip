@@ -33,7 +33,11 @@ enum SourceSlot {
 }
 
 enum Source {
-  Module { kind: ModuleKind, source: Vec<u8> },
+  Module {
+    #[allow(dead_code)]
+    kind: ModuleKind,
+    source: Vec<u8>,
+  },
   Redirect(Url),
 }
 
@@ -165,17 +169,14 @@ async fn main() -> Result<(), Error> {
         let mut source = vec![0; size];
         fd.read_exact(&mut source).await.unwrap();
 
-        match headers.lock().unwrap().insert(
+        if let Some(SourceSlot::Needed(tx)) = headers.lock().unwrap().insert(
           Url::parse(specifier).unwrap(),
           SourceSlot::Ready(Source::Module { kind, source }),
         ) {
           // module loader is waiting for this module.
           // let it know it's ready.
-          Some(SourceSlot::Needed(tx)) => {
-            println!("[parse] notify: {}", specifier);
-            tx.send(()).unwrap()
-          }
-          _ => {}
+          println!("[parse] notify: {}", specifier);
+          tx.send(()).unwrap()
         };
       }
     }
