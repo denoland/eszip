@@ -30,7 +30,6 @@ pub struct StreamingLoader {
 enum SourceSlot {
   Ready(Source),
   Needed(oneshot::Sender<()>),
-  Pending,
 }
 
 enum Source {
@@ -58,10 +57,10 @@ impl ModuleLoader for StreamingLoader {
     let specifier = module_specifier.to_owned();
     async move {
       let mut sources = headers.lock().unwrap();
-      println!("load: {}", specifier);
+      println!("[loader] load: {}", specifier);
 
       let new_specifier = match sources.get(&specifier) {
-        None | Some(SourceSlot::Pending) => {
+        None => {
           let (tx, rx) = oneshot::channel();
           sources.insert(specifier.clone(), SourceSlot::Needed(tx));
           // Drops the lock for the sender.
@@ -71,10 +70,10 @@ impl ModuleLoader for StreamingLoader {
           specifier.clone()
         }
         Some(SourceSlot::Ready(Source::Redirect(redirect))) => {
-          println!("redirect: {}", redirect);
+          println!("[loader] redirect: {}", redirect);
           let redirect = redirect.clone();
           match sources.get(&redirect) {
-            None | Some(SourceSlot::Pending) => {
+            None => {
               let (tx, rx) = oneshot::channel();
               sources.insert(redirect.clone(), SourceSlot::Needed(tx));
               // Drops the lock for the sender.
@@ -95,12 +94,12 @@ impl ModuleLoader for StreamingLoader {
       let slot = sources.get(&new_specifier).unwrap();
       let source = match slot {
         SourceSlot::Ready(Source::Module { source, .. }) => source,
-        SourceSlot::Needed(_) | SourceSlot::Pending | _ => {
+        _ => {
           unreachable!()
         }
       };
       let code = String::from_utf8_lossy(source).to_string();
-      println!("code: {}", code);
+      println!("[loader] code: {}", code);
       Ok(ModuleSource {
         code,
         module_url_specified: specifier.to_string(),
@@ -142,10 +141,11 @@ async fn main() -> Result<(), Error> {
       if let Ok(frame) = frame {
         let (specifier, start, size, kind) = match frame {
           HeaderFrame::Module(ref specifier, ptr, _, kind) => {
+            println!("[parse] module: {}", specifier);
             (specifier, ptr.offset(), ptr.size(), kind)
           }
           HeaderFrame::Redirect(ref specifier, ref redirect) => {
-            println!("redirect: {} -> {}", specifier, redirect);
+            println!("[parse] redirect: {} -> {}", specifier, redirect);
             let mut headers = headers.lock().unwrap();
             headers.insert(
               Url::parse(specifier).unwrap(),
@@ -165,27 +165,26 @@ async fn main() -> Result<(), Error> {
         let mut source = vec![0; size];
         fd.read_exact(&mut source).await.unwrap();
 
-        println!("send: {}", specifier);
         match headers.lock().unwrap().insert(
           Url::parse(specifier).unwrap(),
           SourceSlot::Ready(Source::Module { kind, source }),
         ) {
           // module loader is waiting for this module.
           // let it know it's ready.
-          Some(SourceSlot::Needed(tx)) => tx.send(()).unwrap(),
-          Some(SourceSlot::Pending) => {
-            println!("pending: {}", specifier);
+          Some(SourceSlot::Needed(tx)) => {
+            println!("[parse] notify: {}", specifier);
+            tx.send(()).unwrap()
           }
           _ => {}
         };
       }
     }
+
+    println!("[parse] done");
   });
 
   let mod_id = js_runtime.load_main_module(&main_module, None).await?;
   let _ = js_runtime.mod_evaluate(mod_id);
-  println!("done");
-
   js_runtime.run_event_loop(false).await?;
   Ok(())
 }
