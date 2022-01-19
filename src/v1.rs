@@ -39,7 +39,7 @@ impl EsZipV1 {
     serde_json::to_vec(&self).unwrap()
   }
 
-  pub fn get_module<'a>(&'a self, specifier: &str) -> Option<Module> {
+  pub fn get_module(&self, specifier: &str) -> Option<Module> {
     let mut specifier = &Url::parse(specifier).ok()?;
     let mut visited = HashSet::new();
     loop {

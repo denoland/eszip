@@ -201,7 +201,7 @@ impl EsZipV2 {
       while read < sources_len {
         let (length, specifier) = source_offsets
           .remove(&read)
-          .ok_or_else(|| ParseError::InvalidV2SourceOffset(read))?;
+          .ok_or(ParseError::InvalidV2SourceOffset(read))?;
 
         let mut source_bytes = vec![0u8; length];
         reader.read_exact(&mut source_bytes).await?;
@@ -245,7 +245,7 @@ impl EsZipV2 {
       while read < source_maps_len {
         let (length, specifier) = source_map_offsets
           .remove(&read)
-          .ok_or_else(|| ParseError::InvalidV2SourceOffset(read))?;
+          .ok_or(ParseError::InvalidV2SourceOffset(read))?;
 
         let mut source_map_bytes = vec![0u8; length];
         reader.read_exact(&mut source_map_bytes).await?;
@@ -317,7 +317,7 @@ impl EsZipV2 {
           let source_bytes = source.bytes();
           let source_length = source_bytes.len() as u32;
           let source_offset = sources.len() as u32;
-          sources.extend_from_slice(&source_bytes);
+          sources.extend_from_slice(source_bytes);
           let mut hasher = Sha256::new();
           hasher.update(source_bytes);
           let source_hash = hasher.finalize();
@@ -330,7 +330,7 @@ impl EsZipV2 {
           let source_map_bytes = source_map.bytes();
           let source_map_length = source_map_bytes.len() as u32;
           let source_map_offset = source_maps.len() as u32;
-          source_maps.extend_from_slice(&source_map_bytes);
+          source_maps.extend_from_slice(source_map_bytes);
           let mut hasher = Sha256::new();
           hasher.update(source_map_bytes);
           let source_map_hash = hasher.finalize();
