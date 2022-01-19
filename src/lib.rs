@@ -70,8 +70,8 @@ impl Module {
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ModuleKind {
-  JS = 0,
-  JSON = 1,
+  JavaScript = 0,
+  Json = 1,
 }
 
 // #[cfg(test)]

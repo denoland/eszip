@@ -78,8 +78,8 @@ impl deno_core::ModuleLoader for Loader {
       Ok(deno_core::ModuleSource {
         code: source.to_string(),
         module_type: match module.kind {
-          eszip::ModuleKind::JS => deno_core::ModuleType::JavaScript,
-          eszip::ModuleKind::JSON => deno_core::ModuleType::Json,
+          eszip::ModuleKind::JavaScript => deno_core::ModuleType::JavaScript,
+          eszip::ModuleKind::Json => deno_core::ModuleType::Json,
         },
         module_url_found: module.specifier,
         module_url_specified: module_specifier.to_string(),

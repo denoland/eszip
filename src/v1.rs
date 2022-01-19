@@ -55,7 +55,7 @@ impl EsZipV1 {
         ModuleInfo::Source(source) => {
           let module = Module {
             specifier: specifier.to_string(),
-            kind: ModuleKind::JS,
+            kind: ModuleKind::JavaScript,
             inner: ModuleInner::V1(source.source.as_bytes().to_owned()),
           };
           return Some(module);
