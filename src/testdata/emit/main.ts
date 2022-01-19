@@ -1,2 +1,1 @@
 export * as a from "./a.ts";
-//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbImZpbGU6Ly8vbWFpbi50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJleHBvcnQgKiBhcyBhIGZyb20gXCIuL2EudHNcIjtcbiJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiQUFBQSxNQUFNLE1BQU0sQ0FBQyxNQUFNLENBQVEifQ==

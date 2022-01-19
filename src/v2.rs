@@ -514,123 +514,164 @@ impl EsZipV2 {
   }
 }
 
-// #[cfg(test)]
-// mod tests {
-//   use std::path::Path;
-//   use std::sync::Arc;
+#[cfg(test)]
+mod tests {
+  use std::io::Cursor;
+  use std::path::Path;
+  use std::sync::Arc;
 
-//   use deno_graph::source::LoadResponse;
-//   use deno_graph::ModuleSpecifier;
-//   use url::Url;
+  use deno_graph::source::LoadResponse;
+  use deno_graph::ModuleSpecifier;
+  use tokio::io::BufReader;
+  use url::Url;
 
-//   use crate::ModuleType;
+  use crate::ModuleKind;
 
-//   struct FileLoader;
+  struct FileLoader;
 
-//   impl deno_graph::source::Loader for FileLoader {
-//     fn load(
-//       &mut self,
-//       specifier: &ModuleSpecifier,
-//       is_dynamic: bool,
-//     ) -> deno_graph::source::LoadFuture {
-//       assert!(!is_dynamic);
-//       assert_eq!(specifier.scheme(), "file");
-//       let path = format!("./src/testdata/source{}", specifier.path());
-//       Box::pin(async move {
-//         let path = Path::new(&path);
-//         let resolved = path.canonicalize().unwrap();
-//         let source = tokio::fs::read_to_string(&resolved).await.unwrap();
-//         let specifier =
-//           resolved.file_name().unwrap().to_string_lossy().to_string();
-//         let specifier = Url::parse(&format!("file:///{}", specifier)).unwrap();
-//         Ok(Some(LoadResponse {
-//           content: Arc::new(source),
-//           maybe_headers: None,
-//           specifier,
-//         }))
-//       })
-//     }
-//   }
+  impl deno_graph::source::Loader for FileLoader {
+    fn load(
+      &mut self,
+      specifier: &ModuleSpecifier,
+      is_dynamic: bool,
+    ) -> deno_graph::source::LoadFuture {
+      assert!(!is_dynamic);
+      assert_eq!(specifier.scheme(), "file");
+      let path = format!("./src/testdata/source{}", specifier.path());
+      Box::pin(async move {
+        let path = Path::new(&path);
+        let resolved = path.canonicalize().unwrap();
+        let source = tokio::fs::read_to_string(&resolved).await.unwrap();
+        let specifier =
+          resolved.file_name().unwrap().to_string_lossy().to_string();
+        let specifier = Url::parse(&format!("file:///{}", specifier)).unwrap();
+        Ok(Some(LoadResponse {
+          content: Arc::new(source),
+          maybe_headers: None,
+          specifier,
+        }))
+      })
+    }
+  }
 
-//   #[tokio::test]
-//   async fn from_graph_redirect() {
-//     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
-//     let graph = deno_graph::create_graph(
-//       roots,
-//       false,
-//       None,
-//       &mut FileLoader,
-//       None,
-//       None,
-//       None,
-//       None,
-//     )
-//     .await;
-//     graph.valid().unwrap();
-//     let eszip = super::EsZipV2::from_graph(graph).unwrap();
-//     let module = eszip.get_module("file:///main.ts").unwrap();
-//     assert_eq!(module.specifier, "file:///main.ts");
-//     assert_eq!(&*module.source, include_bytes!("./testdata/emit/main.ts"));
-//     assert_eq!(module.r#type, ModuleType::JS);
-//     let module = eszip.get_module("file:///a.ts").unwrap();
-//     assert_eq!(module.specifier, "file:///b.ts");
-//     assert_eq!(&*module.source, include_bytes!("./testdata/emit/b.ts"));
-//     assert_eq!(module.r#type, ModuleType::JS);
-//   }
+  #[tokio::test]
+  async fn from_graph_redirect() {
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let graph = deno_graph::create_graph(
+      roots,
+      false,
+      None,
+      &mut FileLoader,
+      None,
+      None,
+      None,
+      None,
+    )
+    .await;
+    graph.valid().unwrap();
+    let eszip = super::EsZipV2::from_graph(graph).unwrap();
+    let module = eszip.get_module("file:///main.ts").unwrap();
+    assert_eq!(module.specifier, "file:///main.ts");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/emit/main.ts"));
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, include_bytes!("./testdata/emit/main.ts.map"));
+    assert_eq!(module.kind, ModuleKind::JS);
+    let module = eszip.get_module("file:///a.ts").unwrap();
+    assert_eq!(module.specifier, "file:///b.ts");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/emit/b.ts"));
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, include_bytes!("./testdata/emit/b.ts.map"));
+    assert_eq!(module.kind, ModuleKind::JS);
+  }
 
-//   #[tokio::test]
-//   async fn from_graph_json() {
-//     let roots = vec![ModuleSpecifier::parse("file:///json.ts").unwrap()];
-//     let graph = deno_graph::create_graph(
-//       roots,
-//       false,
-//       None,
-//       &mut FileLoader,
-//       None,
-//       None,
-//       None,
-//       None,
-//     )
-//     .await;
-//     graph.valid().unwrap();
-//     let eszip = super::EsZipV2::from_graph(graph).unwrap();
-//     let module = eszip.get_module("file:///json.ts").unwrap();
-//     assert_eq!(module.specifier, "file:///json.ts");
-//     assert_eq!(&*module.source, include_bytes!("./testdata/emit/json.ts"));
-//     assert_eq!(module.r#type, ModuleType::JS);
-//     let module = eszip.get_module("file:///data.json").unwrap();
-//     assert_eq!(module.specifier, "file:///data.json");
-//     assert_eq!(&*module.source, include_bytes!("./testdata/emit/data.json"));
-//     assert_eq!(module.r#type, ModuleType::JSON);
-//   }
+  #[tokio::test]
+  async fn from_graph_json() {
+    let roots = vec![ModuleSpecifier::parse("file:///json.ts").unwrap()];
+    let graph = deno_graph::create_graph(
+      roots,
+      false,
+      None,
+      &mut FileLoader,
+      None,
+      None,
+      None,
+      None,
+    )
+    .await;
+    graph.valid().unwrap();
+    let eszip = super::EsZipV2::from_graph(graph).unwrap();
+    let module = eszip.get_module("file:///json.ts").unwrap();
+    assert_eq!(module.specifier, "file:///json.ts");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/emit/json.ts"));
+    let _source_map = module.source_map().await.unwrap();
+    assert_eq!(module.kind, ModuleKind::JS);
+    let module = eszip.get_module("file:///data.json").unwrap();
+    assert_eq!(module.specifier, "file:///data.json");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/emit/data.json"));
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, &[0; 0]);
+    assert_eq!(module.kind, ModuleKind::JSON);
+  }
 
-//   #[test]
-//   fn file_format_parse() {
-//     let data = include_bytes!("./testdata/redirect.eszip2");
-//     let eszip = super::EsZipV2::parse(data).unwrap();
-//     let module = eszip.get_module("file:///main.ts").unwrap();
-//     assert_eq!(module.specifier, "file:///main.ts");
-//     assert_eq!(&*module.source, include_bytes!("./testdata/emit/main.ts"));
-//     assert_eq!(module.r#type, ModuleType::JS);
-//     let module = eszip.get_module("file:///a.ts").unwrap();
-//     assert_eq!(module.specifier, "file:///b.ts");
-//     assert_eq!(&*module.source, include_bytes!("./testdata/emit/b.ts"));
-//     assert_eq!(module.r#type, ModuleType::JS);
-//   }
+  #[tokio::test]
+  async fn file_format_parse() {
+    let file = tokio::fs::File::open("./src/testdata/redirect.eszip2")
+      .await
+      .unwrap();
+    let (eszip, fut) =
+      super::EsZipV2::parse(BufReader::new(file)).await.unwrap();
 
-//   #[test]
-//   fn file_format_roundtrippable() {
-//     let original = include_bytes!("./testdata/redirect.eszip2");
-//     let eszip = super::EsZipV2::parse(original).unwrap();
-//     let new = eszip.to_vec();
-//     let eszip = super::EsZipV2::parse(&new).unwrap();
-//     let module = eszip.get_module("file:///main.ts").unwrap();
-//     assert_eq!(module.specifier, "file:///main.ts");
-//     assert_eq!(&*module.source, include_bytes!("./testdata/emit/main.ts"));
-//     assert_eq!(module.r#type, ModuleType::JS);
-//     let module = eszip.get_module("file:///a.ts").unwrap();
-//     assert_eq!(module.specifier, "file:///b.ts");
-//     assert_eq!(&*module.source, include_bytes!("./testdata/emit/b.ts"));
-//     assert_eq!(module.r#type, ModuleType::JS);
-//   }
-// }
+    let test = async move {
+      let module = eszip.get_module("file:///main.ts").unwrap();
+      assert_eq!(module.specifier, "file:///main.ts");
+      let source = module.source().await;
+      assert_eq!(&*source, include_bytes!("./testdata/emit/main.ts"));
+      let source_map = module.source_map().await.unwrap();
+      assert_eq!(&*source_map, include_bytes!("./testdata/emit/main.ts.map"));
+      assert_eq!(module.kind, ModuleKind::JS);
+      let module = eszip.get_module("file:///a.ts").unwrap();
+      assert_eq!(module.specifier, "file:///b.ts");
+      let source = module.source().await;
+      assert_eq!(&*source, include_bytes!("./testdata/emit/b.ts"));
+      let source_map = module.source_map().await.unwrap();
+      assert_eq!(&*source_map, include_bytes!("./testdata/emit/b.ts.map"));
+      assert_eq!(module.kind, ModuleKind::JS);
+
+      Ok(())
+    };
+
+    tokio::try_join!(fut, test).unwrap();
+  }
+
+  #[tokio::test]
+  async fn file_format_roundtrippable() {
+    let file = tokio::fs::File::open("./src/testdata/redirect.eszip2")
+      .await
+      .unwrap();
+    let (eszip, fut) =
+      super::EsZipV2::parse(BufReader::new(file)).await.unwrap();
+    fut.await.unwrap();
+    let cursor = Cursor::new(eszip.into_bytes());
+    let (eszip, fut) =
+      super::EsZipV2::parse(BufReader::new(cursor)).await.unwrap();
+    fut.await.unwrap();
+    let module = eszip.get_module("file:///main.ts").unwrap();
+    assert_eq!(module.specifier, "file:///main.ts");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/emit/main.ts"));
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, include_bytes!("./testdata/emit/main.ts.map"));
+    assert_eq!(module.kind, ModuleKind::JS);
+    let module = eszip.get_module("file:///a.ts").unwrap();
+    assert_eq!(module.specifier, "file:///b.ts");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/emit/b.ts"));
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, include_bytes!("./testdata/emit/b.ts.map"));
+    assert_eq!(module.kind, ModuleKind::JS);
+  }
+}
