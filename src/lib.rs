@@ -2,8 +2,8 @@ mod error;
 pub mod v1;
 pub mod v2;
 
-use std::borrow::Cow;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use futures::Future;
 use serde::Deserialize;
@@ -60,19 +60,19 @@ pub struct Module {
 }
 
 pub enum ModuleInner {
-  V1(Vec<u8>),
+  V1(Arc<Vec<u8>>),
   V2(EsZipV2),
 }
 
 impl Module {
-  pub async fn source(&self) -> Cow<'_, [u8]> {
+  pub async fn source(&self) -> Arc<Vec<u8>> {
     match &self.inner {
-      ModuleInner::V1(source) => Cow::Borrowed(source),
+      ModuleInner::V1(source) => source.clone(),
       ModuleInner::V2(eszip) => eszip.get_module_source(&self.specifier).await,
     }
   }
 
-  pub async fn source_map(&self) -> Option<Cow<'_, [u8]>> {
+  pub async fn source_map(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
       ModuleInner::V1(_) => None,
       ModuleInner::V2(eszip) => {

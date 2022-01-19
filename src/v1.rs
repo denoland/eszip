@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -56,7 +57,9 @@ impl EsZipV1 {
           let module = Module {
             specifier: specifier.to_string(),
             kind: ModuleKind::JavaScript,
-            inner: ModuleInner::V1(source.source.as_bytes().to_owned()),
+            inner: ModuleInner::V1(Arc::new(
+              source.source.as_bytes().to_owned(),
+            )),
           };
           return Some(module);
         }
@@ -96,6 +99,6 @@ mod tests {
       crate::ModuleInner::V1(bytes) => bytes,
       crate::ModuleInner::V2(_) => unreachable!(),
     };
-    assert_eq!(bytes, b"addEventListener(\"fetch\", (event) => {\n  event.respondWith(new Response(\"Hello World\", {\n    headers: { \"content-type\": \"text/plain\" },\n  }));\n});");
+    assert_eq!(*bytes, b"addEventListener(\"fetch\", (event) => {\n  event.respondWith(new Response(\"Hello World\", {\n    headers: { \"content-type\": \"text/plain\" },\n  }));\n});");
   }
 }

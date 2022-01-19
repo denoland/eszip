@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
@@ -54,7 +53,7 @@ enum EszipV2SourceSlot {
     length: usize,
     wakers: Vec<Waker>,
   },
-  Ready(Vec<u8>),
+  Ready(Arc<Vec<u8>>),
 }
 
 impl EszipV2SourceSlot {
@@ -222,8 +221,10 @@ impl EsZipV2 {
           let mut modules = modules.lock().unwrap();
           let module = modules.get_mut(&specifier).expect("module not found");
           if let EszipV2Module::Module { source, .. } = module {
-            let slot =
-              std::mem::replace(source, EszipV2SourceSlot::Ready(source_bytes));
+            let slot = std::mem::replace(
+              source,
+              EszipV2SourceSlot::Ready(Arc::new(source_bytes)),
+            );
 
             if let EszipV2SourceSlot::Pending { wakers, .. } = slot {
               wakers
@@ -268,7 +269,7 @@ impl EsZipV2 {
           if let EszipV2Module::Module { source_map, .. } = module {
             let slot = std::mem::replace(
               source_map,
-              EszipV2SourceSlot::Ready(source_map_bytes),
+              EszipV2SourceSlot::Ready(Arc::new(source_map_bytes)),
             );
 
             if let EszipV2SourceSlot::Pending { wakers, .. } = slot {
@@ -398,8 +399,8 @@ impl EsZipV2 {
 
       let module = EszipV2Module::Module {
         kind: ModuleKind::JavaScript,
-        source: EszipV2SourceSlot::Ready(source.into_bytes()),
-        source_map: EszipV2SourceSlot::Ready(source_map.into_bytes()),
+        source: EszipV2SourceSlot::Ready(Arc::new(source.into_bytes())),
+        source_map: EszipV2SourceSlot::Ready(Arc::new(source_map.into_bytes())),
       };
       modules.insert(specifier, module);
     }
@@ -410,8 +411,10 @@ impl EsZipV2 {
         let specifier = module.specifier.to_string();
         let module = EszipV2Module::Module {
           kind: ModuleKind::Json,
-          source: EszipV2SourceSlot::Ready(source.as_bytes().to_owned()),
-          source_map: EszipV2SourceSlot::Ready(vec![]),
+          source: EszipV2SourceSlot::Ready(Arc::new(
+            source.as_bytes().to_owned(),
+          )),
+          source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
         };
         modules.insert(specifier, module);
       }
@@ -459,7 +462,7 @@ impl EsZipV2 {
   pub(crate) async fn get_module_source<'a>(
     &'a self,
     specifier: &str,
-  ) -> Cow<'a, [u8]> {
+  ) -> Arc<Vec<u8>> {
     poll_fn(|cx| {
       let mut modules = self.modules.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -474,9 +477,7 @@ impl EsZipV2 {
           wakers.push(cx.waker().clone());
           Poll::Pending
         }
-        EszipV2SourceSlot::Ready(bytes) => {
-          Poll::Ready(Cow::Owned(bytes.clone()))
-        }
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(bytes.clone()),
       }
     })
     .await
@@ -485,7 +486,7 @@ impl EsZipV2 {
   pub(crate) async fn get_module_source_map<'a>(
     &'a self,
     specifier: &str,
-  ) -> Cow<'a, [u8]> {
+  ) -> Arc<Vec<u8>> {
     poll_fn(|cx| {
       let mut modules = self.modules.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -500,9 +501,7 @@ impl EsZipV2 {
           wakers.push(cx.waker().clone());
           Poll::Pending
         }
-        EszipV2SourceSlot::Ready(bytes) => {
-          Poll::Ready(Cow::Owned(bytes.clone()))
-        }
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(bytes.clone()),
       }
     })
     .await
