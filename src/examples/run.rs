@@ -10,7 +10,7 @@ async fn main() {
   let args = std::env::args().collect::<Vec<_>>();
   let path = args.get(1).unwrap();
   let url = args.get(2).unwrap();
-  let url = Url::parse(&url).unwrap();
+  let url = Url::parse(url).unwrap();
 
   let file = tokio::fs::File::open(path).await.unwrap();
   let bufreader = tokio::io::BufReader::new(file);

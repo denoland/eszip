@@ -8,7 +8,7 @@ use url::Url;
 async fn main() {
   let args = std::env::args().collect::<Vec<_>>();
   let url = args.get(1).unwrap();
-  let url = Url::parse(&url).unwrap();
+  let url = Url::parse(url).unwrap();
   let out = args.get(2).unwrap();
 
   let mut loader = Loader;
