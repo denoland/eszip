@@ -3,9 +3,14 @@ pub mod v1;
 pub mod v2;
 
 use std::borrow::Cow;
+use std::pin::Pin;
 
+use futures::Future;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncReadExt;
+use v2::ESZIP_V2_MAGIC;
 
 pub use crate::error::ParseError;
 pub use crate::v1::EsZipV1;
@@ -19,15 +24,26 @@ pub enum EsZip {
 }
 
 impl EsZip {
-  // pub fn parse(data: &[u8]) -> Result<EsZip, ParseError> {
-  //   if EsZipV2::is_valid(data) {
-  //     let eszip = EsZipV2::parse(data)?;
-  //     Ok(EsZip::V2(eszip))
-  //   } else {
-  //     let eszip = EsZipV1::parse(data)?;
-  //     Ok(EsZip::V1(eszip))
-  //   }
-  // }
+  pub async fn parse<R: tokio::io::AsyncRead + Unpin + 'static>(
+    reader: R,
+  ) -> Result<
+    (EsZip, Pin<Box<dyn Future<Output = Result<(), ParseError>>>>),
+    ParseError,
+  > {
+    let mut reader = tokio::io::BufReader::new(reader);
+    reader.fill_buf().await?;
+    let buffer = reader.buffer();
+    if buffer.len() >= 8 && &buffer[..8] == ESZIP_V2_MAGIC {
+      let (eszip, fut) = EsZipV2::parse(reader).await?;
+      Ok((EsZip::V2(eszip), Box::pin(fut)))
+    } else {
+      let mut buffer = Vec::new();
+      reader.read_to_end(&mut buffer).await?;
+      let eszip = EsZipV1::parse(&buffer)?;
+      let fut = async move { Ok::<_, ParseError>(()) };
+      Ok((EsZip::V1(eszip), Box::pin(fut)))
+    }
+  }
 
   pub fn get_module(&self, specifier: &str) -> Option<Module> {
     match self {
@@ -74,23 +90,29 @@ pub enum ModuleKind {
   Json = 1,
 }
 
-// #[cfg(test)]
-// mod tests {
-//   use crate::EsZip;
+#[cfg(test)]
+mod tests {
+  use crate::EsZip;
 
-//   #[test]
-//   fn parse_v1() {
-//     let data = include_bytes!("./testdata/basic.json");
-//     let eszip = EsZip::parse(data).unwrap();
-//     assert!(matches!(eszip, EsZip::V1(_)));
-//     eszip.get_module("https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js").unwrap();
-//   }
+  #[tokio::test]
+  async fn parse_v1() {
+    let file = tokio::fs::File::open("./src/testdata/basic.json")
+      .await
+      .unwrap();
+    let (eszip, fut) = EsZip::parse(file).await.unwrap();
+    fut.await.unwrap();
+    assert!(matches!(eszip, EsZip::V1(_)));
+    eszip.get_module("https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js").unwrap();
+  }
 
-//   #[test]
-//   fn parse_v2() {
-//     let data = include_bytes!("./testdata/redirect.eszip2");
-//     let eszip = EsZip::parse(data).unwrap();
-//     assert!(matches!(eszip, EsZip::V2(_)));
-//     eszip.get_module("file:///main.ts").unwrap();
-//   }
-// }
+  #[tokio::test]
+  async fn parse_v2() {
+    let file = tokio::fs::File::open("./src/testdata/redirect.eszip2")
+      .await
+      .unwrap();
+    let (eszip, fut) = EsZip::parse(file).await.unwrap();
+    fut.await.unwrap();
+    assert!(matches!(eszip, EsZip::V2(_)));
+    eszip.get_module("file:///main.ts").unwrap();
+  }
+}

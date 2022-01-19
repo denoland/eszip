@@ -21,7 +21,7 @@ use crate::Module;
 use crate::ModuleInner;
 use crate::ModuleKind;
 
-const ESZIP_V2_MAGIC: &[u8; 8] = b"ESZIP_V2";
+pub(crate) const ESZIP_V2_MAGIC: &[u8; 8] = b"ESZIP_V2";
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
