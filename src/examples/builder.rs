@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use import_map::ImportMap;
 use reqwest::StatusCode;
 use url::Url;
 
@@ -10,14 +11,33 @@ async fn main() {
   let url = args.get(1).unwrap();
   let url = Url::parse(url).unwrap();
   let out = args.get(2).unwrap();
+  let maybe_import_map = args.get(3).map(|url| Url::parse(url).unwrap());
 
   let mut loader = Loader;
+  let (maybe_import_map, maybe_import_map_data) =
+    if let Some(import_map_url) = maybe_import_map {
+      let resp =
+        deno_graph::source::Loader::load(&mut loader, &import_map_url, false)
+          .await
+          .unwrap()
+          .unwrap();
+      let import_map =
+        ImportMap::from_json_with_diagnostics(&resp.specifier, &resp.content)
+          .unwrap();
+      (
+        Some(import_map.import_map),
+        Some((resp.specifier, resp.content)),
+      )
+    } else {
+      (None, None)
+    };
+
   let graph = deno_graph::create_code_graph(
     vec![url],
     false,
     None,
     &mut loader,
-    None,
+    Some(&Resolver(maybe_import_map)),
     None,
     None,
     None,
@@ -26,10 +46,37 @@ async fn main() {
 
   graph.valid().unwrap();
 
-  let eszip = eszip::EsZipV2::from_graph(graph).unwrap();
+  let mut eszip = eszip::EsZipV2::from_graph(graph).unwrap();
+  if let Some((import_map_specifier, import_map_content)) =
+    maybe_import_map_data
+  {
+    eszip.insert_module(
+      import_map_specifier.to_string(),
+      eszip::ModuleKind::Json,
+      Arc::new(import_map_content.as_bytes().to_vec()),
+    )
+  }
   let bytes = eszip.into_bytes();
 
   std::fs::write(out, bytes).unwrap();
+}
+
+#[derive(Debug)]
+struct Resolver(Option<ImportMap>);
+
+impl deno_graph::source::Resolver for Resolver {
+  fn resolve(
+    &self,
+    specifier: &str,
+    referrer: &deno_graph::ModuleSpecifier,
+  ) -> anyhow::Result<deno_graph::ModuleSpecifier> {
+    let resolved = if let Some(import_map) = &self.0 {
+      import_map.resolve(specifier, referrer)?
+    } else {
+      deno_graph::resolve_import(specifier, referrer)?
+    };
+    Ok(resolved)
+  }
 }
 
 struct Loader;

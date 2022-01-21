@@ -3,6 +3,7 @@ use std::rc::Rc;
 use deno_core::error::type_error;
 use eszip::EsZipV2;
 use futures::FutureExt;
+use import_map::ImportMap;
 use url::Url;
 
 #[tokio::main]
@@ -11,6 +12,7 @@ async fn main() {
   let path = args.get(1).unwrap();
   let url = args.get(2).unwrap();
   let url = Url::parse(url).unwrap();
+  let maybe_import_map = args.get(3).map(|url| Url::parse(url).unwrap());
 
   let file = tokio::fs::File::open(path).await.unwrap();
   let bufreader = tokio::io::BufReader::new(file);
@@ -19,8 +21,20 @@ async fn main() {
   let loader_fut = loader.map(|r| r.map_err(anyhow::Error::new));
 
   let fut = async move {
+    let maybe_import_map = if let Some(maybe_import_map) = maybe_import_map {
+      let module = eszip.get_module(maybe_import_map.as_str()).unwrap();
+      let source = module.source().await;
+      let contents = std::str::from_utf8(&source).unwrap();
+      let import_map =
+        ImportMap::from_json_with_diagnostics(&maybe_import_map, contents)
+          .unwrap();
+      Some(import_map.import_map)
+    } else {
+      None
+    };
+
     let mut runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-      module_loader: Some(Rc::new(Loader(eszip))),
+      module_loader: Some(Rc::new(Loader(eszip, maybe_import_map))),
       extensions: vec![deno_console::init()],
       ..Default::default()
     });
@@ -39,17 +53,28 @@ async fn main() {
   tokio::try_join!(loader_fut, fut).unwrap();
 }
 
-struct Loader(EsZipV2);
+struct Loader(EsZipV2, Option<ImportMap>);
 
 impl deno_core::ModuleLoader for Loader {
   fn resolve(
     &self,
     specifier: &str,
-    referrer: &str,
-    _is_main: bool,
+    base: &str,
+    is_main: bool,
   ) -> Result<deno_core::ModuleSpecifier, anyhow::Error> {
-    let specifier = deno_core::resolve_import(specifier, referrer)?;
-    Ok(specifier)
+    if let Some(import_map) = &self.1 {
+      let referrer = if base == "." {
+        assert!(is_main);
+        Url::parse("file:///src/").unwrap()
+      } else {
+        Url::parse(base).unwrap()
+      };
+      let resolved = import_map.resolve(specifier, &referrer)?;
+      Ok(resolved)
+    } else {
+      let resolve = deno_core::resolve_import(specifier, base)?;
+      Ok(resolve)
+    }
   }
 
   fn load(

@@ -292,6 +292,23 @@ impl EsZipV2 {
     Ok((EsZipV2 { modules }, fut))
   }
 
+  pub fn insert_module(
+    &mut self,
+    specifier: String,
+    kind: ModuleKind,
+    source: Arc<Vec<u8>>,
+  ) {
+    let module = EszipV2Module::Module {
+      kind,
+      source: EszipV2SourceSlot::Ready(source),
+      source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+    };
+    let mut modules = self.modules.lock().unwrap();
+    if modules.get(&specifier).is_none() {
+      modules.insert(specifier, module);
+    }
+  }
+
   pub fn into_bytes(self) -> Vec<u8> {
     let mut header: Vec<u8> = ESZIP_V2_MAGIC.to_vec();
     header.extend_from_slice(&[0u8; 4]); // add 4 bytes of space to put the header length in later
