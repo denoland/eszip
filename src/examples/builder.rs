@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use deno_ast::EmitOptions;
 use import_map::ImportMap;
 use reqwest::StatusCode;
 use url::Url;
@@ -46,16 +47,20 @@ async fn main() {
 
   graph.valid().unwrap();
 
-  let mut eszip = eszip::EsZipV2::from_graph(graph).unwrap();
+  let mut eszip =
+    eszip::EsZipV2::from_graph(graph, EmitOptions::default()).unwrap();
   if let Some((import_map_specifier, import_map_content)) =
     maybe_import_map_data
   {
-    eszip.insert_module(
+    eszip.add_import_map(
       import_map_specifier.to_string(),
-      eszip::ModuleKind::Json,
       Arc::new(import_map_content.as_bytes().to_vec()),
     )
   }
+  for specifier in &eszip.ordered_modules {
+    println!("source: {specifier}")
+  }
+
   let bytes = eszip.into_bytes();
 
   std::fs::write(out, bytes).unwrap();

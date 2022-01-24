@@ -26,5 +26,5 @@ cargo run --example eszip_viewer file_server.eszip2
 ### Loading the eszip into V8
 
 ```shell
-cargo run --example eszip_run file_server.eszip2 https://deno.land/std/http/file_server.ts
+cargo run --example eszip_load file_server.eszip2 https://deno.land/std/http/file_server.ts
 ```

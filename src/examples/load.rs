@@ -35,22 +35,19 @@ async fn main() {
 
     let mut runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
       module_loader: Some(Rc::new(Loader(eszip, maybe_import_map))),
-      extensions: vec![deno_console::init()],
       ..Default::default()
     });
 
-    let mod_id = runtime.load_main_module(&url, None).await?;
+    let start = std::time::Instant::now();
+    runtime.load_main_module(&url, None).await?;
+    let end = std::time::Instant::now();
+    println!("took: {:?}", end.duration_since(start));
 
-    let fut = runtime
-      .mod_evaluate(mod_id)
-      .map(|r| r.map_err(anyhow::Error::new));
-
-    let (_, r) = tokio::try_join!(runtime.run_event_loop(false), fut)?;
-
-    r
+    Ok(())
   };
 
   tokio::try_join!(loader_fut, fut).unwrap();
+  println!("done");
 }
 
 struct Loader(EsZipV2, Option<ImportMap>);
@@ -99,6 +96,8 @@ impl deno_core::ModuleLoader for Loader {
 
       let source = module.source().await;
       let source = std::str::from_utf8(&source).unwrap();
+
+      println!("loader: {}", module.specifier);
 
       Ok(deno_core::ModuleSource {
         code: source.to_string(),

@@ -14,6 +14,7 @@ use futures::future::poll_fn;
 use sha2::Digest;
 use sha2::Sha256;
 use tokio::io::AsyncReadExt;
+use url::Url;
 
 use crate::error::ParseError;
 use crate::Module;
@@ -32,6 +33,7 @@ enum HeaderFrameKind {
 #[derive(Debug, Default)]
 pub struct EsZipV2 {
   modules: Arc<Mutex<HashMap<String, EszipV2Module>>>,
+  pub ordered_modules: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -289,24 +291,31 @@ impl EsZipV2 {
       Ok(())
     };
 
-    Ok((EsZipV2 { modules }, fut))
+    Ok((
+      EsZipV2 {
+        modules,
+        ordered_modules: vec![], // TODO
+      },
+      fut,
+    ))
   }
 
-  pub fn insert_module(
-    &mut self,
-    specifier: String,
-    kind: ModuleKind,
-    source: Arc<Vec<u8>>,
-  ) {
+  pub fn add_import_map(&mut self, specifier: String, source: Arc<Vec<u8>>) {
     let module = EszipV2Module::Module {
-      kind,
+      kind: ModuleKind::Json,
       source: EszipV2SourceSlot::Ready(source),
       source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
     };
     let mut modules = self.modules.lock().unwrap();
     if modules.get(&specifier).is_none() {
-      modules.insert(specifier, module);
+      modules.insert(specifier.clone(), module);
     }
+    let mut module_ordering =
+      Vec::with_capacity(self.ordered_modules.len() + 1);
+    module_ordering.push(specifier);
+    let old_module_ordering =
+      std::mem::replace(&mut self.ordered_modules, module_ordering);
+    self.ordered_modules.extend_from_slice(&old_module_ordering);
   }
 
   pub fn into_bytes(self) -> Vec<u8> {
@@ -317,7 +326,21 @@ impl EsZipV2 {
 
     let modules = self.modules.lock().unwrap();
 
-    for (specifier, module) in &*modules {
+    let mut ordered_modules = self.ordered_modules.clone();
+    let seen_modules: HashSet<String> =
+      self.ordered_modules.into_iter().collect();
+
+    for (specifier, _) in &*modules {
+      let specifier = specifier.as_str();
+      if seen_modules.contains(specifier) {
+        continue;
+      }
+      ordered_modules.push(specifier.to_string());
+    }
+
+    for specifier in ordered_modules {
+      let module = modules.get(&specifier).unwrap();
+
       let specifier_bytes = specifier.as_bytes();
       let specifier_length = specifier_bytes.len() as u32;
       header.extend_from_slice(&specifier_length.to_be_bytes());
@@ -396,56 +419,102 @@ impl EsZipV2 {
     bytes
   }
 
-  pub fn from_graph(graph: ModuleGraph) -> Result<Self, anyhow::Error> {
-    let emit_options = EmitOptions {
-      inline_sources: true,
-      inline_source_map: false,
-      source_map: true,
-      ..Default::default()
-    };
+  pub fn from_graph(
+    graph: ModuleGraph,
+    mut emit_options: EmitOptions,
+  ) -> Result<Self, anyhow::Error> {
+    emit_options.inline_sources = true;
+    emit_options.inline_source_map = false;
+    emit_options.source_map = true;
 
     let mut modules = HashMap::new();
 
-    for module in graph.modules() {
-      let TranspiledSource {
-        text: source,
-        source_map: maybe_source_map,
-      } = module.parsed_source.transpile(&emit_options)?;
-      let source_map = maybe_source_map.unwrap_or_default();
-      let specifier = module.specifier.to_string();
+    let mut ordered_modules = vec![];
 
-      let module = EszipV2Module::Module {
-        kind: ModuleKind::JavaScript,
-        source: EszipV2SourceSlot::Ready(Arc::new(source.into_bytes())),
-        source_map: EszipV2SourceSlot::Ready(Arc::new(source_map.into_bytes())),
-      };
-      modules.insert(specifier, module);
-    }
-
-    for module in graph.synthetic_modules() {
-      if module.media_type == deno_graph::MediaType::Json {
-        let source = module.maybe_source.as_ref().unwrap();
-        let specifier = module.specifier.to_string();
-        let module = EszipV2Module::Module {
-          kind: ModuleKind::Json,
-          source: EszipV2SourceSlot::Ready(Arc::new(
-            source.as_bytes().to_owned(),
-          )),
-          source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
-        };
-        modules.insert(specifier, module);
+    fn visit_module(
+      graph: &ModuleGraph,
+      emit_options: &EmitOptions,
+      modules: &mut HashMap<String, EszipV2Module>,
+      ordered_modules: &mut Vec<String>,
+      specifier: &Url,
+    ) -> Result<(), anyhow::Error> {
+      let module = graph.get(specifier).unwrap();
+      let specifier = module.specifier().as_str();
+      if modules.contains_key(specifier) {
+        return Ok(());
       }
+      match module {
+        deno_graph::Module::Es(module) => {
+          let TranspiledSource {
+            text: source,
+            source_map: maybe_source_map,
+          } = module.parsed_source.transpile(&emit_options)?;
+          let source_map = maybe_source_map.unwrap_or_default();
+          let specifier = module.specifier.to_string();
+
+          let module = EszipV2Module::Module {
+            kind: ModuleKind::JavaScript,
+            source: EszipV2SourceSlot::Ready(Arc::new(source.into_bytes())),
+            source_map: EszipV2SourceSlot::Ready(Arc::new(
+              source_map.into_bytes(),
+            )),
+          };
+          modules.insert(specifier, module);
+        }
+        deno_graph::Module::Synthetic(module) => {
+          if module.media_type == deno_graph::MediaType::Json {
+            let source = module.maybe_source.as_ref().unwrap();
+            let specifier = module.specifier.to_string();
+            let module = EszipV2Module::Module {
+              kind: ModuleKind::Json,
+              source: EszipV2SourceSlot::Ready(Arc::new(
+                source.as_bytes().to_owned(),
+              )),
+              source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+            };
+            modules.insert(specifier, module);
+          }
+        }
+      }
+
+      ordered_modules.push(specifier.to_string());
+      if let Some(dependencies) = module.maybe_dependencies() {
+        for (_, dep) in dependencies {
+          if let Some(specifier) = dep.get_code() {
+            visit_module(
+              graph,
+              emit_options,
+              modules,
+              ordered_modules,
+              specifier,
+            )?;
+          }
+        }
+      }
+
+      for (specifier, target) in &graph.redirects {
+        let module = EszipV2Module::Redirect {
+          target: target.to_string(),
+        };
+        modules.insert(specifier.to_string(), module);
+      }
+
+      Ok(())
     }
 
-    for (specifier, target) in graph.redirects {
-      let module = EszipV2Module::Redirect {
-        target: target.to_string(),
-      };
-      modules.insert(specifier.to_string(), module);
+    for root in &graph.roots {
+      visit_module(
+        &graph,
+        &emit_options,
+        &mut modules,
+        &mut ordered_modules,
+        root,
+      )?;
     }
 
     Ok(Self {
       modules: Arc::new(Mutex::new(modules)),
+      ordered_modules,
     })
   }
 
@@ -463,6 +532,7 @@ impl EsZipV2 {
             kind: *kind,
             inner: ModuleInner::V2(EsZipV2 {
               modules: self.modules.clone(),
+              ordered_modules: vec![],
             }),
           });
         }
@@ -536,6 +606,7 @@ mod tests {
   use std::path::Path;
   use std::sync::Arc;
 
+  use deno_ast::EmitOptions;
   use deno_graph::source::LoadResponse;
   use deno_graph::ModuleSpecifier;
   use tokio::io::BufReader;
@@ -585,7 +656,8 @@ mod tests {
     )
     .await;
     graph.valid().unwrap();
-    let eszip = super::EsZipV2::from_graph(graph).unwrap();
+    let eszip =
+      super::EsZipV2::from_graph(graph, EmitOptions::default()).unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
     let source = module.source().await;
@@ -617,7 +689,8 @@ mod tests {
     )
     .await;
     graph.valid().unwrap();
-    let eszip = super::EsZipV2::from_graph(graph).unwrap();
+    let eszip =
+      super::EsZipV2::from_graph(graph, EmitOptions::default()).unwrap();
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
     let source = module.source().await;

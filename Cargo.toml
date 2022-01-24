@@ -19,8 +19,8 @@ name = "eszip_viewer"
 path = "src/examples/viewer.rs"
 
 [[example]]
-name = "eszip_run"
-path = "src/examples/run.rs"
+name = "eszip_load"
+path = "src/examples/load.rs"
 
 
 [dependencies]
