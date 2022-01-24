@@ -330,7 +330,7 @@ impl EsZipV2 {
     let seen_modules: HashSet<String> =
       self.ordered_modules.into_iter().collect();
 
-    for (specifier, _) in &*modules {
+    for specifier in modules.keys() {
       let specifier = specifier.as_str();
       if seen_modules.contains(specifier) {
         continue;
@@ -439,19 +439,20 @@ impl EsZipV2 {
       specifier: &Url,
     ) -> Result<(), anyhow::Error> {
       let module = graph.get(specifier).unwrap();
-      let specifier = module.specifier().as_str();
+      let specifier = module.specifier.as_str();
       if modules.contains_key(specifier) {
         return Ok(());
       }
-      match module {
-        deno_graph::Module::Es(module) => {
+
+      match module.kind {
+        deno_graph::ModuleKind::Esm => {
+          let parsed_source = module.maybe_parsed_source.as_ref().unwrap();
           let TranspiledSource {
             text: source,
             source_map: maybe_source_map,
-          } = module.parsed_source.transpile(&emit_options)?;
+          } = parsed_source.transpile(emit_options)?;
           let source_map = maybe_source_map.unwrap_or_default();
           let specifier = module.specifier.to_string();
-
           let module = EszipV2Module::Module {
             kind: ModuleKind::JavaScript,
             source: EszipV2SourceSlot::Ready(Arc::new(source.into_bytes())),
@@ -461,7 +462,7 @@ impl EsZipV2 {
           };
           modules.insert(specifier, module);
         }
-        deno_graph::Module::Synthetic(module) => {
+        deno_graph::ModuleKind::Asserted => {
           if module.media_type == deno_graph::MediaType::Json {
             let source = module.maybe_source.as_ref().unwrap();
             let specifier = module.specifier.to_string();
@@ -475,34 +476,30 @@ impl EsZipV2 {
             modules.insert(specifier, module);
           }
         }
+        _ => {}
       }
 
       ordered_modules.push(specifier.to_string());
-      if let Some(dependencies) = module.maybe_dependencies() {
-        for (_, dep) in dependencies {
-          if let Some(specifier) = dep.get_code() {
-            visit_module(
-              graph,
-              emit_options,
-              modules,
-              ordered_modules,
-              specifier,
-            )?;
-          }
+      for dep in module.dependencies.values() {
+        if let Some(specifier) = dep.get_code() {
+          visit_module(
+            graph,
+            emit_options,
+            modules,
+            ordered_modules,
+            specifier,
+          )?;
         }
-      }
-
-      for (specifier, target) in &graph.redirects {
-        let module = EszipV2Module::Redirect {
-          target: target.to_string(),
-        };
-        modules.insert(specifier.to_string(), module);
       }
 
       Ok(())
     }
 
-    for root in &graph.roots {
+    for (root, kind) in &graph.roots {
+      assert!(matches!(
+        kind,
+        deno_graph::ModuleKind::Esm | deno_graph::ModuleKind::Asserted
+      ));
       visit_module(
         &graph,
         &emit_options,
@@ -510,6 +507,13 @@ impl EsZipV2 {
         &mut ordered_modules,
         root,
       )?;
+    }
+
+    for (specifier, target) in &graph.redirects {
+      let module = EszipV2Module::Redirect {
+        target: target.to_string(),
+      };
+      modules.insert(specifier.to_string(), module);
     }
 
     Ok(Self {
@@ -643,7 +647,10 @@ mod tests {
 
   #[tokio::test]
   async fn from_graph_redirect() {
-    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let roots = vec![(
+      ModuleSpecifier::parse("file:///main.ts").unwrap(),
+      deno_graph::ModuleKind::Esm,
+    )];
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -676,7 +683,10 @@ mod tests {
 
   #[tokio::test]
   async fn from_graph_json() {
-    let roots = vec![ModuleSpecifier::parse("file:///json.ts").unwrap()];
+    let roots = vec![(
+      ModuleSpecifier::parse("file:///json.ts").unwrap(),
+      deno_graph::ModuleKind::Esm,
+    )];
     let graph = deno_graph::create_graph(
       roots,
       false,
