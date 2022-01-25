@@ -23,13 +23,17 @@ pub enum EsZip {
   V2(EsZipV2),
 }
 
+/// This future needs to polled to parse the eszip file.
+type EszipParserFuture = Pin<Box<dyn Future<Output = Result<(), ParseError>>>>;
+
 impl EsZip {
+  /// Parse a byte stream into an EsZip. This function completes when the header
+  /// is fully received. This does not mean that the entire file is fully
+  /// received or parsed yet. To finish parsing, the future returned by this
+  /// function in the second tuple slot needs to be polled.
   pub async fn parse<R: tokio::io::AsyncRead + Unpin + 'static>(
     reader: R,
-  ) -> Result<
-    (EsZip, Pin<Box<dyn Future<Output = Result<(), ParseError>>>>),
-    ParseError,
-  > {
+  ) -> Result<(EsZip, EszipParserFuture), ParseError> {
     let mut reader = tokio::io::BufReader::new(reader);
     reader.fill_buf().await?;
     let buffer = reader.buffer();
