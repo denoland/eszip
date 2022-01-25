@@ -446,19 +446,36 @@ impl EsZipV2 {
 
       match module.kind {
         deno_graph::ModuleKind::Esm => {
-          let parsed_source = module.maybe_parsed_source.as_ref().unwrap();
-          let TranspiledSource {
-            text: source,
-            source_map: maybe_source_map,
-          } = parsed_source.transpile(emit_options)?;
-          let source_map = maybe_source_map.unwrap_or_default();
+          let (source, source_map) = match module.media_type {
+            deno_ast::MediaType::JavaScript | deno_ast::MediaType::Mjs => {
+              let source = module.maybe_source.as_ref().unwrap();
+              (source.as_bytes().to_owned(), vec![])
+            }
+            deno_ast::MediaType::Jsx
+            | deno_ast::MediaType::TypeScript
+            | deno_ast::MediaType::Mts
+            | deno_ast::MediaType::Tsx => {
+              let parsed_source = module.maybe_parsed_source.as_ref().unwrap();
+              let TranspiledSource {
+                text: source,
+                source_map: maybe_source_map,
+              } = parsed_source.transpile(emit_options)?;
+              let source_map = maybe_source_map.unwrap_or_default();
+              (source.into_bytes(), source_map.into_bytes())
+            }
+            _ => {
+              return Err(anyhow::anyhow!(
+                "unsupported media type {}",
+                module.media_type
+              ));
+            }
+          };
+
           let specifier = module.specifier.to_string();
           let module = EszipV2Module::Module {
             kind: ModuleKind::JavaScript,
-            source: EszipV2SourceSlot::Ready(Arc::new(source.into_bytes())),
-            source_map: EszipV2SourceSlot::Ready(Arc::new(
-              source_map.into_bytes(),
-            )),
+            source: EszipV2SourceSlot::Ready(Arc::new(source)),
+            source_map: EszipV2SourceSlot::Ready(Arc::new(source_map)),
           };
           modules.insert(specifier, module);
         }
@@ -613,6 +630,7 @@ mod tests {
   use deno_ast::EmitOptions;
   use deno_graph::source::LoadResponse;
   use deno_graph::ModuleSpecifier;
+  use import_map::ImportMap;
   use tokio::io::BufReader;
   use url::Url;
 
@@ -641,6 +659,23 @@ mod tests {
           maybe_headers: None,
           specifier,
         }))
+      })
+    }
+  }
+
+  #[derive(Debug)]
+  struct ImportMapResolver(ImportMap);
+
+  impl deno_graph::source::Resolver for ImportMapResolver {
+    fn resolve(
+      &self,
+      specifier: &str,
+      referrer: &ModuleSpecifier,
+    ) -> anyhow::Result<deno_graph::source::ResolveResult> {
+      let specifier = self.0.resolve(specifier, referrer)?;
+      Ok(deno_graph::source::ResolveResult {
+        specifier,
+        kind: deno_graph::ModuleKind::Esm,
       })
     }
   }
@@ -765,6 +800,70 @@ mod tests {
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, include_bytes!("./testdata/emit/main.ts.map"));
     assert_eq!(module.kind, ModuleKind::JavaScript);
+    let module = eszip.get_module("file:///a.ts").unwrap();
+    assert_eq!(module.specifier, "file:///b.ts");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/emit/b.ts"));
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, include_bytes!("./testdata/emit/b.ts.map"));
+    assert_eq!(module.kind, ModuleKind::JavaScript);
+  }
+
+  #[tokio::test]
+  async fn import_map() {
+    let mut loader = FileLoader;
+    let resp = deno_graph::source::Loader::load(
+      &mut loader,
+      &Url::parse("file:///import_map.json").unwrap(),
+      false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let import_map =
+      ImportMap::from_json_with_diagnostics(&resp.specifier, &resp.content)
+        .unwrap();
+
+    let roots = vec![(
+      ModuleSpecifier::parse("file:///mapped.js").unwrap(),
+      deno_graph::ModuleKind::Esm,
+    )];
+    let graph = deno_graph::create_graph(
+      roots,
+      false,
+      None,
+      &mut FileLoader,
+      Some(&ImportMapResolver(import_map.import_map)),
+      None,
+      None,
+      None,
+    )
+    .await;
+    graph.valid().unwrap();
+    let mut eszip =
+      super::EsZipV2::from_graph(graph, EmitOptions::default()).unwrap();
+    let import_map_bytes = Arc::new(resp.content.as_bytes().to_vec());
+    eszip.add_import_map(resp.specifier.to_string(), import_map_bytes);
+
+    let module = eszip.get_module("file:///import_map.json").unwrap();
+    assert_eq!(module.specifier, "file:///import_map.json");
+    let source = module.source().await;
+    assert_eq!(
+      &*source,
+      include_bytes!("./testdata/source/import_map.json")
+    );
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, &[0; 0]);
+    assert_eq!(module.kind, ModuleKind::Json);
+
+    let module = eszip.get_module("file:///mapped.js").unwrap();
+    assert_eq!(module.specifier, "file:///mapped.js");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/source/mapped.js"));
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, &[0; 0]);
+    assert_eq!(module.kind, ModuleKind::JavaScript);
+
     let module = eszip.get_module("file:///a.ts").unwrap();
     assert_eq!(module.specifier, "file:///b.ts");
     let source = module.source().await;
