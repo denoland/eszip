@@ -52,3 +52,7 @@ Sources:
 SourceMaps:
 ( | SourceMap (n) | Hash (32) | )*
 ```
+
+There is one optimization for empty source / source map entries. If both the
+offset and size are set to 0, no entry and no hash is present in the data
+sections for that module.

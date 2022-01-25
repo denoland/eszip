@@ -133,18 +133,28 @@ impl EsZipV2 {
             1 => ModuleKind::Json,
             n => return Err(ParseError::InvalidV2ModuleKind(n, read)),
           };
-          let module = EszipV2Module::Module {
-            kind,
-            source: EszipV2SourceSlot::Pending {
+          let source = if source_offset == 0 && source_len == 0 {
+            EszipV2SourceSlot::Ready(Arc::new(vec![]))
+          } else {
+            EszipV2SourceSlot::Pending {
               offset: source_offset as usize,
               length: source_len as usize,
-              wakers: Vec::new(),
-            },
-            source_map: EszipV2SourceSlot::Pending {
+              wakers: vec![],
+            }
+          };
+          let source_map = if source_map_offset == 0 && source_map_len == 0 {
+            EszipV2SourceSlot::Ready(Arc::new(vec![]))
+          } else {
+            EszipV2SourceSlot::Pending {
               offset: source_map_offset as usize,
               length: source_map_len as usize,
-              wakers: Vec::new(),
-            },
+              wakers: vec![],
+            }
+          };
+          let module = EszipV2Module::Module {
+            kind,
+            source,
+            source_map,
           };
           modules.insert(specifier, module);
         }
@@ -357,28 +367,38 @@ impl EsZipV2 {
           // add the source to the `sources` bytes
           let source_bytes = source.bytes();
           let source_length = source_bytes.len() as u32;
-          let source_offset = sources.len() as u32;
-          sources.extend_from_slice(source_bytes);
-          let mut hasher = Sha256::new();
-          hasher.update(source_bytes);
-          let source_hash = hasher.finalize();
-          sources.extend_from_slice(&source_hash);
+          if source_length > 0 {
+            let source_offset = sources.len() as u32;
+            sources.extend_from_slice(source_bytes);
+            let mut hasher = Sha256::new();
+            hasher.update(source_bytes);
+            let source_hash = hasher.finalize();
+            sources.extend_from_slice(&source_hash);
 
-          header.extend_from_slice(&source_offset.to_be_bytes());
-          header.extend_from_slice(&source_length.to_be_bytes());
+            header.extend_from_slice(&source_offset.to_be_bytes());
+            header.extend_from_slice(&source_length.to_be_bytes());
+          } else {
+            header.extend_from_slice(&0u32.to_be_bytes());
+            header.extend_from_slice(&0u32.to_be_bytes());
+          }
 
           // add the source map to the `source_maps` bytes
           let source_map_bytes = source_map.bytes();
           let source_map_length = source_map_bytes.len() as u32;
-          let source_map_offset = source_maps.len() as u32;
-          source_maps.extend_from_slice(source_map_bytes);
-          let mut hasher = Sha256::new();
-          hasher.update(source_map_bytes);
-          let source_map_hash = hasher.finalize();
-          source_maps.extend_from_slice(&source_map_hash);
+          if source_map_length > 0 {
+            let source_map_offset = source_maps.len() as u32;
+            source_maps.extend_from_slice(source_map_bytes);
+            let mut hasher = Sha256::new();
+            hasher.update(source_map_bytes);
+            let source_map_hash = hasher.finalize();
+            source_maps.extend_from_slice(&source_map_hash);
 
-          header.extend_from_slice(&source_map_offset.to_be_bytes());
-          header.extend_from_slice(&source_map_length.to_be_bytes());
+            header.extend_from_slice(&source_map_offset.to_be_bytes());
+            header.extend_from_slice(&source_map_length.to_be_bytes());
+          } else {
+            header.extend_from_slice(&0u32.to_be_bytes());
+            header.extend_from_slice(&0u32.to_be_bytes());
+          }
 
           // add module kind to the header
           header.push(*kind as u8);
@@ -752,7 +772,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn file_format_parse() {
+  async fn file_format_parse_redirect() {
     let file = tokio::fs::File::open("./src/testdata/redirect.eszip2")
       .await
       .unwrap();
@@ -774,6 +794,35 @@ mod tests {
       let source_map = module.source_map().await.unwrap();
       assert_eq!(&*source_map, include_bytes!("./testdata/emit/b.ts.map"));
       assert_eq!(module.kind, ModuleKind::JavaScript);
+
+      Ok(())
+    };
+
+    tokio::try_join!(fut, test).unwrap();
+  }
+
+  #[tokio::test]
+  async fn file_format_parse_json() {
+    let file = tokio::fs::File::open("./src/testdata/json.eszip2")
+      .await
+      .unwrap();
+    let (eszip, fut) =
+      super::EsZipV2::parse(BufReader::new(file)).await.unwrap();
+
+    let test = async move {
+      let module = eszip.get_module("file:///json.ts").unwrap();
+      assert_eq!(module.specifier, "file:///json.ts");
+      let source = module.source().await;
+      assert_eq!(&*source, include_bytes!("./testdata/emit/json.ts"));
+      let _source_map = module.source_map().await.unwrap();
+      assert_eq!(module.kind, ModuleKind::JavaScript);
+      let module = eszip.get_module("file:///data.json").unwrap();
+      assert_eq!(module.specifier, "file:///data.json");
+      let source = module.source().await;
+      assert_eq!(&*source, include_bytes!("./testdata/emit/data.json"));
+      let source_map = module.source_map().await.unwrap();
+      assert_eq!(&*source_map, &[0; 0]);
+      assert_eq!(module.kind, ModuleKind::Json);
 
       Ok(())
     };
