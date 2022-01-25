@@ -16,6 +16,7 @@ pub use crate::error::ParseError;
 pub use crate::v1::EsZipV1;
 pub use crate::v2::EsZipV2;
 
+pub use deno_ast;
 pub use deno_graph;
 
 pub enum EsZip {
@@ -24,7 +25,8 @@ pub enum EsZip {
 }
 
 /// This future needs to polled to parse the eszip file.
-type EszipParserFuture = Pin<Box<dyn Future<Output = Result<(), ParseError>>>>;
+type EszipParserFuture<R> =
+  Pin<Box<dyn Future<Output = Result<tokio::io::BufReader<R>, ParseError>>>>;
 
 impl EsZip {
   /// Parse a byte stream into an EsZip. This function completes when the header
@@ -33,7 +35,7 @@ impl EsZip {
   /// function in the second tuple slot needs to be polled.
   pub async fn parse<R: tokio::io::AsyncRead + Unpin + 'static>(
     reader: R,
-  ) -> Result<(EsZip, EszipParserFuture), ParseError> {
+  ) -> Result<(EsZip, EszipParserFuture<R>), ParseError> {
     let mut reader = tokio::io::BufReader::new(reader);
     reader.fill_buf().await?;
     let buffer = reader.buffer();
@@ -44,7 +46,7 @@ impl EsZip {
       let mut buffer = Vec::new();
       reader.read_to_end(&mut buffer).await?;
       let eszip = EsZipV1::parse(&buffer)?;
-      let fut = async move { Ok::<_, ParseError>(()) };
+      let fut = async move { Ok::<_, ParseError>(reader) };
       Ok((EsZip::V1(eszip), Box::pin(fut)))
     }
   }

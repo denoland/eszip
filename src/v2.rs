@@ -70,8 +70,13 @@ impl EszipV2SourceSlot {
 impl EsZipV2 {
   pub async fn parse<R: tokio::io::AsyncRead + Unpin>(
     mut reader: tokio::io::BufReader<R>,
-  ) -> Result<(EsZipV2, impl Future<Output = Result<(), ParseError>>), ParseError>
-  {
+  ) -> Result<
+    (
+      EsZipV2,
+      impl Future<Output = Result<tokio::io::BufReader<R>, ParseError>>,
+    ),
+    ParseError,
+  > {
     let mut magic = [0u8; 8];
     reader.read_exact(&mut magic).await?;
 
@@ -298,7 +303,7 @@ impl EsZipV2 {
         }
       }
 
-      Ok(())
+      Ok(reader)
     };
 
     Ok((
