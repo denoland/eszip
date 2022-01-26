@@ -490,8 +490,9 @@ impl EsZipV2 {
             }
             _ => {
               return Err(anyhow::anyhow!(
-                "unsupported media type {}",
-                module.media_type
+                "unsupported media type {} for {}",
+                module.media_type,
+                specifier
               ));
             }
           };
