@@ -479,7 +479,9 @@ impl EsZipV2 {
             deno_ast::MediaType::Jsx
             | deno_ast::MediaType::TypeScript
             | deno_ast::MediaType::Mts
-            | deno_ast::MediaType::Tsx => {
+            | deno_ast::MediaType::Tsx
+            | deno_ast::MediaType::Dts
+            | deno_ast::MediaType::Dmts => {
               let parsed_source = module.maybe_parsed_source.as_ref().unwrap();
               let TranspiledSource {
                 text: source,
