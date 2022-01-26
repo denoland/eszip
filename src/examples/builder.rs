@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use deno_ast::EmitOptions;
-use deno_graph::source::ResolveResult;
+use deno_graph::source::ResolveResponse;
 use import_map::ImportMap;
 use reqwest::StatusCode;
 use url::Url;
@@ -75,16 +75,18 @@ impl deno_graph::source::Resolver for Resolver {
     &self,
     specifier: &str,
     referrer: &deno_graph::ModuleSpecifier,
-  ) -> anyhow::Result<ResolveResult> {
-    let specifier = if let Some(import_map) = &self.0 {
-      import_map.resolve(specifier, referrer)?
+  ) -> ResolveResponse {
+    if let Some(import_map) = &self.0 {
+      match import_map.resolve(specifier, referrer) {
+        Ok(specifier) => ResolveResponse::Specifier(specifier),
+        Err(err) => ResolveResponse::Err(err.into()),
+      }
     } else {
-      deno_graph::resolve_import(specifier, referrer)?
-    };
-    Ok(ResolveResult {
-      specifier,
-      kind: deno_graph::ModuleKind::Esm,
-    })
+      match deno_graph::resolve_import(specifier, referrer) {
+        Ok(specifier) => ResolveResponse::Specifier(specifier),
+        Err(err) => ResolveResponse::Err(err.into()),
+      }
+    }
   }
 }
 

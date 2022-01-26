@@ -472,16 +472,16 @@ impl EsZipV2 {
       match module.kind {
         deno_graph::ModuleKind::Esm => {
           let (source, source_map) = match module.media_type {
-            deno_ast::MediaType::JavaScript | deno_ast::MediaType::Mjs => {
+            deno_graph::MediaType::JavaScript | deno_graph::MediaType::Mjs => {
               let source = module.maybe_source.as_ref().unwrap();
               (source.as_bytes().to_owned(), vec![])
             }
-            deno_ast::MediaType::Jsx
-            | deno_ast::MediaType::TypeScript
-            | deno_ast::MediaType::Mts
-            | deno_ast::MediaType::Tsx
-            | deno_ast::MediaType::Dts
-            | deno_ast::MediaType::Dmts => {
+            deno_graph::MediaType::Jsx
+            | deno_graph::MediaType::TypeScript
+            | deno_graph::MediaType::Mts
+            | deno_graph::MediaType::Tsx
+            | deno_graph::MediaType::Dts
+            | deno_graph::MediaType::Dmts => {
               let parsed_source = module.maybe_parsed_source.as_ref().unwrap();
               let TranspiledSource {
                 text: source,
@@ -656,7 +656,7 @@ mod tests {
   use std::sync::Arc;
 
   use deno_ast::EmitOptions;
-  use deno_graph::source::LoadResponse;
+  use deno_graph::source::{LoadResponse, ResolveResponse};
   use deno_graph::ModuleSpecifier;
   use import_map::ImportMap;
   use tokio::io::BufReader;
@@ -699,12 +699,11 @@ mod tests {
       &self,
       specifier: &str,
       referrer: &ModuleSpecifier,
-    ) -> anyhow::Result<deno_graph::source::ResolveResult> {
-      let specifier = self.0.resolve(specifier, referrer)?;
-      Ok(deno_graph::source::ResolveResult {
-        specifier,
-        kind: deno_graph::ModuleKind::Esm,
-      })
+    ) -> ResolveResponse {
+      match self.0.resolve(specifier, referrer) {
+        Ok(specifier) => ResolveResponse::Specifier(specifier),
+        Err(err) => ResolveResponse::Err(err.into()),
+      }
     }
   }
 
