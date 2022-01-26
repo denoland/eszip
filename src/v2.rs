@@ -30,10 +30,10 @@ enum HeaderFrameKind {
   Redirect = 1,
 }
 
-/// Version 2 of the EsZip format. This format supports streaming sources and
+/// Version 2 of the Eszip format. This format supports streaming sources and
 /// source maps.
 #[derive(Debug, Default)]
-pub struct EsZipV2 {
+pub struct EszipV2 {
   modules: Arc<Mutex<HashMap<String, EszipV2Module>>>,
   pub ordered_modules: Vec<String>,
 }
@@ -69,8 +69,8 @@ impl EszipV2SourceSlot {
   }
 }
 
-impl EsZipV2 {
-  /// Parse a EsZipV2 from an AsyncRead stream. This function returns once the
+impl EszipV2 {
+  /// Parse a EszipV2 from an AsyncRead stream. This function returns once the
   /// header section of the eszip has been parsed. Once this function returns,
   /// the data section will not necessarially have been parsed yet. To parse
   /// the data section, poll/await the future returned in the second tuple slot.
@@ -78,7 +78,7 @@ impl EsZipV2 {
     mut reader: tokio::io::BufReader<R>,
   ) -> Result<
     (
-      EsZipV2,
+      EszipV2,
       impl Future<Output = Result<tokio::io::BufReader<R>, ParseError>>,
     ),
     ParseError,
@@ -313,7 +313,7 @@ impl EsZipV2 {
     };
 
     Ok((
-      EsZipV2 {
+      EszipV2 {
         modules,
         ordered_modules: vec![], // TODO
       },
@@ -457,7 +457,7 @@ impl EsZipV2 {
     bytes
   }
 
-  /// Turn a [deno_graph::ModuleGraph] into an [EsZipV2]. All modules from the
+  /// Turn a [deno_graph::ModuleGraph] into an [EszipV2]. All modules from the
   /// graph will be transpiled and stored in the eszip archive.
   ///
   /// The ordering of the modules in the graph is dependant on the module graph
@@ -602,7 +602,7 @@ impl EsZipV2 {
           return Some(Module {
             specifier: specifier.to_string(),
             kind: *kind,
-            inner: ModuleInner::V2(EsZipV2 {
+            inner: ModuleInner::V2(EszipV2 {
               modules: self.modules.clone(),
               ordered_modules: vec![],
             }),
@@ -749,7 +749,7 @@ mod tests {
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EsZipV2::from_graph(graph, EmitOptions::default()).unwrap();
+      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
     let source = module.source().await;
@@ -785,7 +785,7 @@ mod tests {
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EsZipV2::from_graph(graph, EmitOptions::default()).unwrap();
+      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
     let source = module.source().await;
@@ -807,7 +807,7 @@ mod tests {
       .await
       .unwrap();
     let (eszip, fut) =
-      super::EsZipV2::parse(BufReader::new(file)).await.unwrap();
+      super::EszipV2::parse(BufReader::new(file)).await.unwrap();
 
     let test = async move {
       let module = eszip.get_module("file:///main.ts").unwrap();
@@ -837,7 +837,7 @@ mod tests {
       .await
       .unwrap();
     let (eszip, fut) =
-      super::EsZipV2::parse(BufReader::new(file)).await.unwrap();
+      super::EszipV2::parse(BufReader::new(file)).await.unwrap();
 
     let test = async move {
       let module = eszip.get_module("file:///json.ts").unwrap();
@@ -866,11 +866,11 @@ mod tests {
       .await
       .unwrap();
     let (eszip, fut) =
-      super::EsZipV2::parse(BufReader::new(file)).await.unwrap();
+      super::EszipV2::parse(BufReader::new(file)).await.unwrap();
     fut.await.unwrap();
     let cursor = Cursor::new(eszip.into_bytes());
     let (eszip, fut) =
-      super::EsZipV2::parse(BufReader::new(cursor)).await.unwrap();
+      super::EszipV2::parse(BufReader::new(cursor)).await.unwrap();
     fut.await.unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
@@ -920,7 +920,7 @@ mod tests {
     .await;
     graph.valid().unwrap();
     let mut eszip =
-      super::EsZipV2::from_graph(graph, EmitOptions::default()).unwrap();
+      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
     let import_map_bytes = Arc::new(resp.content.as_bytes().to_vec());
     eszip.add_import_map(resp.specifier.to_string(), import_map_bytes);
 

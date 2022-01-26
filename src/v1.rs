@@ -14,12 +14,12 @@ use crate::ParseError;
 pub const ESZIP_V1_GRAPH_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct EsZipV1 {
+pub struct EszipV1 {
   version: u32,
   modules: HashMap<Url, ModuleInfo>,
 }
 
-impl EsZipV1 {
+impl EszipV1 {
   pub fn from_modules(modules: HashMap<Url, ModuleInfo>) -> Self {
     Self {
       version: ESZIP_V1_GRAPH_VERSION,
@@ -27,8 +27,8 @@ impl EsZipV1 {
     }
   }
 
-  pub fn parse(data: &[u8]) -> Result<EsZipV1, ParseError> {
-    let eszip: EsZipV1 =
+  pub fn parse(data: &[u8]) -> Result<EszipV1, ParseError> {
+    let eszip: EszipV1 =
       serde_json::from_slice(data).map_err(ParseError::InvalidV1Json)?;
     if eszip.version != ESZIP_V1_GRAPH_VERSION {
       return Err(ParseError::InvalidV1Version(eszip.version));
@@ -84,12 +84,12 @@ pub struct ModuleSource {
 
 #[cfg(test)]
 mod tests {
-  use crate::EsZipV1;
+  use crate::EszipV1;
 
   #[test]
   fn file_format_parse() {
     let data = include_bytes!("./testdata/basic.json");
-    let eszip = EsZipV1::parse(data).unwrap();
+    let eszip = EszipV1::parse(data).unwrap();
     assert_eq!(eszip.version, 1);
     assert_eq!(eszip.modules.len(), 1);
     let module = eszip.get_module("https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js").unwrap();

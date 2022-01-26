@@ -49,7 +49,7 @@ async fn main() {
   graph.valid().unwrap();
 
   let mut eszip =
-    eszip::EsZipV2::from_graph(graph, EmitOptions::default()).unwrap();
+    eszip::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
   if let Some((import_map_specifier, import_map_content)) =
     maybe_import_map_data
   {

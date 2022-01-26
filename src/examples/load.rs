@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use deno_core::error::type_error;
-use eszip::EsZipV2;
+use eszip::EszipV2;
 use futures::FutureExt;
 use import_map::ImportMap;
 use url::Url;
@@ -16,7 +16,7 @@ async fn main() {
 
   let file = tokio::fs::File::open(path).await.unwrap();
   let bufreader = tokio::io::BufReader::new(file);
-  let (eszip, loader) = eszip::EsZipV2::parse(bufreader).await.unwrap();
+  let (eszip, loader) = eszip::EszipV2::parse(bufreader).await.unwrap();
 
   let loader_fut = loader.map(|r| r.map_err(anyhow::Error::new));
 
@@ -50,7 +50,7 @@ async fn main() {
   println!("done");
 }
 
-struct Loader(EsZipV2, Option<ImportMap>);
+struct Loader(EszipV2, Option<ImportMap>);
 
 impl deno_core::ModuleLoader for Loader {
   fn resolve(

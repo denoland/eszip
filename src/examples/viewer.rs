@@ -5,7 +5,7 @@ async fn main() {
 
   let file = tokio::fs::File::open(path).await.unwrap();
   let bufreader = tokio::io::BufReader::new(file);
-  let (eszip, loader) = eszip::EsZipV2::parse(bufreader).await.unwrap();
+  let (eszip, loader) = eszip::EszipV2::parse(bufreader).await.unwrap();
 
   let fut = async move {
     let specifiers = eszip.specifiers();
