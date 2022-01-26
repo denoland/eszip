@@ -43,4 +43,4 @@ deno_core = "0.114.0"
 import_map = "0.6.0"
 indicatif = "0.16"
 tokio = { version = "1", features = ["full"] }
-reqwest = "0.11.9"
+reqwest = { version = "0.11.9", features = ["rustls-tls"] }

@@ -96,6 +96,9 @@ impl Module {
   }
 }
 
+/// This is the kind of module that is being stored. This is the same enum as is
+/// present in [deno_core], but because we can not depend on that crate, this
+/// is a copy of that definition.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

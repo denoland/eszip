@@ -30,6 +30,8 @@ enum HeaderFrameKind {
   Redirect = 1,
 }
 
+/// Version 2 of the EsZip format. This format supports streaming sources and
+/// source maps.
 #[derive(Debug, Default)]
 pub struct EsZipV2 {
   modules: Arc<Mutex<HashMap<String, EszipV2Module>>>,
@@ -68,6 +70,10 @@ impl EszipV2SourceSlot {
 }
 
 impl EsZipV2 {
+  /// Parse a EsZipV2 from an AsyncRead stream. This function returns once the
+  /// header section of the eszip has been parsed. Once this function returns,
+  /// the data section will not necessarially have been parsed yet. To parse
+  /// the data section, poll/await the future returned in the second tuple slot.
   pub async fn parse<R: tokio::io::AsyncRead + Unpin>(
     mut reader: tokio::io::BufReader<R>,
   ) -> Result<
@@ -315,6 +321,12 @@ impl EsZipV2 {
     ))
   }
 
+  /// Add an import map to the eszip archive. The import map will always be
+  /// placed at the top of the archive, so it can be read before any other
+  /// modules are loaded.
+  ///
+  /// If a module with this specifier is already present, then this is a no-op
+  /// (except that this specifier will now be at the top of the archive).
   pub fn add_import_map(&mut self, specifier: String, source: Arc<Vec<u8>>) {
     let module = EszipV2Module::Module {
       kind: ModuleKind::Json,
@@ -333,6 +345,7 @@ impl EsZipV2 {
     self.ordered_modules.extend_from_slice(&old_module_ordering);
   }
 
+  /// Serialize the eszip archive into a byte buffer.
   pub fn into_bytes(self) -> Vec<u8> {
     let mut header: Vec<u8> = ESZIP_V2_MAGIC.to_vec();
     header.extend_from_slice(&[0u8; 4]); // add 4 bytes of space to put the header length in later
@@ -444,6 +457,13 @@ impl EsZipV2 {
     bytes
   }
 
+  /// Turn a [deno_graph::ModuleGraph] into an [EsZipV2]. All modules from the
+  /// graph will be transpiled and stored in the eszip archive.
+  ///
+  /// The ordering of the modules in the graph is dependant on the module graph
+  /// tree. The root module is added to the top of the archive, and the leaves
+  /// to the end. This allows for efficient deserialization of the archive right
+  /// into an isolate.
   pub fn from_graph(
     graph: ModuleGraph,
     mut emit_options: EmitOptions,
@@ -567,6 +587,9 @@ impl EsZipV2 {
     })
   }
 
+  /// Get the module metadata for a given module specifier. This function will
+  /// follow redirects. The returned module has functions that can be used to
+  /// obtain the module source and source map.
   pub fn get_module(&self, specifier: &str) -> Option<Module> {
     let mut specifier = specifier;
     let mut visited = HashSet::new();
