@@ -108,6 +108,9 @@ impl EszipV2 {
 
     let mut read = 0;
 
+    // This macro reads n number of bytes from the header section. If the header
+    // section is not long enough, this function will be early exited with an
+    // error.
     macro_rules! read {
       ($n:expr, $err:expr) => {{
         if read + $n > header_len {
