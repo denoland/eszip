@@ -17,5 +17,6 @@ web-sys = { version = "0.3.56", features = ["ReadableStreamByobReader"] }
 eszip = { path = "../", version = "0.14.1" }
 wasm-bindgen = { version = "0.2.78", features = ["serde-serialize"] }
 wasm-bindgen-futures = { version = "0.4.28" }
-futures = "0.3"
+tokio = { version = "1", features = ["io-std", "io-util"] }
+console_error_panic_hook = "0.1.7"
 

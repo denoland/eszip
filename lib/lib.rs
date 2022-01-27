@@ -1,25 +1,30 @@
-use futures::io::Error;
-use futures::task::Context;
-use futures::task::Poll;
-use futures::AsyncRead;
-use futures::FutureExt;
+use js_sys::Promise;
 use js_sys::Uint8Array;
+use std::future::Future;
+use std::io::Error;
+use std::io::ErrorKind;
 use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
+use tokio::io::AsyncRead;
+use tokio::io::ReadBuf;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-#[cfg(web_sys_unstable_apis)]
 use web_sys::ReadableStreamByobReader;
 
 struct Stream {
-  inner: ReadableStreamByobReader,
+  inner: Option<ReadableStreamByobReader>,
   fut: Option<JsFuture>,
 }
 
 impl Stream {
   fn new(inner: ReadableStreamByobReader) -> Self {
-    Self { inner, fut: None }
+    Self {
+      inner: Some(inner),
+      fut: None,
+    }
   }
 }
 
@@ -36,42 +41,70 @@ impl AsyncRead for Stream {
   fn poll_read(
     mut self: Pin<&mut Self>,
     cx: &mut Context<'_>,
-    buf: &mut [u8],
-  ) -> Poll<Result<usize, std::io::Error>> {
+    buf: &mut ReadBuf<'_>,
+  ) -> Poll<Result<(), Error>> {
     let fut = match self.fut.as_mut() {
       Some(fut) => fut,
       None => {
-        let buffer = Uint8Array::new_with_length(buf.len() as u32);
-        let fut =
-          JsFuture::from(self.inner.read_with_array_buffer_view(&buffer));
-        self.fut.insert(fut)
+        let length = buf.remaining();
+        let buffer = Uint8Array::new_with_length(length as u32);
+        match &self.inner {
+          Some(reader) => {
+            let fut =
+              JsFuture::from(reader.read_with_array_buffer_view(&buffer));
+            self.fut.insert(fut)
+          }
+          None => return Poll::Ready(Ok(())),
+        }
       }
     };
-
-    let result = futures::ready!(fut.poll_unpin(cx));
+    let result = match Pin::new(fut).poll(cx) {
+      Poll::Ready(result) => result,
+      Poll::Pending => return Poll::Pending,
+    };
     self.fut = None;
 
     match result {
       Ok(result) => {
         let result = result.unchecked_into::<ReadResult>();
         match result.is_done() {
-          true => Poll::Ready(Ok(0)),
+          true => Poll::Ready(Ok(())),
           false => {
             let value = result.value().unwrap_throw();
             let length = value.byte_length() as usize;
-            value.copy_to(&mut buf[0..length]);
-            Poll::Ready(Ok(length))
+            let mut bytes = vec![0; length];
+            value.copy_to(&mut bytes);
+            buf.put_slice(&bytes);
+            Poll::Ready(Ok(()))
           }
         }
       }
-      // TODO(@littledivy): handle error
-      Err(_) => todo!(),
+      Err(e) => Poll::Ready(Err(Error::new(
+        ErrorKind::Other,
+        js_sys::Object::try_from(&e)
+          .map(|e| e.to_string().as_string().unwrap_throw())
+          .unwrap_or("Unknown error".to_string()),
+      ))),
     }
   }
 }
 
 #[wasm_bindgen]
-pub async fn eszip_parse(reader: ReadableStreamByobReader) {
+pub async fn eszip_parse(reader: ReadableStreamByobReader) -> Promise {
+  std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+
   let stream = Stream::new(reader);
-  let eszip = eszip::EszipV2::parse(stream);
+  let buf_read = tokio::io::BufReader::new(stream);
+  let (eszip, loader) = eszip::EszipV2::parse(buf_read).await.unwrap();
+  wasm_bindgen_futures::future_to_promise(async move {
+    let specifiers = eszip.specifiers();
+
+    for specifier in specifiers {
+      let module = eszip.get_module(&specifier).unwrap();
+      let source = module.source().await;
+      let string = std::str::from_utf8(source.as_slice()).unwrap();
+      return Ok(string.into());
+    }
+    todo!()
+  })
 }
