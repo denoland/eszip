@@ -684,7 +684,7 @@ mod tests {
   use deno_ast::EmitOptions;
   use deno_graph::source::{LoadResponse, ResolveResponse};
   use deno_graph::ModuleSpecifier;
-  use import_map::{parse_from_json, ImportMap};
+  use import_map::ImportMap;
   use tokio::io::BufReader;
   use url::Url;
 
@@ -902,7 +902,8 @@ mod tests {
     .await
     .unwrap()
     .unwrap();
-    let import_map = parse_from_json(&resp.specifier, &resp.content).unwrap();
+    let import_map =
+      import_map::parse_from_json(&resp.specifier, &resp.content).unwrap();
 
     let roots = vec![(
       ModuleSpecifier::parse("file:///mapped.js").unwrap(),

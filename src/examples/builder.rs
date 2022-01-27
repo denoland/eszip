@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use deno_ast::EmitOptions;
 use deno_graph::source::ResolveResponse;
-use import_map::{parse_from_json, ImportMap};
+use import_map::ImportMap;
 use reqwest::StatusCode;
 use url::Url;
 
@@ -23,7 +23,8 @@ async fn main() {
           .await
           .unwrap()
           .unwrap();
-      let import_map = parse_from_json(&resp.specifier, &resp.content).unwrap();
+      let import_map =
+        import_map::parse_from_json(&resp.specifier, &resp.content).unwrap();
       (
         Some(import_map.import_map),
         Some((resp.specifier, resp.content)),
