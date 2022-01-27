@@ -1,3 +1,6 @@
 build:
-	cargo build --target wasm32-unknown-unknown --release
+	RUSTFLAGS=--cfg=web_sys_unstable_apis wasmbuild
+
+fmt:
+	cargo fmt --all
 
