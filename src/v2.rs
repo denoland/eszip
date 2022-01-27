@@ -64,7 +64,7 @@ impl EszipV2SourceSlot {
   fn bytes(&self) -> &[u8] {
     match self {
       EszipV2SourceSlot::Ready(v) => v,
-      _ => panic!("EszipV2SourceSlot::unwrap() called on a pending slot"),
+      _ => panic!("EszipV2SourceSlot::bytes() called on a pending slot"),
     }
   }
 }
