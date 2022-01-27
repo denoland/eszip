@@ -3,7 +3,7 @@ use std::rc::Rc;
 use deno_core::error::type_error;
 use eszip::EszipV2;
 use futures::FutureExt;
-use import_map::ImportMap;
+use import_map::{parse_from_json, ImportMap};
 use url::Url;
 
 #[tokio::main]
@@ -25,9 +25,7 @@ async fn main() {
       let module = eszip.get_module(maybe_import_map.as_str()).unwrap();
       let source = module.source().await;
       let contents = std::str::from_utf8(&source).unwrap();
-      let import_map =
-        ImportMap::from_json_with_diagnostics(&maybe_import_map, contents)
-          .unwrap();
+      let import_map = parse_from_json(&maybe_import_map, contents).unwrap();
       Some(import_map.import_map)
     } else {
       None
