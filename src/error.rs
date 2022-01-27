@@ -1,44 +1,28 @@
 use thiserror::Error;
 
-use crate::parser::ParseError;
-use crate::resolve_import::ModuleResolutionError;
+#[derive(Debug, Error)]
+pub enum ParseError {
+  #[error("invalid eszip v1: {0}")]
+  InvalidV1Json(serde_json::Error),
+  #[error("invalid eszip v1 version: got {0}, expected 1")]
+  InvalidV1Version(u32),
+  #[error("invalid eszip v2")]
+  InvalidV2,
+  #[error("invalid eszip v2 header hash")]
+  InvalidV2HeaderHash,
+  #[error("invalid specifier in eszip v2 header at offset {0}")]
+  InvalidV2Specifier(usize),
+  #[error("invalid entry kind {0} in eszip v2 header at offset {0}")]
+  InvalidV2EntryKind(u8, usize),
+  #[error("invalid module kind {0} in eszip v2 header at offset {0}")]
+  InvalidV2ModuleKind(u8, usize),
+  #[error("invalid eszip v2 header: {0}")]
+  InvalidV2Header(&'static str),
+  #[error("invalid eszip v2 source offset ({0})")]
+  InvalidV2SourceOffset(usize),
+  #[error("invalid eszip v2 source hash (specifier {0})")]
+  InvalidV2SourceHash(String),
 
-#[derive(Error, Debug)]
-pub enum Error {
-  #[error("module with specifier '{specifier}' not found")]
-  NotFound { specifier: String },
   #[error(transparent)]
-  Parse(#[from] ParseError),
-  #[error(transparent)]
-  ModuleResolution(#[from] ModuleResolutionError),
-  #[error(
-    "invalid redirect for '{specifier}': missing or invalid Location header"
-  )]
-  InvalidRedirect { specifier: String },
-  #[error("failed to fetch '{specifier}': {inner}")]
-  Download {
-    specifier: String,
-    inner: reqwest::Error,
-  },
-  #[error(transparent)]
-  Other(Box<dyn std::error::Error + Sync + Send + 'static>),
-  #[error("invalid data url '{specifier}': '{error}'")]
-  InvalidDataUrl { specifier: String, error: String },
-  #[error("scheme '{scheme}' is not supported: '{specifier}'")]
-  InvalidScheme { scheme: String, specifier: String },
-}
-
-pub fn reqwest_error(specifier: String, error: reqwest::Error) -> Error {
-  if error.is_connect()
-    || error.is_decode()
-    || error.is_status()
-    || error.is_timeout()
-  {
-    Error::Download {
-      specifier,
-      inner: error,
-    }
-  } else {
-    Error::Other(Box::new(error))
-  }
+  Io(#[from] std::io::Error),
 }
