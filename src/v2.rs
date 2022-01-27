@@ -903,8 +903,7 @@ mod tests {
     .unwrap()
     .unwrap();
     let import_map =
-      ImportMap::from_json_with_diagnostics(&resp.specifier, &resp.content)
-        .unwrap();
+      import_map::parse_from_json(&resp.specifier, &resp.content).unwrap();
 
     let roots = vec![(
       ModuleSpecifier::parse("file:///mapped.js").unwrap(),

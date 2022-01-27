@@ -26,8 +26,7 @@ async fn main() {
       let source = module.source().await;
       let contents = std::str::from_utf8(&source).unwrap();
       let import_map =
-        ImportMap::from_json_with_diagnostics(&maybe_import_map, contents)
-          .unwrap();
+        import_map::parse_from_json(&maybe_import_map, contents).unwrap();
       Some(import_map.import_map)
     } else {
       None
