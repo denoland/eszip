@@ -35,7 +35,6 @@ impl Eszip {
   /// function in the second tuple slot needs to be polled.
   pub async fn parse<R: tokio::io::AsyncRead + Unpin + 'static>(
     reader: R,
-    maybe_length: Option<usize>,
   ) -> Result<(Eszip, EszipParserFuture<R>), ParseError> {
     let mut reader = tokio::io::BufReader::new(reader);
     reader.fill_buf().await?;
@@ -44,15 +43,8 @@ impl Eszip {
       let (eszip, fut) = EszipV2::parse(reader).await?;
       Ok((Eszip::V2(eszip), Box::pin(fut)))
     } else {
-      let buffer = if let Some(length) = maybe_length {
-        let mut buffer = vec![0; length];
-        reader.read_exact(&mut buffer).await?;
-        buffer
-      } else {
-        let mut buffer = Vec::new();
-        reader.read_to_end(&mut buffer).await?;
-        buffer
-      };
+      let mut buffer = Vec::new();
+      reader.read_to_end(&mut buffer).await?;
       let eszip = EszipV1::parse(&buffer)?;
       let fut = async move { Ok::<_, ParseError>(reader) };
       Ok((Eszip::V1(eszip), Box::pin(fut)))
@@ -116,7 +108,7 @@ mod tests {
     let file = tokio::fs::File::open("./src/testdata/basic.json")
       .await
       .unwrap();
-    let (eszip, fut) = Eszip::parse(file, None).await.unwrap();
+    let (eszip, fut) = Eszip::parse(file).await.unwrap();
     fut.await.unwrap();
     assert!(matches!(eszip, Eszip::V1(_)));
     eszip.get_module("https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js").unwrap();
@@ -127,7 +119,7 @@ mod tests {
     let file = tokio::fs::File::open("./src/testdata/redirect.eszip2")
       .await
       .unwrap();
-    let (eszip, fut) = Eszip::parse(file, None).await.unwrap();
+    let (eszip, fut) = Eszip::parse(file).await.unwrap();
     fut.await.unwrap();
     assert!(matches!(eszip, Eszip::V2(_)));
     eszip.get_module("file:///main.ts").unwrap();
