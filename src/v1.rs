@@ -61,7 +61,7 @@ impl EszipV1 {
               source
                 .transpiled
                 .as_ref()
-                .unwrap_or_else(|| &source.source)
+                .unwrap_or(&source.source)
                 .as_bytes()
                 .to_owned(),
             )),
