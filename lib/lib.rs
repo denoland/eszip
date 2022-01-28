@@ -40,78 +40,93 @@ extern "C" {
   pub fn value(this: &ReadResult) -> Option<Uint8Array>;
 }
 
-impl AsyncRead for Stream {
+/// A `ParserStream` is a wrapper around
+/// Byob stream that also supports reading
+/// in-memory buffers.
+///
+/// We need this because `#[wasm_bindgen]`
+/// structs cannot have type parameters.
+enum ParserStream {
+  Byob(Stream),
+  Buffer(Vec<u8>),
+}
+
+impl AsyncRead for ParserStream {
   fn poll_read(
     mut self: Pin<&mut Self>,
     cx: &mut Context<'_>,
     buf: &mut ReadBuf<'_>,
   ) -> Poll<Result<(), Error>> {
-    let fut = match self.fut.as_mut() {
-      Some(fut) => fut,
-      None => {
-        let length = buf.remaining();
+    match *self {
+      ParserStream::Byob(ref mut stream) => {
+        let fut = match stream.fut.as_mut() {
+          Some(fut) => fut,
+          None => {
+            let length = buf.remaining();
 
-        let buffer = Uint8Array::new_with_length(length as u32);
-        match &self.inner {
-          Some(reader) => {
-            let fut =
-              JsFuture::from(reader.read_with_array_buffer_view(&buffer));
-            self.fut.insert(fut)
+            let buffer = Uint8Array::new_with_length(length as u32);
+            match &stream.inner {
+              Some(reader) => {
+                let fut =
+                  JsFuture::from(reader.read_with_array_buffer_view(&buffer));
+                stream.fut.insert(fut)
+              }
+              None => return Poll::Ready(Ok(())),
+            }
           }
-          None => return Poll::Ready(Ok(())),
+        };
+        let result = match Pin::new(fut).poll(cx) {
+          Poll::Ready(result) => result,
+          Poll::Pending => return Poll::Pending,
+        };
+        stream.fut = None;
+
+        match result {
+          Ok(result) => {
+            let result = result.unchecked_into::<ReadResult>();
+            match result.is_done() {
+              true => {
+                stream.inner = None;
+                Poll::Ready(Ok(()))
+              }
+              false => {
+                let value = result.value().unwrap_throw();
+                let length = value.byte_length() as usize;
+
+                let mut bytes = vec![0; length];
+                value.copy_to(&mut bytes);
+                buf.put_slice(&bytes);
+
+                Poll::Ready(Ok(()))
+              }
+            }
+          }
+          Err(e) => Poll::Ready(Err(Error::new(
+            ErrorKind::Other,
+            js_sys::Object::try_from(&e)
+              .map(|e| e.to_string().as_string().unwrap_throw())
+              .unwrap_or("Unknown error".to_string()),
+          ))),
         }
       }
-    };
-    let result = match Pin::new(fut).poll(cx) {
-      Poll::Ready(result) => result,
-      Poll::Pending => return Poll::Pending,
-    };
-    self.fut = None;
-
-    match result {
-      Ok(result) => {
-        let result = result.unchecked_into::<ReadResult>();
-        match result.is_done() {
-          true => {
-            self.inner = None;
-            Poll::Ready(Ok(()))
-          }
-          false => {
-            let value = result.value().unwrap_throw();
-            let length = value.byte_length() as usize;
-
-            let mut bytes = vec![0; length];
-            value.copy_to(&mut bytes);
-            buf.put_slice(&bytes);
-
-            Poll::Ready(Ok(()))
-          }
-        }
+      ParserStream::Buffer(ref mut buffer) => {
+        let amt = std::cmp::min(buffer.len(), buf.remaining());
+        let (a, b) = buffer.split_at(amt);
+        buf.put_slice(a);
+        *buffer = b.to_vec();
+        Poll::Ready(Ok(()))
       }
-      Err(e) => Poll::Ready(Err(Error::new(
-        ErrorKind::Other,
-        js_sys::Object::try_from(&e)
-          .map(|e| e.to_string().as_string().unwrap_throw())
-          .unwrap_or("Unknown error".to_string()),
-      ))),
     }
   }
 }
 
+type LoaderFut<T> =
+  Pin<Box<dyn Future<Output = Result<BufReader<T>, eszip::ParseError>>>>;
+type ParseResult<T> = (eszip::EszipV2, LoaderFut<T>);
+
 #[wasm_bindgen]
 pub struct Parser {
-  parser: Rc<
-    RefCell<
-      Option<(
-        eszip::EszipV2,
-        Pin<
-          Box<
-            dyn Future<Output = Result<BufReader<Stream>, eszip::ParseError>>,
-          >,
-        >,
-      )>,
-    >,
-  >,
+  parser: Rc<RefCell<Option<ParseResult<ParserStream>>>>,
 }
 
 #[wasm_bindgen]
@@ -124,9 +139,22 @@ impl Parser {
     }
   }
 
+  /// Parse from a BYOB readable stream.
   pub fn parse(&self, stream: ReadableStreamByobReader) -> Promise {
-    let reader = BufReader::new(Stream::new(stream));
+    let reader = BufReader::new(ParserStream::Byob(Stream::new(stream)));
+    self.parse_reader(reader)
+  }
+
+  /// Parse from an in-memory buffer.
+  #[wasm_bindgen(js_name = parseBuffer)]
+  pub fn parse_bytes(&self, buffer: Vec<u8>) -> Promise {
+    let reader = BufReader::new(ParserStream::Buffer(buffer));
+    self.parse_reader(reader)
+  }
+
+  fn parse_reader(&self, reader: BufReader<ParserStream>) -> Promise {
     let parser = Rc::clone(&self.parser);
+
     wasm_bindgen_futures::future_to_promise(async move {
       let (eszip, loader) = eszip::EszipV2::parse(reader).await.unwrap();
       let specifiers = eszip.specifiers();
@@ -141,14 +169,31 @@ impl Parser {
     })
   }
 
-  pub fn get_module_source(&mut self, specifier: String) -> Promise {
+  /// Load module sources.
+  pub fn load(&mut self) -> Promise {
     let parser = Rc::clone(&self.parser);
+
     wasm_bindgen_futures::future_to_promise(async move {
       let mut p = parser.borrow_mut();
-      let (eszip, loader) = p.as_mut().unwrap();
+      let (_, loader) = p.as_mut().unwrap_throw();
+      loader.await.unwrap();
+      Ok(JsValue::UNDEFINED)
+    })
+  }
+
+  /// Get a module source.
+  #[wasm_bindgen(js_name = getModuleSource)]
+  pub fn get_module_source(&self, specifier: String) -> Promise {
+    let parser = Rc::clone(&self.parser);
+
+    wasm_bindgen_futures::future_to_promise(async move {
+      let p = parser.borrow();
+      let (eszip, _) = p.as_ref().unwrap();
       let module = eszip.get_module(&specifier).unwrap();
 
-      loader.await;
+      // Drop the borrow for the loader
+      // to mutably borrow.
+      drop(p);
       let source = module.source().await;
       let source = std::str::from_utf8(&source).unwrap();
       Ok(source.to_string().into())
