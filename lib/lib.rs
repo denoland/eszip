@@ -1,12 +1,15 @@
 use js_sys::Promise;
 use js_sys::Uint8Array;
+use std::cell::RefCell;
 use std::future::Future;
 use std::io::Error;
 use std::io::ErrorKind;
 use std::pin::Pin;
+use std::rc::Rc;
 use std::task::Context;
 use std::task::Poll;
 use tokio::io::AsyncRead;
+use tokio::io::BufReader;
 use tokio::io::ReadBuf;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -47,6 +50,7 @@ impl AsyncRead for Stream {
       Some(fut) => fut,
       None => {
         let length = buf.remaining();
+
         let buffer = Uint8Array::new_with_length(length as u32);
         match &self.inner {
           Some(reader) => {
@@ -68,13 +72,18 @@ impl AsyncRead for Stream {
       Ok(result) => {
         let result = result.unchecked_into::<ReadResult>();
         match result.is_done() {
-          true => Poll::Ready(Ok(())),
+          true => {
+            self.inner = None;
+            Poll::Ready(Ok(()))
+          }
           false => {
             let value = result.value().unwrap_throw();
             let length = value.byte_length() as usize;
+
             let mut bytes = vec![0; length];
             value.copy_to(&mut bytes);
             buf.put_slice(&bytes);
+
             Poll::Ready(Ok(()))
           }
         }
@@ -90,21 +99,59 @@ impl AsyncRead for Stream {
 }
 
 #[wasm_bindgen]
-pub async fn eszip_parse(reader: ReadableStreamByobReader) -> Promise {
-  std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+pub struct Parser {
+  parser: Rc<
+    RefCell<
+      Option<(
+        eszip::EszipV2,
+        Pin<
+          Box<
+            dyn Future<Output = Result<BufReader<Stream>, eszip::ParseError>>,
+          >,
+        >,
+      )>,
+    >,
+  >,
+}
 
-  let stream = Stream::new(reader);
-  let buf_read = tokio::io::BufReader::new(stream);
-  let (eszip, loader) = eszip::EszipV2::parse(buf_read).await.unwrap();
-  wasm_bindgen_futures::future_to_promise(async move {
-    let specifiers = eszip.specifiers();
-
-    for specifier in specifiers {
-      let module = eszip.get_module(&specifier).unwrap();
-      let source = module.source().await;
-      let string = std::str::from_utf8(source.as_slice()).unwrap();
-      return Ok(string.into());
+#[wasm_bindgen]
+impl Parser {
+  #[wasm_bindgen(constructor)]
+  pub fn new() -> Self {
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    Self {
+      parser: Rc::new(RefCell::new(None)),
     }
-    todo!()
-  })
+  }
+
+  pub fn parse(&self, stream: ReadableStreamByobReader) -> Promise {
+    let reader = BufReader::new(Stream::new(stream));
+    let parser = Rc::clone(&self.parser);
+    wasm_bindgen_futures::future_to_promise(async move {
+      let (eszip, loader) = eszip::EszipV2::parse(reader).await.unwrap();
+      let specifiers = eszip.specifiers();
+      parser.borrow_mut().replace((eszip, Box::pin(loader)));
+      Ok(
+        specifiers
+          .iter()
+          .map(JsValue::from)
+          .collect::<js_sys::Array>()
+          .into(),
+      )
+    })
+  }
+
+  pub fn get_module_source(&mut self, specifier: String) -> Promise {
+    let parser = Rc::clone(&self.parser);
+    wasm_bindgen_futures::future_to_promise(async move {
+      let mut p = parser.borrow_mut();
+      let (eszip, loader) = p.as_mut().unwrap();
+      let module = eszip.get_module(&specifier).unwrap();
+
+      loader.await;
+      let source = module.source().await;
+      let source = std::str::from_utf8(&source).unwrap();
+      Ok(source.to_string().into())
+    })
+  }
 }

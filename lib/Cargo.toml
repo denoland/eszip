@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 js-sys = { version = "0.3.55" }
-web-sys = { version = "0.3.56", features = ["ReadableStreamByobReader"] }
+web-sys = { version = "0.3.56", features = ["ReadableStreamByobReader", "console"] }
 eszip = { path = "../", version = "0.14.1" }
 wasm-bindgen = { version = "0.2.78", features = ["serde-serialize"] }
 wasm-bindgen-futures = { version = "0.4.28" }
