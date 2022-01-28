@@ -14,9 +14,10 @@ use tokio::io::ReadBuf;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
-
 use web_sys::ReadableStreamByobReader;
 
+/// A `Stream` holds a Byob reader and the
+/// future of the current `reader.read` operation.
 struct Stream {
   inner: Option<ReadableStreamByobReader>,
   fut: Option<JsFuture>,
@@ -33,16 +34,19 @@ impl Stream {
 
 #[wasm_bindgen]
 extern "C" {
+  /// Result of a read on BYOB reader.
+  /// { value: Uint8Array, done: boolean }
   pub type ReadResult;
   #[wasm_bindgen(method, getter, js_name = done)]
   pub fn is_done(this: &ReadResult) -> bool;
+
   #[wasm_bindgen(method, getter, js_name = value)]
   pub fn value(this: &ReadResult) -> Option<Uint8Array>;
 }
 
 /// A `ParserStream` is a wrapper around
 /// Byob stream that also supports reading
-/// in-memory buffers.
+/// through in-memory buffers.
 ///
 /// We need this because `#[wasm_bindgen]`
 /// structs cannot have type parameters.
@@ -59,11 +63,12 @@ impl AsyncRead for ParserStream {
   ) -> Poll<Result<(), Error>> {
     match *self {
       ParserStream::Byob(ref mut stream) => {
+        // If we have a pending future, poll it.
+        // otherwise, schedule a new one.
         let fut = match stream.fut.as_mut() {
           Some(fut) => fut,
           None => {
             let length = buf.remaining();
-
             let buffer = Uint8Array::new_with_length(length as u32);
             match &stream.inner {
               Some(reader) => {
@@ -79,6 +84,7 @@ impl AsyncRead for ParserStream {
           Poll::Ready(result) => result,
           Poll::Pending => return Poll::Pending,
         };
+        // Clear slot for next `read()`.
         stream.fut = None;
 
         match result {
@@ -86,6 +92,7 @@ impl AsyncRead for ParserStream {
             let result = result.unchecked_into::<ReadResult>();
             match result.is_done() {
               true => {
+                // Drop the readable stream.
                 stream.inner = None;
                 Poll::Ready(Ok(()))
               }
@@ -110,6 +117,8 @@ impl AsyncRead for ParserStream {
         }
       }
       ParserStream::Buffer(ref mut buffer) => {
+        // Put the requested bytes into the buffer and
+        // assign the remaining bytes back into the sink.
         let amt = std::cmp::min(buffer.len(), buf.remaining());
         let (a, b) = buffer.split_at(amt);
         buf.put_slice(a);
@@ -197,6 +206,29 @@ impl Parser {
       let source = module.source().await;
       let source = std::str::from_utf8(&source).unwrap();
       Ok(source.to_string().into())
+    })
+  }
+
+  /// Get a module sourcemap.
+  #[wasm_bindgen(js_name = getModuleSourceMap)]
+  pub fn get_module_source_map(&self, specifier: String) -> Promise {
+    let parser = Rc::clone(&self.parser);
+
+    wasm_bindgen_futures::future_to_promise(async move {
+      let p = parser.borrow();
+      let (eszip, _) = p.as_ref().unwrap();
+      let module = eszip.get_module(&specifier).unwrap();
+
+      // Drop the borrow for the loader
+      // to mutably borrow.
+      drop(p);
+      match module.source_map().await {
+        Some(source_map) => {
+          let source_map = std::str::from_utf8(&source_map).unwrap();
+          Ok(source_map.to_string().into())
+        }
+        None => Ok(JsValue::NULL),
+      }
     })
   }
 }
