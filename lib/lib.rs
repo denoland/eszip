@@ -232,3 +232,138 @@ impl Parser {
     })
   }
 }
+
+#[wasm_bindgen]
+extern "C" {
+  pub type Module;
+  #[wasm_bindgen(method, getter)]
+  pub fn specifier(this: &Module) -> String;
+  #[wasm_bindgen(method, getter)]
+  pub fn kind(this: &Module) -> String;
+  #[wasm_bindgen(method, getter)]
+  pub fn maybe_source(this: &Module) -> Option<String>;
+  #[wasm_bindgen(method, getter)]
+  pub fn maybe_parsed_source(this: &Module) -> Option<String>;
+  #[wasm_bindgen(method, getter)]
+  pub fn media_type(this: &Module) -> String;
+  #[wasm_bindgen(method, getter)]
+  pub fn dependencies(this: &Module) -> js_sys::Array;
+}
+
+#[wasm_bindgen]
+extern "C" {
+  pub type ModuleGraph;
+  #[wasm_bindgen(method)]
+  pub fn get(this: &ModuleGraph, specifier: String) -> Module;
+  #[wasm_bindgen(method)]
+  pub fn roots(this: &ModuleGraph) -> js_sys::Array;
+  #[wasm_bindgen(method)]
+  pub fn redirects(this: &ModuleGraph) -> js_sys::Array;
+}
+
+use eszip::deno_ast::TranspiledSource;
+use eszip::v2::*;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::Mutex;
+
+// BIG TODO for tommorow :)
+#[wasm_bindgen]
+pub fn from_deno_graph(graph: ModuleGraph) -> Result<Vec<u8>, JsValue> {
+  let mut modules = HashMap::new();
+  let mut ordered_modules = vec![];
+
+  fn visit_module(
+    graph: &ModuleGraph,
+    modules: &mut HashMap<String, EszipV2Module>,
+    ordered_modules: &mut Vec<String>,
+    specifier: &Url,
+  ) -> Result<(), anyhow::Error> {
+    let module = graph.get(specifier.to_string());
+    let specifier = module.specifier().as_str();
+    if modules.contains_key(specifier) {
+      return Ok(());
+    }
+
+    match module.kind() {
+      deno_graph::ModuleKind::Esm => {
+        let (source, source_map) = match module.media_type() {
+          deno_graph::MediaType::JavaScript | deno_graph::MediaType::Mjs => {
+            let source = module.maybe_source().as_ref().unwrap();
+            (source.as_bytes().to_owned(), vec![])
+          }
+          deno_graph::MediaType::Jsx
+          | deno_graph::MediaType::TypeScript
+          | deno_graph::MediaType::Mts
+          | deno_graph::MediaType::Tsx
+          | deno_graph::MediaType::Dts
+          | deno_graph::MediaType::Dmts => {
+            let parsed_source = module.maybe_parsed_source().as_ref().unwrap();
+            let TranspiledSource {
+              text: source,
+              source_map: maybe_source_map,
+            } = parsed_source.transpile(Default::default())?;
+            let source_map = maybe_source_map.unwrap_or_default();
+            (source.into_bytes(), source_map.into_bytes())
+          }
+          _ => {
+            return Err(anyhow::anyhow!(
+              "unsupported media type {} for {}",
+              module.media_type(),
+              specifier
+            ));
+          }
+        };
+
+        let specifier = module.specifier();
+        let module = EszipV2Module::Module {
+          kind: ModuleKind::JavaScript,
+          source: EszipV2SourceSlot::Ready(Arc::new(source)),
+          source_map: EszipV2SourceSlot::Ready(Arc::new(source_map)),
+        };
+        modules.insert(specifier, module);
+      }
+      deno_graph::ModuleKind::Asserted => {
+        if module.media_type() == deno_graph::MediaType::Json {
+          let source = module.maybe_source().as_ref().unwrap();
+          let specifier = module.specifier();
+          let module = EszipV2Module::Module {
+            kind: ModuleKind::Json,
+            source: EszipV2SourceSlot::Ready(Arc::new(
+              source.as_bytes().to_owned(),
+            )),
+            source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+          };
+          modules.insert(specifier, module);
+        }
+      }
+      _ => {}
+    }
+
+    ordered_modules.push(specifier.to_string());
+    for dep in module.dependencies() {
+      if let Some(specifier) = dep.get_code() {
+        visit_module(graph, modules, ordered_modules, specifier).unwrap();
+      }
+    }
+
+    Ok(())
+  }
+
+  for root in &graph.roots() {
+    visit_module(&graph, &mut modules, &mut ordered_modules, root).unwrap();
+  }
+
+  for (specifier, target) in graph.redirects() {
+    let module = EszipV2Module::Redirect {
+      target: target.to_string(),
+    };
+    modules.insert(specifier.to_string(), module);
+  }
+
+  let eszip = EszipV2 {
+    modules: Arc::new(Mutex::new(modules)),
+    ordered_modules,
+  };
+  Ok(eszip.into_bytes())
+}

@@ -250,14 +250,18 @@ dependencies = [
  "data-url",
  "deno_ast",
  "futures",
+ "js-sys",
  "lazy_static",
  "parking_lot",
  "regex",
  "ring",
  "serde",
+ "serde-wasm-bindgen",
  "serde_json",
  "termcolor",
  "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -334,7 +338,9 @@ dependencies = [
 name = "eszip_wasm"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "console_error_panic_hook",
+ "deno_graph",
  "eszip",
  "js-sys",
  "tokio",
@@ -994,6 +1000,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce31e24b01e1e524df96f1c2fdd054405f8d7376249a5110886fb4b658484789"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "618365e8e586c22123d692b72a7d791d5ee697817b65a218cdf12a98870af0f7"
+dependencies = [
+ "fnv",
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]
