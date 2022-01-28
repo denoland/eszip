@@ -58,7 +58,12 @@ impl EszipV1 {
             specifier: specifier.to_string(),
             kind: ModuleKind::JavaScript,
             inner: ModuleInner::V1(Arc::new(
-              source.source.as_bytes().to_owned(),
+              source
+                .transpiled
+                .as_ref()
+                .unwrap_or_else(|| &source.source)
+                .as_bytes()
+                .to_owned(),
             )),
           };
           return Some(module);
@@ -100,5 +105,18 @@ mod tests {
       crate::ModuleInner::V2(_) => unreachable!(),
     };
     assert_eq!(*bytes, b"addEventListener(\"fetch\", (event) => {\n  event.respondWith(new Response(\"Hello World\", {\n    headers: { \"content-type\": \"text/plain\" },\n  }));\n});");
+  }
+
+  #[tokio::test]
+  async fn get_transpiled_for_ts() {
+    let data = include_bytes!("./testdata/dotland.json");
+    let eszip = EszipV1::parse(data).unwrap();
+    assert_eq!(eszip.version, 1);
+
+    let module = eszip.get_module("file:///src/worker/handler.ts").unwrap();
+    assert_eq!(module.specifier, "file:///src/worker/handler.ts");
+    let bytes = module.source().await;
+    let text = std::str::from_utf8(&bytes).unwrap();
+    assert!(!text.contains("import type { ConnInfo }"));
   }
 }
