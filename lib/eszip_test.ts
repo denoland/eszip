@@ -1,4 +1,4 @@
-import { Parser, build } from "./lib/eszip_wasm.generated.js";
+import { Parser, build } from "./mod.ts";
 import { assert, assertEquals } from "https://deno.land/std@0.123.0/testing/asserts.ts";
 
 Deno.test("roudtrip build + parse", async () => {
