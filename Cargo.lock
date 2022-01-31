@@ -296,11 +296,11 @@ dependencies = [
 
 [[package]]
 name = "deno_console"
-version = "0.34.0"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "967768662413ff40b36dd9bc0b3151a9a0d45c3fb481e0de5bc916bbe50e0c7c"
+checksum = "ef9aede625c58062715ec9257eba78c5bf47d04db4ff903715d319cbbb4a8987"
 dependencies = [
- "deno_core",
+ "deno_core 0.117.0",
 ]
 
 [[package]]
@@ -319,7 +319,28 @@ dependencies = [
  "pin-project",
  "serde",
  "serde_json",
- "serde_v8",
+ "serde_v8 0.27.0",
+ "url",
+ "v8",
+]
+
+[[package]]
+name = "deno_core"
+version = "0.117.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "729590cf902ef79a4c2d226bd6bb2fef2cfdd00a3bbe9f84d059f5c32fad0880"
+dependencies = [
+ "anyhow",
+ "futures",
+ "indexmap",
+ "libc",
+ "log",
+ "once_cell",
+ "parking_lot",
+ "pin-project",
+ "serde",
+ "serde_json",
+ "serde_v8 0.28.0",
  "url",
  "v8",
 ]
@@ -415,14 +436,14 @@ dependencies = [
 
 [[package]]
 name = "eszip"
-version = "0.15.1"
+version = "0.15.2"
 dependencies = [
  "anyhow",
  "base64 0.13.0",
  "clap",
  "deno_ast",
  "deno_console",
- "deno_core",
+ "deno_core 0.116.0",
  "deno_graph",
  "futures",
  "import_map",
@@ -438,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "eszip_wasm"
-version = "0.1.0"
+version = "0.15.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -1571,6 +1592,17 @@ name = "serde_v8"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4652c035fe8467ec48d084a2119c63995cabfbeffa8e07fb85c87d078566e9b"
+dependencies = [
+ "serde",
+ "serde_bytes",
+ "v8",
+]
+
+[[package]]
+name = "serde_v8"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f052f4efe200433f4c5894d7f88e3fb9c106525f33add3dc2466bf615518727f"
 dependencies = [
  "serde",
  "serde_bytes",
