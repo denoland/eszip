@@ -12,4 +12,3 @@ test:
 fmt:
 	deno fmt lib/
 	cargo fmt --all
-

@@ -20,8 +20,25 @@ jobs:
           toolchain: stable
           components: clippy
 
+      - name: Install Deno
+        uses: denoland/setup-deno@v1.0.0
+        with:
+          deno-version: 1.x
+
+      - name: Setup WASM
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install wasm-bindgen-cli
+          deno install --unstable -A -f -n wasmbuild https://raw.githubusercontent.com/denoland/wasmbuild/7b714ee749e4dc1e4ed1bc6f7258235a6c289aec/main.ts
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
+
       - name: Clippy
         run: cargo clippy --all-targets
 
+      - name: Build
+        run: make
+
       - name: Test
-        run: cargo test --all-targets
+        run: | 
+          cargo test --all-targets
+          make test
