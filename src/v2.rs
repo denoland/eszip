@@ -14,12 +14,12 @@ use futures::future::poll_fn;
 use sha2::Digest;
 use sha2::Sha256;
 use tokio::io::AsyncReadExt;
-use url::Url;
+pub use url::Url;
 
 use crate::error::ParseError;
 use crate::Module;
 use crate::ModuleInner;
-use crate::ModuleKind;
+pub use crate::ModuleKind;
 
 pub(crate) const ESZIP_V2_MAGIC: &[u8; 8] = b"ESZIP_V2";
 
@@ -39,7 +39,7 @@ pub struct EszipV2 {
 }
 
 #[derive(Debug)]
-enum EszipV2Module {
+pub enum EszipV2Module {
   Module {
     kind: ModuleKind,
     source: EszipV2SourceSlot,
@@ -51,7 +51,7 @@ enum EszipV2Module {
 }
 
 #[derive(Debug)]
-enum EszipV2SourceSlot {
+pub enum EszipV2SourceSlot {
   Pending {
     offset: usize,
     length: usize,
