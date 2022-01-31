@@ -4,11 +4,11 @@ import {
   assertEquals,
 } from "https://deno.land/std@0.123.0/testing/asserts.ts";
 
-Deno.test("roudtrip build + parse", async () => {
+Deno.test("roundtrip build + parse", async () => {
   const eszip = await build([
     "https://example.com/mod.ts",
     "https://example.com/a.ts",
-  ], (specifier: string) => {
+  ], async (specifier: string) => {
     if (specifier === "https://example.com/a.ts") {
       return {
         specifier,
@@ -41,4 +41,9 @@ Deno.test("roudtrip build + parse", async () => {
   assertEquals(mod, 'import "https://example.com/a.ts";\n');
   const a = await parser.getModuleSource("https://example.com/a.ts");
   assertEquals(a, "export const a = 1;\n");
+});
+
+Deno.test("build default loader", async () => {
+  const eszip = await build(["https://deno.land/std@0.123.0/fs/mod.ts"]);
+  assert(eszip instanceof Uint8Array);
 });
