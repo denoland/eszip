@@ -58,7 +58,12 @@ impl EszipV1 {
             specifier: specifier.to_string(),
             kind: ModuleKind::JavaScript,
             inner: ModuleInner::V1(Arc::new(
-              source.source.as_bytes().to_owned(),
+              source
+                .transpiled
+                .as_ref()
+                .unwrap_or(&source.source)
+                .as_bytes()
+                .to_owned(),
             )),
           };
           return Some(module);
@@ -99,6 +104,19 @@ mod tests {
       crate::ModuleInner::V1(bytes) => bytes,
       crate::ModuleInner::V2(_) => unreachable!(),
     };
-    assert_eq!(*bytes, b"addEventListener(\"fetch\", (event) => {\n  event.respondWith(new Response(\"Hello World\", {\n    headers: { \"content-type\": \"text/plain\" },\n  }));\n});");
+    assert_eq!(*bytes, b"addEventListener(\"fetch\", (event)=>{\n    event.respondWith(new Response(\"Hello World\", {\n        headers: {\n            \"content-type\": \"text/plain\"\n        }\n    }));\n});\n//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIjxodHRwczovL2dpc3QuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2x1Y2FjYXNvbmF0by9mM2UyMTQwNTMyMjI1OWNhNGVkMTU1NzIyMzkwZmRhMi9yYXcvZTI1YWNiNDliNjgxZThlMWRhNWEyYTMzNzQ0YjdhMzZkNTM4NzEyZC9oZWxsby5qcz4iXSwic291cmNlc0NvbnRlbnQiOlsiYWRkRXZlbnRMaXN0ZW5lcihcImZldGNoXCIsIChldmVudCkgPT4ge1xuICBldmVudC5yZXNwb25kV2l0aChuZXcgUmVzcG9uc2UoXCJIZWxsbyBXb3JsZFwiLCB7XG4gICAgaGVhZGVyczogeyBcImNvbnRlbnQtdHlwZVwiOiBcInRleHQvcGxhaW5cIiB9LFxuICB9KSk7XG59KTsiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IkFBQUEsZ0JBQUEsRUFBQSxLQUFBLElBQUEsS0FBQTtBQUNBLFNBQUEsQ0FBQSxXQUFBLEtBQUEsUUFBQSxFQUFBLFdBQUE7QUFDQSxlQUFBO2FBQUEsWUFBQSxJQUFBLFVBQUEifQ==");
+  }
+
+  #[tokio::test]
+  async fn get_transpiled_for_ts() {
+    let data = include_bytes!("./testdata/dotland.json");
+    let eszip = EszipV1::parse(data).unwrap();
+    assert_eq!(eszip.version, 1);
+
+    let module = eszip.get_module("file:///src/worker/handler.ts").unwrap();
+    assert_eq!(module.specifier, "file:///src/worker/handler.ts");
+    let bytes = module.source().await;
+    let text = std::str::from_utf8(&bytes).unwrap();
+    assert!(!text.contains("import type { ConnInfo }"));
   }
 }

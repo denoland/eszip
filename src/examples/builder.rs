@@ -24,8 +24,7 @@ async fn main() {
           .unwrap()
           .unwrap();
       let import_map =
-        ImportMap::from_json_with_diagnostics(&resp.specifier, &resp.content)
-          .unwrap();
+        import_map::parse_from_json(&resp.specifier, &resp.content).unwrap();
       (
         Some(import_map.import_map),
         Some((resp.specifier, resp.content)),
