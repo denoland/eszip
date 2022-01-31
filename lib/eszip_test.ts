@@ -1,5 +1,8 @@
-import { Parser, build } from "./mod.ts";
-import { assert, assertEquals } from "https://deno.land/std@0.123.0/testing/asserts.ts";
+import { build, Parser } from "./mod.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.123.0/testing/asserts.ts";
 
 Deno.test("roudtrip build + parse", async () => {
   const eszip = await build([
@@ -13,8 +16,8 @@ Deno.test("roudtrip build + parse", async () => {
           "content-type": "text/typescript",
         },
         content: "export const a = 1;",
-      }
-    };
+      };
+    }
 
     return {
       specifier: "https://example.com/mod.ts",
@@ -24,7 +27,7 @@ Deno.test("roudtrip build + parse", async () => {
       content: `import "https://example.com/a.ts";`,
     };
   });
-  
+
   assert(eszip instanceof Uint8Array);
   const parser = new Parser();
   const specifiers = await parser.parseBytes(eszip);
@@ -32,11 +35,10 @@ Deno.test("roudtrip build + parse", async () => {
     "https://example.com/mod.ts",
     "https://example.com/a.ts",
   ]);
-  
+
   await parser.load();
   const mod = await parser.getModuleSource("https://example.com/mod.ts");
-  assertEquals(mod, "import \"https://example.com/a.ts\";\n");
+  assertEquals(mod, 'import "https://example.com/a.ts";\n');
   const a = await parser.getModuleSource("https://example.com/a.ts");
   assertEquals(a, "export const a = 1;\n");
 });
-

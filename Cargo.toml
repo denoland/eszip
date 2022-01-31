@@ -6,6 +6,9 @@ edition = "2021"
 description = "A utility that can download JavaScript and TypeScript module graphs and store them locally in a special zip file"
 license = "MIT"
 
+[workspace]
+members = ["lib"]
+
 [lib]
 name = "eszip"
 path = "src/lib.rs"
