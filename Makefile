@@ -5,6 +5,7 @@ build:
 
 release:
 	$(RUSTFLAGS) wasmbuild --release
+	wasm-opt -Oz lib/eszip_wasm_bg.wasm -o lib/eszip_wasm_bg.wasm
 
 test:
 	deno test -A lib/
