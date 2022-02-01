@@ -1,16 +1,21 @@
 use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
+use deno_graph::source::LoadResponse;
 use deno_graph::source::Loader;
 use deno_graph::ModuleSpecifier;
 use js_sys::Promise;
 use js_sys::Uint8Array;
+use serde::Deserialize;
+use serde::Serialize;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::future::Future;
 use std::io::Error;
 use std::io::ErrorKind;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 use tokio::io::AsyncRead;
@@ -272,6 +277,27 @@ pub async fn build_eszip(
 // https://github.com/denoland/deno_graph/blob/main/src/js_graph.rs#L43
 pub struct GraphLoader(js_sys::Function);
 
+#[derive(Deserialize, Serialize)]
+struct GraphLoaderResponse {
+  specifier: ModuleSpecifier,
+  #[serde(default)]
+  external: bool,
+  content: Option<Arc<String>>,
+  headers: Option<HashMap<String, String>>,
+}
+
+impl From<GraphLoaderResponse> for LoadResponse {
+  fn from(r: GraphLoaderResponse) -> Self {
+    assert!(!r.external);
+
+    LoadResponse {
+      specifier: r.specifier,
+      content: r.content.unwrap(),
+      maybe_headers: r.headers,
+    }
+  }
+}
+
 impl Loader for GraphLoader {
   fn get_cache_info(&self, _: &ModuleSpecifier) -> Option<CacheInfo> {
     None
@@ -301,9 +327,23 @@ impl Loader for GraphLoader {
           }
           Err(err) => Err(err),
         };
-        response
-          .map(|value| value.into_serde().unwrap())
-          .map_err(|_| anyhow::anyhow!("load rejected or errored"))
+        let response = response
+          .map(|value| {
+            value.into_serde::<Option<GraphLoaderResponse>>().unwrap()
+          })
+          .map_err(|_| anyhow::anyhow!("load rejected or errored"))?;
+
+        if let Some(GraphLoaderResponse {
+          external: true,
+          content,
+          ..
+        }) = response
+        {
+          assert_eq!(content, None);
+          return Ok(None);
+        }
+
+        Ok(response.map(LoadResponse::from))
       })
     }
   }

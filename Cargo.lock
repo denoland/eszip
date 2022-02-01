@@ -466,6 +466,7 @@ dependencies = [
  "deno_graph",
  "eszip",
  "js-sys",
+ "serde",
  "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",

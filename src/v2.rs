@@ -486,7 +486,11 @@ impl EszipV2 {
       ordered_modules: &mut Vec<String>,
       specifier: &Url,
     ) -> Result<(), anyhow::Error> {
-      let module = graph.get(specifier).unwrap();
+      let module = match graph.get(specifier) {
+        Some(module) => module,
+        // Most likely a dangling import.
+        None => return Ok(()),
+      };
       let specifier = module.specifier.as_str();
       if modules.contains_key(specifier) {
         return Ok(());

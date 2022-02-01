@@ -4,7 +4,15 @@ import { build } from "../mod.ts";
 const eszip = await build([
   "https://example.com/mod.ts",
   "https://example.com/dep1.ts",
+  "external:main.js",
 ], async (specifier: string) => {
+  if (specifier === "external:main.js") {
+    return {
+      specifier,
+      external: true,
+    };
+  }
+
   if (specifier === "https://example.com/dep1.ts") {
     return {
       specifier,
@@ -20,7 +28,8 @@ const eszip = await build([
     headers: {
       "content-type": "application/typescript",
     },
-    content: `import { a } from "https://example.com/dep1.ts";`,
+    content:
+      `import { a } from "https://example.com/dep1.ts";\n import "external";`,
   };
 });
 
