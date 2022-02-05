@@ -282,6 +282,21 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a2780a628fd2fd52c81ef3f9d2bda0609a662b9e4f85623c29051c277363f65"
 dependencies = [
+ "data-url",
+ "serde",
+ "swc_atoms",
+ "swc_common",
+ "swc_ecmascript 0.108.4",
+ "text_lines",
+ "url",
+]
+
+[[package]]
+name = "deno_ast"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efd88c9bfcb036294da03e7bf8b5d7f1276b0ad522b0b057ca2b839ee9325a33"
+dependencies = [
  "anyhow",
  "base64 0.13.0",
  "data-url",
@@ -289,7 +304,7 @@ dependencies = [
  "serde",
  "swc_atoms",
  "swc_common",
- "swc_ecmascript",
+ "swc_ecmascript 0.111.14",
  "text_lines",
  "url",
 ]
@@ -354,7 +369,28 @@ dependencies = [
  "anyhow",
  "cfg-if 1.0.0",
  "data-url",
- "deno_ast",
+ "deno_ast 0.10.0",
+ "futures",
+ "lazy_static",
+ "parking_lot",
+ "regex",
+ "ring",
+ "serde",
+ "serde_json",
+ "termcolor",
+ "url",
+]
+
+[[package]]
+name = "deno_graph"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cabd84b8d6294fa8174be6501d11893e1791149f4e33c34f036cef0c2387d5d5"
+dependencies = [
+ "anyhow",
+ "cfg-if 1.0.0",
+ "data-url",
+ "deno_ast 0.11.0",
  "futures",
  "lazy_static",
  "parking_lot",
@@ -388,16 +424,16 @@ dependencies = [
 
 [[package]]
 name = "dprint-swc-ecma-ast-view"
-version = "0.48.2"
+version = "0.49.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d189ada8940380247d23993d0ecf13e8b3b5b3a948dffa6fb7291fbd75cf961"
+checksum = "3d440ab9faad7ee973d672ff81fefb7dc483cc43259d68d4c35ba87cdd23d206"
 dependencies = [
  "bumpalo",
  "num-bigint",
  "rustc-hash",
  "swc_atoms",
  "swc_common",
- "swc_ecmascript",
+ "swc_ecmascript 0.111.14",
  "text_lines",
 ]
 
@@ -436,15 +472,15 @@ dependencies = [
 
 [[package]]
 name = "eszip"
-version = "0.15.2"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "base64 0.13.0",
  "clap",
- "deno_ast",
+ "deno_ast 0.11.0",
  "deno_console",
  "deno_core 0.116.0",
- "deno_graph",
+ "deno_graph 0.21.0",
  "futures",
  "import_map",
  "indicatif",
@@ -459,11 +495,11 @@ dependencies = [
 
 [[package]]
 name = "eszip_wasm"
-version = "0.15.2"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
- "deno_graph",
+ "deno_graph 0.22.0",
  "eszip",
  "js-sys",
  "tokio",
@@ -1810,9 +1846,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_codegen"
-version = "0.89.1"
+version = "0.89.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b627edd495a93306f21e435c06227fe57910c1f6054f4c966e917c001142da9e"
+checksum = "49e798171a63ba91e26e7ccc1a2782ea71ef77f2c94a71458ca060a95de6f5fc"
 dependencies = [
  "bitflags",
  "memchr",
@@ -1874,9 +1910,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_transforms"
-version = "0.111.3"
+version = "0.114.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8dd7878bd017ed942fdcd5a892fa4990c21b1fe49c4aca7be1ecba16403e7052"
+checksum = "b01f4bdd4e2a199e4a30f274c99f8f08607da5419191d89f321a7edcf21ea44f"
 dependencies = [
  "swc_atoms",
  "swc_common",
@@ -1893,9 +1929,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_transforms_base"
-version = "0.56.2"
+version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d62c460e81027cdda2325348c1e5c0233c59127ab3227a45aaeac80eac7c5df1"
+checksum = "df852cb3c04bfde542f2fe4493ff0262a053a94a8da068fcb3ab2f6f40bffe8f"
 dependencies = [
  "once_cell",
  "phf",
@@ -1913,9 +1949,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_transforms_classes"
-version = "0.43.1"
+version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cd6d1fbe53dfa365827eddadbafec687c7afecd294c54a62fedcd92c4e44293"
+checksum = "b1b841535a8a97698a556c50fd5993a351e76b8bfd1e770ffc1b5425c1814b98"
 dependencies = [
  "swc_atoms",
  "swc_common",
@@ -1940,9 +1976,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_transforms_proposal"
-version = "0.73.1"
+version = "0.75.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da8cb3be65a35abfef0f4311d3f76dda381162a4920e526e3e7ac39d693df360"
+checksum = "b2d08a837960a7547435ccb94e860d81b3c3d67c52f7296c8753520cfba45b31"
 dependencies = [
  "either",
  "serde",
@@ -1960,9 +1996,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_transforms_react"
-version = "0.75.2"
+version = "0.77.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d9e590632bfd9b958f7b68f408040a320a95920021a241f1a403e6670f004cb"
+checksum = "501833c2b1be774dcafcf999cf9256c4c33478778da46d125c525505d3542972"
 dependencies = [
  "ahash",
  "base64 0.13.0",
@@ -1985,9 +2021,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_transforms_typescript"
-version = "0.77.2"
+version = "0.79.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29fe8ca3b3ad557407449fcc653acde3026aa6078fa4307ae6b318a35514fd8f"
+checksum = "bbdfd5d240c6b32e84f89c66e7b259c6a0f2cde4630ac9e0ce1243807056c349"
 dependencies = [
  "serde",
  "swc_atoms",
@@ -2002,10 +2038,11 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_utils"
-version = "0.63.0"
+version = "0.64.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a05826c1edd7d58ec97af8be523c9c15e24e6dc4c1762435bb12573d716dd7ba"
+checksum = "8105c87f59b54e49b95164efbdf346b710e0a77390e89869527ee20f68687b91"
 dependencies = [
+ "indexmap",
  "once_cell",
  "swc_atoms",
  "swc_common",
@@ -2033,6 +2070,17 @@ name = "swc_ecmascript"
 version = "0.108.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5feaed38d2e24849c1b1bb725ea455855ebe4bff52332a491cabc07d107db322"
+dependencies = [
+ "swc_ecma_ast",
+ "swc_ecma_dep_graph",
+ "swc_ecma_parser",
+]
+
+[[package]]
+name = "swc_ecmascript"
+version = "0.111.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6a4f14fc36deb60d385359dca5446ad2a6dc9550cb422c62d154d4bb1bab31b"
 dependencies = [
  "swc_ecma_ast",
  "swc_ecma_codegen",
