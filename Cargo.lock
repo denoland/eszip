@@ -285,7 +285,6 @@ dependencies = [
  "anyhow",
  "base64 0.13.0",
  "data-url",
- "dprint-swc-ecma-ast-view",
  "serde",
  "swc_atoms",
  "swc_common",
@@ -384,21 +383,6 @@ dependencies = [
  "block-buffer 0.10.0",
  "crypto-common",
  "generic-array",
-]
-
-[[package]]
-name = "dprint-swc-ecma-ast-view"
-version = "0.48.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d189ada8940380247d23993d0ecf13e8b3b5b3a948dffa6fb7291fbd75cf961"
-dependencies = [
- "bumpalo",
- "num-bigint",
- "rustc-hash",
- "swc_atoms",
- "swc_common",
- "swc_ecmascript",
- "text_lines",
 ]
 
 [[package]]
@@ -1810,9 +1794,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_codegen"
-version = "0.89.1"
+version = "0.89.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b627edd495a93306f21e435c06227fe57910c1f6054f4c966e917c001142da9e"
+checksum = "49e798171a63ba91e26e7ccc1a2782ea71ef77f2c94a71458ca060a95de6f5fc"
 dependencies = [
  "bitflags",
  "memchr",
