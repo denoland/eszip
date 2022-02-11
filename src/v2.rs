@@ -711,7 +711,7 @@ mod tests {
         let specifier =
           resolved.file_name().unwrap().to_string_lossy().to_string();
         let specifier = Url::parse(&format!("file:///{}", specifier)).unwrap();
-        Ok(Some(LoadResponse {
+        Ok(Some(LoadResponse::Module {
           content: Arc::new(source),
           maybe_headers: None,
           specifier,
@@ -905,9 +905,13 @@ mod tests {
     .await
     .unwrap()
     .unwrap();
-    let import_map =
-      import_map::parse_from_json(&resp.specifier, &resp.content).unwrap();
-
+    let (specifier, content) = match resp {
+      deno_graph::source::LoadResponse::Module {
+        specifier, content, ..
+      } => (specifier, content),
+      _ => unimplemented!(),
+    };
+    let import_map = import_map::parse_from_json(&specifier, &content).unwrap();
     let roots = vec![(
       ModuleSpecifier::parse("file:///mapped.js").unwrap(),
       deno_graph::ModuleKind::Esm,
@@ -926,8 +930,8 @@ mod tests {
     graph.valid().unwrap();
     let mut eszip =
       super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
-    let import_map_bytes = Arc::new(resp.content.as_bytes().to_vec());
-    eszip.add_import_map(resp.specifier.to_string(), import_map_bytes);
+    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    eszip.add_import_map(specifier.to_string(), import_map_bytes);
 
     let module = eszip.get_module("file:///import_map.json").unwrap();
     assert_eq!(module.specifier, "file:///import_map.json");
