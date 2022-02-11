@@ -33,12 +33,12 @@ jobs:
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
       - name: Clippy
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets --locked
 
       - name: Build
         run: make
 
       - name: Test
         run: | 
-          cargo test --all-targets
+          cargo test --all-targets --locked
           make test
