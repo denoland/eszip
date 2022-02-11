@@ -544,6 +544,9 @@ impl EszipV2 {
             modules.insert(specifier, module);
           }
         }
+        deno_graph::ModuleKind::External | deno_graph::ModuleKind::BuiltIn => {
+          return Ok(())
+        }
         _ => {}
       }
 

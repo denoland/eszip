@@ -8,9 +8,18 @@ Deno.test("roundtrip build + parse", async () => {
   const eszip = await build([
     "https://example.com/mod.ts",
     "https://example.com/a.ts",
+    "external:main.js",
   ], async (specifier: string) => {
+    if (specifier === "external:main.js") {
+      return {
+        kind: "external",
+        specifier,
+      };
+    }
+
     if (specifier === "https://example.com/a.ts") {
       return {
+        kind: "module",
         specifier,
         headers: {
           "content-type": "text/typescript",
@@ -20,6 +29,7 @@ Deno.test("roundtrip build + parse", async () => {
     }
 
     return {
+      kind: "module",
       specifier: "https://example.com/mod.ts",
       headers: {
         "content-type": "application/typescript",
