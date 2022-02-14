@@ -1,6 +1,6 @@
 [package]
 name = "eszip_wasm"
-version = "0.15.2"
+version = "0.16.0"
 authors = ["the Deno authors"]
 edition = "2021"
 description = "A utility that can download JavaScript and TypeScript module graphs and store them locally in a special zip file"
@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 js-sys = { version = "0.3.55" }
 web-sys = { version = "0.3.56", features = ["ReadableStreamByobReader"] }
 deno_graph = { version = "0.23.0" }
-eszip = { path = "../", version = "0.15.1" }
+eszip = { path = "../", version = "0.16.0" }
 wasm-bindgen = { version = "0.2.79", features = ["serde-serialize"] }
 wasm-bindgen-futures = { version = "0.4.28" }
 tokio = { version = "1.16", features = ["io-std", "io-util"] }

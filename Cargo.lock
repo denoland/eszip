@@ -420,7 +420,7 @@ dependencies = [
 
 [[package]]
 name = "eszip"
-version = "0.15.3"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "base64 0.13.0",
@@ -443,7 +443,7 @@ dependencies = [
 
 [[package]]
 name = "eszip_wasm"
-version = "0.15.2"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
