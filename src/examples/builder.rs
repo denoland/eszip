@@ -23,12 +23,16 @@ async fn main() {
           .await
           .unwrap()
           .unwrap();
-      let import_map =
-        import_map::parse_from_json(&resp.specifier, &resp.content).unwrap();
-      (
-        Some(import_map.import_map),
-        Some((resp.specifier, resp.content)),
-      )
+      match resp {
+        deno_graph::source::LoadResponse::Module {
+          specifier, content, ..
+        } => {
+          let import_map =
+            import_map::parse_from_json(&specifier, &content).unwrap();
+          (Some(import_map.import_map), Some((specifier, content)))
+        }
+        _ => unimplemented!(),
+      }
     } else {
       (None, None)
     };
@@ -111,7 +115,7 @@ impl deno_graph::source::Loader for Loader {
             tokio::fs::canonicalize(specifier.to_file_path().unwrap()).await?;
           let content = tokio::fs::read(&path).await?;
           let content = String::from_utf8(content)?;
-          Ok(Some(deno_graph::source::LoadResponse {
+          Ok(Some(deno_graph::source::LoadResponse::Module {
             specifier: Url::from_file_path(&path).unwrap(),
             maybe_headers: None,
             content: Arc::new(content),
@@ -136,7 +140,7 @@ impl deno_graph::source::Loader for Loader {
             }
             let url = resp.url().clone();
             let content = resp.text().await?;
-            Ok(Some(deno_graph::source::LoadResponse {
+            Ok(Some(deno_graph::source::LoadResponse::Module {
               specifier: url,
               maybe_headers: Some(headers),
               content: Arc::new(content),

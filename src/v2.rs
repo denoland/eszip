@@ -544,11 +544,17 @@ impl EszipV2 {
             modules.insert(specifier, module);
           }
         }
+        deno_graph::ModuleKind::External | deno_graph::ModuleKind::BuiltIn => {
+          return Ok(())
+        }
         _ => {}
       }
 
       ordered_modules.push(specifier.to_string());
       for dep in module.dependencies.values() {
+        if dep.is_dynamic {
+          continue;
+        }
         if let Some(specifier) = dep.get_code() {
           visit_module(
             graph,
@@ -698,7 +704,9 @@ mod tests {
       specifier: &ModuleSpecifier,
       is_dynamic: bool,
     ) -> deno_graph::source::LoadFuture {
-      assert!(!is_dynamic);
+      if is_dynamic {
+        return Box::pin(async { Ok(None) });
+      }
       assert_eq!(specifier.scheme(), "file");
       let path = format!("./src/testdata/source{}", specifier.path());
       Box::pin(async move {
@@ -708,7 +716,7 @@ mod tests {
         let specifier =
           resolved.file_name().unwrap().to_string_lossy().to_string();
         let specifier = Url::parse(&format!("file:///{}", specifier)).unwrap();
-        Ok(Some(LoadResponse {
+        Ok(Some(LoadResponse::Module {
           content: Arc::new(source),
           maybe_headers: None,
           specifier,
@@ -731,6 +739,69 @@ mod tests {
         Err(err) => ResolveResponse::Err(err.into()),
       }
     }
+  }
+
+  #[tokio::test]
+  async fn test_graph_external() {
+    let roots = vec![(
+      ModuleSpecifier::parse("file:///external.ts").unwrap(),
+      deno_graph::ModuleKind::Esm,
+    )];
+
+    struct ExternalLoader;
+
+    impl deno_graph::source::Loader for ExternalLoader {
+      fn load(
+        &mut self,
+        specifier: &ModuleSpecifier,
+        is_dynamic: bool,
+      ) -> deno_graph::source::LoadFuture {
+        if is_dynamic {
+          unreachable!();
+        }
+        let scheme = specifier.scheme();
+        if scheme == "extern" {
+          let specifier = specifier.clone();
+          return Box::pin(async move {
+            Ok(Some(LoadResponse::External { specifier }))
+          });
+        }
+        assert_eq!(scheme, "file");
+        let path = format!("./src/testdata/source{}", specifier.path());
+        Box::pin(async move {
+          let path = Path::new(&path);
+          let resolved = path.canonicalize().unwrap();
+          let source = tokio::fs::read_to_string(&resolved).await.unwrap();
+          let specifier =
+            resolved.file_name().unwrap().to_string_lossy().to_string();
+          let specifier =
+            Url::parse(&format!("file:///{}", specifier)).unwrap();
+          Ok(Some(LoadResponse::Module {
+            content: Arc::new(source),
+            maybe_headers: None,
+            specifier,
+          }))
+        })
+      }
+    }
+
+    let graph = deno_graph::create_graph(
+      roots,
+      false,
+      None,
+      &mut ExternalLoader,
+      None,
+      None,
+      None,
+      None,
+    )
+    .await;
+    graph.valid().unwrap();
+    let eszip =
+      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
+    let module = eszip.get_module("file:///external.ts").unwrap();
+    assert_eq!(module.specifier, "file:///external.ts");
+    assert!(eszip.get_module("external:fs").is_none());
   }
 
   #[tokio::test]
@@ -802,6 +873,36 @@ mod tests {
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
     assert_eq!(module.kind, ModuleKind::Json);
+  }
+
+  #[tokio::test]
+  async fn from_graph_dynamic() {
+    let roots = vec![(
+      ModuleSpecifier::parse("file:///dynamic.ts").unwrap(),
+      deno_graph::ModuleKind::Esm,
+    )];
+    let graph = deno_graph::create_graph(
+      roots,
+      false,
+      None,
+      &mut FileLoader,
+      None,
+      None,
+      None,
+      None,
+    )
+    .await;
+    graph.valid().unwrap();
+    let eszip =
+      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
+    let module = eszip.get_module("file:///dynamic.ts").unwrap();
+    assert_eq!(module.specifier, "file:///dynamic.ts");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/emit/dynamic.ts"));
+    let _source_map = module.source_map().await.unwrap();
+    assert_eq!(module.kind, ModuleKind::JavaScript);
+    let module = eszip.get_module("file:///data.json");
+    assert!(module.is_none());
   }
 
   #[tokio::test]
@@ -902,9 +1003,13 @@ mod tests {
     .await
     .unwrap()
     .unwrap();
-    let import_map =
-      import_map::parse_from_json(&resp.specifier, &resp.content).unwrap();
-
+    let (specifier, content) = match resp {
+      deno_graph::source::LoadResponse::Module {
+        specifier, content, ..
+      } => (specifier, content),
+      _ => unimplemented!(),
+    };
+    let import_map = import_map::parse_from_json(&specifier, &content).unwrap();
     let roots = vec![(
       ModuleSpecifier::parse("file:///mapped.js").unwrap(),
       deno_graph::ModuleKind::Esm,
@@ -923,8 +1028,8 @@ mod tests {
     graph.valid().unwrap();
     let mut eszip =
       super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
-    let import_map_bytes = Arc::new(resp.content.as_bytes().to_vec());
-    eszip.add_import_map(resp.specifier.to_string(), import_map_bytes);
+    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    eszip.add_import_map(specifier.to_string(), import_map_bytes);
 
     let module = eszip.get_module("file:///import_map.json").unwrap();
     assert_eq!(module.specifier, "file:///import_map.json");

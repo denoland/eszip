@@ -14,9 +14,9 @@ crate-type = ["cdylib"]
 [dependencies]
 js-sys = { version = "0.3.55" }
 web-sys = { version = "0.3.56", features = ["ReadableStreamByobReader"] }
-deno_graph = { version = "0.22.0"}
+deno_graph = { version = "0.23.0" }
 eszip = { path = "../", version = "0.16.0" }
-wasm-bindgen = { version = "0.2.78", features = ["serde-serialize"] }
+wasm-bindgen = { version = "0.2.79", features = ["serde-serialize"] }
 wasm-bindgen-futures = { version = "0.4.28" }
 tokio = { version = "1.16", features = ["io-std", "io-util"] }
 console_error_panic_hook = "0.1.7"

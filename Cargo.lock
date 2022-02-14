@@ -278,21 +278,6 @@ dependencies = [
 
 [[package]]
 name = "deno_ast"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a2780a628fd2fd52c81ef3f9d2bda0609a662b9e4f85623c29051c277363f65"
-dependencies = [
- "data-url",
- "serde",
- "swc_atoms",
- "swc_common",
- "swc_ecmascript 0.108.4",
- "text_lines",
- "url",
-]
-
-[[package]]
-name = "deno_ast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efd88c9bfcb036294da03e7bf8b5d7f1276b0ad522b0b057ca2b839ee9325a33"
@@ -300,11 +285,10 @@ dependencies = [
  "anyhow",
  "base64 0.13.0",
  "data-url",
- "dprint-swc-ecma-ast-view",
  "serde",
  "swc_atoms",
  "swc_common",
- "swc_ecmascript 0.111.14",
+ "swc_ecmascript",
  "text_lines",
  "url",
 ]
@@ -362,35 +346,14 @@ dependencies = [
 
 [[package]]
 name = "deno_graph"
-version = "0.21.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9131c01231b51a23f10e0599470d4124171d4771590ef10a4c051e9d175b724b"
+checksum = "b3108bfa75e0f439f83ac8540d8e494b7d3c8a782db805d126e3a3125d84a38b"
 dependencies = [
  "anyhow",
  "cfg-if 1.0.0",
  "data-url",
- "deno_ast 0.10.0",
- "futures",
- "lazy_static",
- "parking_lot",
- "regex",
- "ring",
- "serde",
- "serde_json",
- "termcolor",
- "url",
-]
-
-[[package]]
-name = "deno_graph"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cabd84b8d6294fa8174be6501d11893e1791149f4e33c34f036cef0c2387d5d5"
-dependencies = [
- "anyhow",
- "cfg-if 1.0.0",
- "data-url",
- "deno_ast 0.11.0",
+ "deno_ast",
  "futures",
  "lazy_static",
  "parking_lot",
@@ -420,21 +383,6 @@ dependencies = [
  "block-buffer 0.10.0",
  "crypto-common",
  "generic-array",
-]
-
-[[package]]
-name = "dprint-swc-ecma-ast-view"
-version = "0.49.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d440ab9faad7ee973d672ff81fefb7dc483cc43259d68d4c35ba87cdd23d206"
-dependencies = [
- "bumpalo",
- "num-bigint",
- "rustc-hash",
- "swc_atoms",
- "swc_common",
- "swc_ecmascript 0.111.14",
- "text_lines",
 ]
 
 [[package]]
@@ -477,10 +425,10 @@ dependencies = [
  "anyhow",
  "base64 0.13.0",
  "clap",
- "deno_ast 0.11.0",
+ "deno_ast",
  "deno_console",
  "deno_core 0.116.0",
- "deno_graph 0.21.0",
+ "deno_graph",
  "futures",
  "import_map",
  "indicatif",
@@ -499,7 +447,7 @@ version = "0.16.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
- "deno_graph 0.22.0",
+ "deno_graph",
  "eszip",
  "js-sys",
  "tokio",
@@ -2063,17 +2011,6 @@ dependencies = [
  "swc_ecma_ast",
  "swc_visit",
  "tracing",
-]
-
-[[package]]
-name = "swc_ecmascript"
-version = "0.108.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5feaed38d2e24849c1b1bb725ea455855ebe4bff52332a491cabc07d107db322"
-dependencies = [
- "swc_ecma_ast",
- "swc_ecma_dep_graph",
- "swc_ecma_parser",
 ]
 
 [[package]]
