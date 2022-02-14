@@ -742,6 +742,69 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn test_graph_external() {
+    let roots = vec![(
+      ModuleSpecifier::parse("file:///external.ts").unwrap(),
+      deno_graph::ModuleKind::Esm,
+    )];
+
+    struct ExternalLoader;
+
+    impl deno_graph::source::Loader for ExternalLoader {
+      fn load(
+        &mut self,
+        specifier: &ModuleSpecifier,
+        is_dynamic: bool,
+      ) -> deno_graph::source::LoadFuture {
+        if is_dynamic {
+          unreachable!();
+        }
+        let scheme = specifier.scheme();
+        if scheme == "extern" {
+          let specifier = specifier.clone();
+          return Box::pin(async move {
+            Ok(Some(LoadResponse::External { specifier }))
+          });
+        }
+        assert_eq!(scheme, "file");
+        let path = format!("./src/testdata/source{}", specifier.path());
+        Box::pin(async move {
+          let path = Path::new(&path);
+          let resolved = path.canonicalize().unwrap();
+          let source = tokio::fs::read_to_string(&resolved).await.unwrap();
+          let specifier =
+            resolved.file_name().unwrap().to_string_lossy().to_string();
+          let specifier =
+            Url::parse(&format!("file:///{}", specifier)).unwrap();
+          Ok(Some(LoadResponse::Module {
+            content: Arc::new(source),
+            maybe_headers: None,
+            specifier,
+          }))
+        })
+      }
+    }
+
+    let graph = deno_graph::create_graph(
+      roots,
+      false,
+      None,
+      &mut ExternalLoader,
+      None,
+      None,
+      None,
+      None,
+    )
+    .await;
+    graph.valid().unwrap();
+    let eszip =
+      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
+    let module = eszip.get_module("file:///external.ts").unwrap();
+    assert_eq!(module.specifier, "file:///external.ts");
+    assert!(eszip.get_module("external:fs").is_none());
+  }
+
+  #[tokio::test]
   async fn from_graph_redirect() {
     let roots = vec![(
       ModuleSpecifier::parse("file:///main.ts").unwrap(),
