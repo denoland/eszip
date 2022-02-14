@@ -549,6 +549,9 @@ impl EszipV2 {
 
       ordered_modules.push(specifier.to_string());
       for dep in module.dependencies.values() {
+        if dep.is_dynamic {
+          continue;
+        }
         if let Some(specifier) = dep.get_code() {
           visit_module(
             graph,
@@ -698,7 +701,9 @@ mod tests {
       specifier: &ModuleSpecifier,
       is_dynamic: bool,
     ) -> deno_graph::source::LoadFuture {
-      assert!(!is_dynamic);
+      if is_dynamic {
+        return Box::pin(async { Ok(None) });
+      }
       assert_eq!(specifier.scheme(), "file");
       let path = format!("./src/testdata/source{}", specifier.path());
       Box::pin(async move {
@@ -802,6 +807,36 @@ mod tests {
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
     assert_eq!(module.kind, ModuleKind::Json);
+  }
+
+  #[tokio::test]
+  async fn from_graph_dynamic() {
+    let roots = vec![(
+      ModuleSpecifier::parse("file:///dynamic.ts").unwrap(),
+      deno_graph::ModuleKind::Esm,
+    )];
+    let graph = deno_graph::create_graph(
+      roots,
+      false,
+      None,
+      &mut FileLoader,
+      None,
+      None,
+      None,
+      None,
+    )
+    .await;
+    graph.valid().unwrap();
+    let eszip =
+      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
+    let module = eszip.get_module("file:///dynamic.ts").unwrap();
+    assert_eq!(module.specifier, "file:///dynamic.ts");
+    let source = module.source().await;
+    assert_eq!(&*source, include_bytes!("./testdata/emit/dynamic.ts"));
+    let _source_map = module.source_map().await.unwrap();
+    assert_eq!(module.kind, ModuleKind::JavaScript);
+    let module = eszip.get_module("file:///data.json");
+    assert!(module.is_none());
   }
 
   #[tokio::test]
