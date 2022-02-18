@@ -247,7 +247,7 @@ pub async fn build_eszip(
   std::panic::set_hook(Box::new(console_error_panic_hook::hook));
   let roots: Vec<deno_graph::ModuleSpecifier> = roots
     .into_serde()
-    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let mut loader = GraphLoader(loader);
   let graph = deno_graph::create_graph(
     roots
@@ -263,8 +263,11 @@ pub async fn build_eszip(
     None,
   )
   .await;
+  graph
+    .valid()
+    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let eszip = eszip::EszipV2::from_graph(graph, Default::default())
-    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   Ok(Uint8Array::from(eszip.into_bytes().as_slice()))
 }
 
@@ -303,7 +306,11 @@ impl Loader for GraphLoader {
         };
         response
           .map(|value| value.into_serde().unwrap())
-          .map_err(|_| anyhow::anyhow!("load rejected or errored"))
+          .map_err(|err| {
+            anyhow::anyhow!(err
+              .as_string()
+              .unwrap_or_else(|| "an error occured during loading".to_string()))
+          })
       })
     }
   }

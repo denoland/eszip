@@ -2,6 +2,7 @@ import { build, Parser } from "./mod.ts";
 import {
   assert,
   assertEquals,
+  assertRejects,
 } from "https://deno.land/std@0.123.0/testing/asserts.ts";
 
 Deno.test("roundtrip build + parse", async () => {
@@ -56,4 +57,16 @@ Deno.test("roundtrip build + parse", async () => {
 Deno.test("build default loader", async () => {
   const eszip = await build(["https://deno.land/std@0.123.0/fs/mod.ts"]);
   assert(eszip instanceof Uint8Array);
+});
+
+Deno.test("loader errors", async () => {
+  await assertRejects(
+    () =>
+      build(
+        ["https://deno.land/std@0.123.0/fs/mod.ts"],
+        (specifier: string) => Promise.reject(new Error("oops")),
+      ),
+    undefined,
+    "oops",
+  );
 });

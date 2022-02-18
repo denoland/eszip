@@ -8,5 +8,9 @@ export function build(
   roots: string[],
   loader: (url: string) => Promise<LoadResponse | undefined> = load,
 ): Promise<Uint8Array> {
-  return _build(roots, loader);
+  return _build(
+    roots,
+    (specifier: string) =>
+      loader(specifier).catch((err) => Promise.reject(String(err))),
+  );
 }
