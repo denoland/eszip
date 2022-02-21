@@ -36,7 +36,9 @@ jobs:
         run: cargo clippy --all-targets --locked
 
       - name: Build
-        run: make
+        run: |
+          make
+          make node
 
       - name: Test
         run: | 
