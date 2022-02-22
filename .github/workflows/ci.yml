@@ -62,4 +62,4 @@ jobs:
           cargo publish -vv
           rm -rf npm/
           deno run -A ./build_npm.ts ${{ github.ref_name }}
-          yarn publish
+          cd npm/ && yarn publish
