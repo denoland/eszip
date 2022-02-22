@@ -11,7 +11,7 @@ await build({
     undici: true,
   },
   package: {
-    name: "eszip",
+    name: "@deno/eszip",
     version: Deno.args[0],
     description:
       "A utility that can download JavaScript and TypeScript module graphs and store them locally in a special zip file",
