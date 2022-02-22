@@ -1,8 +1,8 @@
 import { build, emptyDir } from "https://deno.land/x/dnt@0.20.0/mod.ts";
 
 await emptyDir("./npm/esm");
-
 Deno.copyFileSync("lib/eszip_wasm_bg.wasm", "npm/esm/eszip_wasm_bg.wasm");
+
 await build({
   entryPoints: ["./lib/mod.ts"],
   outDir: "./npm",
@@ -24,7 +24,9 @@ await build({
       url: "https://github.com/denoland/eszip/issues",
     },
   },
+  typeCheck: false,
   scriptModule: false,
+  test: true,
 });
 
 Deno.copyFileSync("LICENSE.md", "npm/LICENSE");

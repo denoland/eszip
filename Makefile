@@ -14,5 +14,5 @@ test:
 	deno test -A lib/
 
 fmt:
-	deno fmt lib/
+	deno fmt lib/ build_npm.ts
 	cargo fmt --all
