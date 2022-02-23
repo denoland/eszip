@@ -7,10 +7,12 @@ export type { LoadResponse } from "./loader.ts";
 export function build(
   roots: string[],
   loader: (url: string) => Promise<LoadResponse | undefined> = load,
+  resolver?: (specifier: string, referrer: string) => string | undefined,
 ): Promise<Uint8Array> {
   return _build(
     roots,
     (specifier: string) =>
       loader(specifier).catch((err) => Promise.reject(String(err))),
+    resolver,
   );
 }

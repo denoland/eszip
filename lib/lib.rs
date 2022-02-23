@@ -1,8 +1,13 @@
+use deno_graph::resolve_import;
 use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
+use deno_graph::source::ResolveResponse;
+use deno_graph::source::Resolver;
+use deno_graph::source::DEFAULT_JSX_IMPORT_SOURCE_MODULE;
 use deno_graph::ModuleSpecifier;
+use deno_graph::Range;
 use js_sys::Promise;
 use js_sys::Uint8Array;
 use std::cell::RefCell;
@@ -243,6 +248,7 @@ impl Parser {
 pub async fn build_eszip(
   roots: JsValue,
   loader: js_sys::Function,
+  resolver: Option<js_sys::Function>,
 ) -> Result<Uint8Array, JsValue> {
   std::panic::set_hook(Box::new(console_error_panic_hook::hook));
   let roots: Vec<deno_graph::ModuleSpecifier> = roots
@@ -257,7 +263,7 @@ pub async fn build_eszip(
     false,
     None,
     &mut loader,
-    None,
+    Some(&GraphResolver(resolver)),
     None,
     None,
     None,
@@ -313,5 +319,54 @@ impl Loader for GraphLoader {
           })
       })
     }
+  }
+}
+
+#[derive(Debug)]
+pub struct GraphResolver(Option<js_sys::Function>);
+
+impl Resolver for GraphResolver {
+  fn jsx_import_source_module(&self) -> &str {
+    DEFAULT_JSX_IMPORT_SOURCE_MODULE
+  }
+
+  fn resolve(
+    &self,
+    specifier: &str,
+    referrer: &ModuleSpecifier,
+  ) -> ResolveResponse {
+    if let Some(resolve) = &self.0 {
+      let this = JsValue::null();
+      let arg1 = JsValue::from(specifier);
+      let arg2 = JsValue::from(referrer.to_string());
+      let value = match resolve.call2(&this, &arg1, &arg2) {
+        Ok(value) => value,
+        Err(err) => {
+          return ResolveResponse::Err(anyhow::anyhow!(err
+            .as_string()
+            .unwrap_or_else(
+              || "an error occured during resolution".to_string()
+            )))
+        }
+      };
+      let value: Option<String> = match value.into_serde() {
+        Ok(value) => value,
+        Err(err) => return ResolveResponse::Err(err.into()),
+      };
+
+      match value {
+        Some(value) => ModuleSpecifier::parse(&value).into(),
+        None => resolve_import(specifier, referrer).into(),
+      }
+    } else {
+      resolve_import(specifier, referrer).into()
+    }
+  }
+
+  fn resolve_types(
+    &self,
+    _specifier: &ModuleSpecifier,
+  ) -> anyhow::Result<Option<(ModuleSpecifier, Option<Range>)>> {
+    Ok(None)
   }
 }
