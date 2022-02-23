@@ -25,10 +25,16 @@ jobs:
         with:
           deno-version: 1.x
 
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16.x'
+          registry-url: 'https://registry.npmjs.org'
+
       - name: Setup WASM
         run: |
           rustup target add wasm32-unknown-unknown
           cargo install wasm-bindgen-cli
+          sudo apt-get install binaryen
           deno install --unstable -A -f -n wasmbuild https://raw.githubusercontent.com/denoland/wasmbuild/7b714ee749e4dc1e4ed1bc6f7258235a6c289aec/main.ts
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
@@ -36,9 +42,24 @@ jobs:
         run: cargo clippy --all-targets --locked
 
       - name: Build
-        run: make
+        run: |
+          make release
+          make node
 
       - name: Test
         run: | 
           cargo test --all-targets --locked
           make test
+
+      - name: Publish
+        if: |
+          github.repository == 'denoland/eszip' &&
+          startsWith(github.ref, 'refs/tags/')
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cargo publish -vv
+          rm -rf npm/
+          deno run -A ./build_npm.ts ${{ github.ref_name }}
+          cd npm/ && yarn publish
