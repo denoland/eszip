@@ -691,12 +691,22 @@ mod tests {
   use deno_graph::source::{LoadResponse, ResolveResponse};
   use deno_graph::ModuleSpecifier;
   use import_map::ImportMap;
+  use pretty_assertions::assert_eq;
   use tokio::io::BufReader;
   use url::Url;
 
   use crate::ModuleKind;
 
   struct FileLoader;
+
+  macro_rules! assert_matches_file {
+    ($source:ident, $file:literal) => {
+      assert_eq!(
+        String::from_utf8($source.to_vec()).unwrap(),
+        include_str!($file)
+      );
+    };
+  }
 
   impl deno_graph::source::Loader for FileLoader {
     fn load(
@@ -827,16 +837,16 @@ mod tests {
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
     let source = module.source().await;
-    assert_eq!(&*source, include_bytes!("./testdata/emit/main.ts"));
+    assert_matches_file!(source, "./testdata/emit/main.ts");
     let source_map = module.source_map().await.unwrap();
-    assert_eq!(&*source_map, include_bytes!("./testdata/emit/main.ts.map"));
+    assert_matches_file!(source_map, "./testdata/emit/main.ts.map");
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///a.ts").unwrap();
     assert_eq!(module.specifier, "file:///b.ts");
     let source = module.source().await;
-    assert_eq!(&*source, include_bytes!("./testdata/emit/b.ts"));
+    assert_matches_file!(source, "./testdata/emit/b.ts");
     let source_map = module.source_map().await.unwrap();
-    assert_eq!(&*source_map, include_bytes!("./testdata/emit/b.ts.map"));
+    assert_matches_file!(source_map, "./testdata/emit/b.ts.map");
     assert_eq!(module.kind, ModuleKind::JavaScript);
   }
 
@@ -863,13 +873,13 @@ mod tests {
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
     let source = module.source().await;
-    assert_eq!(&*source, include_bytes!("./testdata/emit/json.ts"));
+    assert_matches_file!(source, "./testdata/emit/json.ts");
     let _source_map = module.source_map().await.unwrap();
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json").unwrap();
     assert_eq!(module.specifier, "file:///data.json");
     let source = module.source().await;
-    assert_eq!(&*source, include_bytes!("./testdata/emit/data.json"));
+    assert_matches_file!(source, "./testdata/emit/data.json");
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
     assert_eq!(module.kind, ModuleKind::Json);
@@ -898,7 +908,7 @@ mod tests {
     let module = eszip.get_module("file:///dynamic.ts").unwrap();
     assert_eq!(module.specifier, "file:///dynamic.ts");
     let source = module.source().await;
-    assert_eq!(&*source, include_bytes!("./testdata/emit/dynamic.ts"));
+    assert_matches_file!(source, "./testdata/emit/dynamic.ts");
     let _source_map = module.source_map().await.unwrap();
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json");
@@ -917,16 +927,16 @@ mod tests {
       let module = eszip.get_module("file:///main.ts").unwrap();
       assert_eq!(module.specifier, "file:///main.ts");
       let source = module.source().await;
-      assert_eq!(&*source, include_bytes!("./testdata/emit/main.ts"));
+      assert_matches_file!(source, "./testdata/redirect_data/main.ts");
       let source_map = module.source_map().await.unwrap();
-      assert_eq!(&*source_map, include_bytes!("./testdata/emit/main.ts.map"));
+      assert_matches_file!(source_map, "./testdata/redirect_data/main.ts.map");
       assert_eq!(module.kind, ModuleKind::JavaScript);
       let module = eszip.get_module("file:///a.ts").unwrap();
       assert_eq!(module.specifier, "file:///b.ts");
       let source = module.source().await;
-      assert_eq!(&*source, include_bytes!("./testdata/emit/b.ts"));
+      assert_matches_file!(source, "./testdata/redirect_data/b.ts");
       let source_map = module.source_map().await.unwrap();
-      assert_eq!(&*source_map, include_bytes!("./testdata/emit/b.ts.map"));
+      assert_matches_file!(source_map, "./testdata/redirect_data/b.ts.map");
       assert_eq!(module.kind, ModuleKind::JavaScript);
 
       Ok(())
@@ -947,13 +957,13 @@ mod tests {
       let module = eszip.get_module("file:///json.ts").unwrap();
       assert_eq!(module.specifier, "file:///json.ts");
       let source = module.source().await;
-      assert_eq!(&*source, include_bytes!("./testdata/emit/json.ts"));
+      assert_matches_file!(source, "./testdata/emit/json.ts");
       let _source_map = module.source_map().await.unwrap();
       assert_eq!(module.kind, ModuleKind::JavaScript);
       let module = eszip.get_module("file:///data.json").unwrap();
       assert_eq!(module.specifier, "file:///data.json");
       let source = module.source().await;
-      assert_eq!(&*source, include_bytes!("./testdata/emit/data.json"));
+      assert_matches_file!(source, "./testdata/emit/data.json");
       let source_map = module.source_map().await.unwrap();
       assert_eq!(&*source_map, &[0; 0]);
       assert_eq!(module.kind, ModuleKind::Json);
@@ -979,16 +989,16 @@ mod tests {
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
     let source = module.source().await;
-    assert_eq!(&*source, include_bytes!("./testdata/emit/main.ts"));
+    assert_matches_file!(source, "./testdata/redirect_data/main.ts");
     let source_map = module.source_map().await.unwrap();
-    assert_eq!(&*source_map, include_bytes!("./testdata/emit/main.ts.map"));
+    assert_matches_file!(source_map, "./testdata/redirect_data/main.ts.map");
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///a.ts").unwrap();
     assert_eq!(module.specifier, "file:///b.ts");
     let source = module.source().await;
-    assert_eq!(&*source, include_bytes!("./testdata/emit/b.ts"));
+    assert_matches_file!(source, "./testdata/redirect_data/b.ts");
     let source_map = module.source_map().await.unwrap();
-    assert_eq!(&*source_map, include_bytes!("./testdata/emit/b.ts.map"));
+    assert_matches_file!(source_map, "./testdata/redirect_data/b.ts.map");
     assert_eq!(module.kind, ModuleKind::JavaScript);
   }
 
@@ -1034,10 +1044,7 @@ mod tests {
     let module = eszip.get_module("file:///import_map.json").unwrap();
     assert_eq!(module.specifier, "file:///import_map.json");
     let source = module.source().await;
-    assert_eq!(
-      &*source,
-      include_bytes!("./testdata/source/import_map.json")
-    );
+    assert_matches_file!(source, "./testdata/source/import_map.json");
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
     assert_eq!(module.kind, ModuleKind::Json);
@@ -1045,7 +1052,7 @@ mod tests {
     let module = eszip.get_module("file:///mapped.js").unwrap();
     assert_eq!(module.specifier, "file:///mapped.js");
     let source = module.source().await;
-    assert_eq!(&*source, include_bytes!("./testdata/source/mapped.js"));
+    assert_matches_file!(source, "./testdata/source/mapped.js");
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
     assert_eq!(module.kind, ModuleKind::JavaScript);
@@ -1053,9 +1060,9 @@ mod tests {
     let module = eszip.get_module("file:///a.ts").unwrap();
     assert_eq!(module.specifier, "file:///b.ts");
     let source = module.source().await;
-    assert_eq!(&*source, include_bytes!("./testdata/emit/b.ts"));
+    assert_matches_file!(source, "./testdata/emit/b.ts");
     let source_map = module.source_map().await.unwrap();
-    assert_eq!(&*source_map, include_bytes!("./testdata/emit/b.ts.map"));
+    assert_matches_file!(source_map, "./testdata/emit/b.ts.map");
     assert_eq!(module.kind, ModuleKind::JavaScript);
   }
 }
