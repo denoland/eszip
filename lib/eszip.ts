@@ -164,7 +164,7 @@ async function main() {
       let out = rest[0];
       if (!out) {
         // Create outfile name from url filename
-        out = new URL(filename).pathname.split("/").pop() || "out.eszip";
+        out = new URL(filename).pathname.split("/").pop() || "out";
       }
       console.log(`${out}.eszip: ${eszip.length} bytes`);
       await Deno.writeFile(`${out}.eszip`, eszip);
