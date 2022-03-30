@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "file:///Users/divy/gh/eszip_pain/mod.ts": "./Users/divy/gh/eszip_pain/mod.ts",
+    "file:///Users/divy/gh/eszip_pain/a.js": "./Users/divy/gh/eszip_pain/a.js",
+    "https://deno.land/std@0.132.0/testing/asserts.ts": "./std@0.132.0/testing/asserts.ts",
+    "https://deno.land/std@0.132.0/fmt/colors.ts": "./std@0.132.0/fmt/colors.ts",
+    "https://deno.land/std/testing/asserts.ts": "./std/testing/asserts.ts",
+    "https://deno.land/std@0.132.0/testing/_diff.ts": "./std@0.132.0/testing/_diff.ts"
+  }
+}

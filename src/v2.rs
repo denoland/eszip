@@ -479,13 +479,20 @@ impl EszipV2 {
 
     let mut ordered_modules = vec![];
 
-    fn visit_module(
-      graph: &ModuleGraph,
+    fn visit_module<'a>(
+      graph: &'a ModuleGraph,
       emit_options: &EmitOptions,
       modules: &mut HashMap<String, EszipV2Module>,
       ordered_modules: &mut Vec<String>,
-      specifier: &Url,
+      mut specifier: &'a Url,
     ) -> Result<(), anyhow::Error> {
+      for (redirect, target) in &graph.redirects {
+        if redirect == specifier {
+          specifier = target;
+          break;
+        }
+      }
+
       let module = graph.get(specifier).unwrap();
       let specifier = module.specifier.as_str();
       if modules.contains_key(specifier) {
@@ -555,7 +562,7 @@ impl EszipV2 {
         if dep.is_dynamic {
           continue;
         }
-        if let Some(specifier) = dep.get_code() {
+        if let Some(mut specifier) = dep.get_code() {
           visit_module(
             graph,
             emit_options,
@@ -913,6 +920,30 @@ mod tests {
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json");
     assert!(module.is_none());
+  }
+
+  #[tokio::test]
+  async fn follow_redirects() {
+    let file = tokio::fs::File::open("./src/testdata/issue13704.eszip")
+      .await
+      .unwrap();
+    let (eszip, fut) =
+      super::EszipV2::parse(BufReader::new(file)).await.unwrap();
+    let test = async move {
+      let module = eszip
+        .get_module("file:///Users/divy/gh/eszip_pain/mod.ts")
+        .unwrap();
+
+      let module = eszip
+        .get_module("https://deno.land/std@0.132.0/fmt/colors.ts")
+        .unwrap();
+      let module = eszip
+        .get_module("https://deno.land/std/testing/asserts.ts")
+        .unwrap();
+      Ok(())
+    };
+
+    tokio::try_join!(fut, test).unwrap();
   }
 
   #[tokio::test]
