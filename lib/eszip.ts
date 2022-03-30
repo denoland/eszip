@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run --allow-run=deno --allow-read --allow-write --allow-net=deno.land --no-check
 
-// CLI utility to list/extract/run ESZIPs
+// CLI utility to build/list/extract/run ESZIPs
 
 import { build, Parser } from "./mod.ts";
 import { dirname, join } from "https://deno.land/std@0.127.0/path/mod.ts";
