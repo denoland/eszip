@@ -160,9 +160,12 @@ async function main() {
   switch (subcmd) {
     case "build":
     case "b": {
-      const eszip = await build([filename, ...rest]);
-      // Create outfile name from url filename
-      const out = new URL(filename).pathname.split("/").pop();
+      const eszip = await build([filename]);
+      let out = rest[0];
+      if (!out) {
+        // Create outfile name from url filename
+        out = new URL(filename).pathname.split("/").pop() || "out.eszip";
+      }
       console.log(`${out}.eszip: ${eszip.length} bytes`);
       await Deno.writeFile(`${out}.eszip`, eszip);
       return;
