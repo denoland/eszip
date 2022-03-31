@@ -1,10 +1,8 @@
 #!/usr/bin/env -S deno run --allow-run=deno --allow-read --allow-write --allow-net=deno.land --no-check
 
-/**
- * CLI utility to list/extract/run ESZIPs
- */
+// CLI utility to build/list/extract/run ESZIPs
 
-import { Parser } from "./mod.ts";
+import { build, Parser } from "./mod.ts";
 import { dirname, join } from "https://deno.land/std@0.127.0/path/mod.ts";
 import { assertStrictEquals } from "https://deno.land/std@0.127.0/testing/asserts.ts";
 
@@ -133,7 +131,15 @@ async function run(eszip: ESZIP, specifier: string) {
     const importMap = join(tmpDir, "source", "import_map.json");
     // Run
     const p = Deno.run({
-      cmd: ["deno", "run", "-A", "--import-map", importMap, specifier],
+      cmd: [
+        "deno",
+        "run",
+        "-A",
+        "--no-check",
+        "--import-map",
+        importMap,
+        specifier,
+      ],
     });
     await p.status();
   } finally {
@@ -151,18 +157,33 @@ async function main() {
     return console.log("TODO");
   }
 
-  const eszip = await loadESZIP(filename);
-
   switch (subcmd) {
+    case "build":
+    case "b": {
+      const eszip = await build([filename]);
+      let out = rest[0];
+      if (!out) {
+        // Create outfile name from url filename
+        out = new URL(filename).pathname.split("/").pop() || "out";
+      }
+      console.log(`${out}.eszip: ${eszip.length} bytes`);
+      await Deno.writeFile(`${out}.eszip`, eszip);
+      return;
+    }
     case "x":
-    case "extract":
+    case "extract": {
+      const eszip = await loadESZIP(filename);
       return await eszip.extract(rest[0] ?? Deno.cwd());
+    }
     case "l":
     case "ls":
-    case "list":
+    case "list": {
+      const eszip = await loadESZIP(filename);
       return console.log(eszip.list().join("\n"));
+    }
     case "r":
     case "run": {
+      const eszip = await loadESZIP(filename);
       const specifier = rest[0];
       if (!specifier) {
         return console.error("Please provide a specifier to run");
