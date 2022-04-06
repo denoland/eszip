@@ -70,13 +70,7 @@ function stage2(conf: Stage2Config) {
 function nsSpec(conf: Stage2Config, name: string) {
   const filepath = conf.paths[name];
   const rel = path.relative(conf.localSrcRoot, filepath);
-  const relUrl = path.toFileUrl(path.join("/src", rel));
-  return relUrl;
-}
-
-// Absolute (local) file:///... specifiers for handlers
-function localSpec(conf: Stage2Config, name: string) {
-  return path.toFileUrl(conf.paths[name]);
+  return path.toFileUrl(path.join("/src", rel));
 }
 
 function stage2Loader(conf: Stage2Config) {
