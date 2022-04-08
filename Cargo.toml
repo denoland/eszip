@@ -1,6 +1,6 @@
 [package]
 name = "eszip"
-version = "0.18.0"
+version = "0.19.0"
 authors = ["the Deno authors"]
 edition = "2021"
 repository = "https://github.com/denoland/eszip"
@@ -22,8 +22,8 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = "1"
 base64 = "0.13.0"
-deno_ast = { version = "0.13.0", features = ["transpiling"] }
-deno_graph = "0.25.0"
+deno_ast = { version = "0.14.0", features = ["transpiling"] }
+deno_graph = "0.26.0"
 futures = "0.3.19"
 serde = "1"
 serde_json = "1"
