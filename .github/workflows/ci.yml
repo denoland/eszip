@@ -32,21 +32,19 @@ jobs:
           rustup target add wasm32-unknown-unknown
           cargo install wasm-bindgen-cli
           sudo apt-get install binaryen
-          deno install --unstable -A -f -n wasmbuild https://raw.githubusercontent.com/denoland/wasmbuild/7b714ee749e4dc1e4ed1bc6f7258235a6c289aec/main.ts
-          echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
       - name: Clippy
         run: cargo clippy --all-targets --locked
 
       - name: Build
         run: |
-          make release
-          make node
+          deno task release
+          deno task node
 
       - name: Test
         run: |
           cargo test --all-targets --locked
-          make test
+          deno task test
 
       - name: Publish
         if: |

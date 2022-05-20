@@ -62,14 +62,13 @@ sections for that module.
 ```
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli
-deno install --unstable -A -f -n wasmbuild https://raw.githubusercontent.com/denoland/wasmbuild/7b714ee749e4dc1e4ed1bc6f7258235a6c289aec/main.ts
 brew install binaryen
 ```
 
 When opening a PR make sure to rebuild WASM by running:
 
 ```
-make release
+deno task release
 ```
 
 ### Troubleshooting
