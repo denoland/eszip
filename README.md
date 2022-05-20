@@ -84,5 +84,5 @@ make: *** [build] Error 1
 
 mean that `wasm-bindgen-cli` doesn't match version specified in `Cargo.toml`.
 
-To fix it, run `cargo install wasm-bindgen-cli --version VERSION` where `VERSION` matches
-what's specified in `Cargo.toml`.
+To fix it, run `cargo install wasm-bindgen-cli --version VERSION` where
+`VERSION` matches what's specified in `Cargo.toml`.
