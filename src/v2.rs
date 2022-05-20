@@ -727,7 +727,7 @@ mod tests {
           resolved.file_name().unwrap().to_string_lossy().to_string();
         let specifier = Url::parse(&format!("file:///{}", specifier)).unwrap();
         Ok(Some(LoadResponse::Module {
-          content: Arc::new(source),
+          content: source.into(),
           maybe_headers: None,
           specifier,
         }))
@@ -787,7 +787,7 @@ mod tests {
           let specifier =
             Url::parse(&format!("file:///{}", specifier)).unwrap();
           Ok(Some(LoadResponse::Module {
-            content: Arc::new(source),
+            content: source.into(),
             maybe_headers: None,
             specifier,
           }))
