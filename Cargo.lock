@@ -232,7 +232,9 @@ dependencies = [
 
 [[package]]
 name = "deno_ast"
-version = "0.14.0"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2989afff97ba7da10f186e9a45e946b4ef943b9d4babd2ee7b4b24cc9906b69"
 dependencies = [
  "anyhow",
  "base64 0.13.0",
@@ -246,7 +248,29 @@ dependencies = [
 
 [[package]]
 name = "deno_graph"
-version = "0.26.0"
+version = "0.27.0"
+dependencies = [
+ "anyhow",
+ "cfg-if",
+ "data-url",
+ "deno_ast",
+ "futures",
+ "lazy_static",
+ "parking_lot",
+ "regex",
+ "ring",
+ "serde",
+ "serde_json",
+ "sourcemap",
+ "termcolor",
+ "url",
+]
+
+[[package]]
+name = "deno_graph"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99110bbe6cc90fc653a6bd51cf56d8545cd210f3da913aab63d7e362ab9dbaa4"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -282,7 +306,9 @@ dependencies = [
 
 [[package]]
 name = "dprint-swc-ext"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3df529037ff02f1c43ae8c6cce54d9ad85546ff89cb5c1988f56130c16e16a48"
 dependencies = [
  "bumpalo",
  "num-bigint",
@@ -318,7 +344,7 @@ dependencies = [
  "anyhow",
  "base64 0.13.0",
  "deno_ast",
- "deno_graph",
+ "deno_graph 0.27.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures",
  "import_map",
  "pretty_assertions",
@@ -336,7 +362,7 @@ version = "0.18.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
- "deno_graph",
+ "deno_graph 0.27.0",
  "eszip",
  "js-sys",
  "tokio",
