@@ -1,5 +1,8 @@
 import { load, LoadResponse } from "./loader.ts";
-import { instantiate, Parser as InternalParser } from "./eszip_wasm.generated.js";
+import {
+  instantiate,
+  Parser as InternalParser,
+} from "./eszip_wasm.generated.js";
 
 export type { LoadResponse } from "./loader.ts";
 
