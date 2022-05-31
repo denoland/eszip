@@ -1,7 +1,13 @@
 import { build, emptyDir } from "https://deno.land/x/dnt@0.20.0/mod.ts";
 
-await emptyDir("./npm/esm");
+await emptyDir("./npm");
+Deno.mkdirSync("npm/esm", { recursive: true });
+Deno.mkdirSync("npm/script");
+
 Deno.copyFileSync("lib/eszip_wasm_bg.wasm", "npm/esm/eszip_wasm_bg.wasm");
+// todo(dsherret): how to not include two copies of this in the npm
+// package? Does using a symlink work?
+Deno.copyFileSync("lib/eszip_wasm_bg.wasm", "npm/script/eszip_wasm_bg.wasm");
 
 await build({
   entryPoints: ["./lib/mod.ts"],
@@ -24,9 +30,6 @@ await build({
       url: "https://github.com/denoland/eszip/issues",
     },
   },
-  typeCheck: false,
-  scriptModule: false,
-  test: true,
 });
 
 Deno.copyFileSync("LICENSE.md", "npm/LICENSE");
