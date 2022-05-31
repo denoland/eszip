@@ -60,29 +60,11 @@ sections for that module.
 ## Development
 
 ```
-rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli
 brew install binaryen
 ```
 
-When opening a PR make sure to rebuild WASM by running:
+When opening a PR make sure to rebuild Wasm by running:
 
 ```
 deno task release
 ```
-
-### Troubleshooting
-
-Errors like:
-
-```
-thread 'main' panicked at 'remaining data [20, 10, 85, 105, 110, 116, 56, 65, 114, 114, 97, 121]', /.cargo/registry/src/github.com-1ecc6299db9ec823/wasm-bindgen-cli-support-0.2.78/src/descriptor.rs:111:9
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-wasm-bindgen failed
-make: *** [build] Error 1
-```
-
-mean that `wasm-bindgen-cli` doesn't match version specified in `Cargo.toml`.
-
-To fix it, run `cargo install wasm-bindgen-cli --version VERSION` where
-`VERSION` matches what's specified in `Cargo.toml`.

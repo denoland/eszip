@@ -16,8 +16,8 @@ js-sys = { version = "0.3.55" }
 web-sys = { version = "0.3.56", features = ["ReadableStreamByobReader"] }
 deno_graph = "0.27.0"
 eszip = { path = "../" }
-wasm-bindgen = { version = "0.2.79", features = ["serde-serialize"] }
-wasm-bindgen-futures = { version = "0.4.28" }
+wasm-bindgen = { version = "0.2.80", features = ["serde-serialize"] }
+wasm-bindgen-futures = { version = "0.4.30" }
 tokio = { version = "1.16", features = ["io-std", "io-util"] }
 console_error_panic_hook = "0.1.7"
 anyhow = "1"

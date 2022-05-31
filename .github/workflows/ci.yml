@@ -27,10 +27,8 @@ jobs:
           node-version: '16.x'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Setup WASM
+      - name: Setup Wasm
         run: |
-          rustup target add wasm32-unknown-unknown
-          cargo install wasm-bindgen-cli
           sudo apt-get install binaryen
 
       - name: Clippy

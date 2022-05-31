@@ -75,7 +75,7 @@ class V2 {
   }
 
   static async load(bytes: Uint8Array) {
-    const parser = new Parser();
+    const parser = await Parser.createInstance();
     const specifiers = await parser.parseBytes(bytes);
     await parser.load();
     return new V2(parser, specifiers as string[]);
@@ -192,4 +192,5 @@ async function main() {
     }
   }
 }
+
 await main();
