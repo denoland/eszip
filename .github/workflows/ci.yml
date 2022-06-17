@@ -27,17 +27,14 @@ jobs:
           node-version: '16.x'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Setup Wasm
-        run: |
-          sudo apt-get install binaryen
-
       - name: Clippy
         run: cargo clippy --all-targets --locked
 
       - name: Build
-        run: |
-          deno task release
-          deno task node
+        run: deno task node
+
+      - name: Check Wasm up to date
+        run: deno task build --check
 
       - name: Test
         run: |

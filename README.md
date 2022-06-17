@@ -59,12 +59,8 @@ sections for that module.
 
 ## Development
 
-```
-brew install binaryen
-```
-
 When opening a PR make sure to rebuild Wasm by running:
 
 ```
-deno task release
+deno task build
 ```
