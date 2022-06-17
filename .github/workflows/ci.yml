@@ -31,17 +31,15 @@ jobs:
         run: cargo clippy --all-targets --locked
 
       - name: Build
-        run: |
-          deno task release
-          deno task node
+        run: deno task node
+
+      - name: Check Wasm up to date
+        run: deno task build --check
 
       - name: Test
         run: |
           cargo test --all-targets --locked
           deno task test
-
-      - name: Check Wasm up to date
-        run: deno task build --check
 
       - name: Publish
         if: |
