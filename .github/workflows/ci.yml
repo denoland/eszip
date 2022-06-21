@@ -33,15 +33,12 @@ jobs:
       - name: Build
         run: deno task node
 
-      - name: Check Wasm up to date
-        run: deno task build --check
-
       - name: Test
         run: |
           cargo test --all-targets --locked
           deno task test
 
-      - name: Ensure Wasm up to date
+      - name: Check Wasm up to date
         run: deno task build --check
 
       - name: Build npm
@@ -55,5 +52,5 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          cargo publish -vv
-          cd npm/ && yarn publish
+          cargo publish
+          cd npm/ && npm publish
