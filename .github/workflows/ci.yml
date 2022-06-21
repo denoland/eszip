@@ -41,6 +41,12 @@ jobs:
           cargo test --all-targets --locked
           deno task test
 
+      - name: Ensure Wasm up to date
+        run: deno task build --check
+
+      - name: Build npm
+        run: deno run -A ./build_npm.ts ${{ github.ref_name }}
+
       - name: Publish
         if: |
           github.repository == 'denoland/eszip' &&
@@ -50,6 +56,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cargo publish -vv
-          rm -rf npm/
-          deno run -A ./build_npm.ts ${{ github.ref_name }}
           cd npm/ && yarn publish
