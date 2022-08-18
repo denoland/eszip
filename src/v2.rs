@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
@@ -8,8 +9,12 @@ use std::task::Poll;
 use std::task::Waker;
 
 use deno_ast::EmitOptions;
+use deno_ast::ModuleSpecifier;
+use deno_ast::ParsedSource;
 use deno_ast::TranspiledSource;
+use deno_graph::ModuleAnalyzer;
 use deno_graph::ModuleGraph;
+use deno_graph::ParsedSourceAnalyzer;
 use futures::future::poll_fn;
 use sha2::Digest;
 use sha2::Sha256;
@@ -469,6 +474,7 @@ impl EszipV2 {
   /// into an isolate.
   pub fn from_graph(
     graph: ModuleGraph,
+    analyzer: &CapturingParsedSourceAnalyzer,
     mut emit_options: EmitOptions,
   ) -> Result<Self, anyhow::Error> {
     emit_options.inline_sources = true;
@@ -481,6 +487,7 @@ impl EszipV2 {
 
     fn visit_module(
       graph: &ModuleGraph,
+      analyzer: &CapturingParsedSourceAnalyzer,
       emit_options: &EmitOptions,
       modules: &mut HashMap<String, EszipV2Module>,
       ordered_modules: &mut Vec<String>,
@@ -505,7 +512,8 @@ impl EszipV2 {
             | deno_graph::MediaType::Tsx
             | deno_graph::MediaType::Dts
             | deno_graph::MediaType::Dmts => {
-              let parsed_source = module.maybe_parsed_source.as_ref().unwrap();
+              let parsed_source =
+                analyzer.parsed_source(&module.specifier).unwrap();
               let TranspiledSource {
                 text: source,
                 source_map: maybe_source_map,
@@ -558,6 +566,7 @@ impl EszipV2 {
         if let Some(specifier) = dep.get_code() {
           visit_module(
             graph,
+            analyzer,
             emit_options,
             modules,
             ordered_modules,
@@ -576,6 +585,7 @@ impl EszipV2 {
       ));
       visit_module(
         &graph,
+        analyzer,
         &emit_options,
         &mut modules,
         &mut ordered_modules,
@@ -681,6 +691,39 @@ impl EszipV2 {
   }
 }
 
+/// A `deno_graph::ModuleAnalyzer` that captures parsed sources.
+#[derive(Default)]
+pub struct CapturingParsedSourceAnalyzer {
+  sources: RefCell<HashMap<ModuleSpecifier, ParsedSource>>,
+}
+
+impl CapturingParsedSourceAnalyzer {
+  pub fn parsed_source(
+    &self,
+    specifier: &ModuleSpecifier,
+  ) -> Option<ParsedSource> {
+    self.sources.borrow().get(specifier).cloned()
+  }
+}
+
+impl ModuleAnalyzer for CapturingParsedSourceAnalyzer {
+  fn analyze(
+    &self,
+    specifier: &ModuleSpecifier,
+    source: Arc<str>,
+    media_type: deno_ast::MediaType,
+  ) -> Result<deno_graph::ModuleInfo, deno_ast::Diagnostic> {
+    let parsed_source =
+      ParsedSourceAnalyzer::parse_module(specifier, source, media_type)?;
+    let module_info = ParsedSourceAnalyzer::module_info(&parsed_source);
+    self
+      .sources
+      .borrow_mut()
+      .insert(specifier.clone(), parsed_source);
+    Ok(module_info)
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use std::io::Cursor;
@@ -695,6 +738,7 @@ mod tests {
   use tokio::io::BufReader;
   use url::Url;
 
+  use crate::v2::CapturingParsedSourceAnalyzer;
   use crate::ModuleKind;
 
   struct FileLoader;
@@ -795,6 +839,7 @@ mod tests {
       }
     }
 
+    let analyzer = CapturingParsedSourceAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -802,13 +847,14 @@ mod tests {
       &mut ExternalLoader,
       None,
       None,
-      None,
+      Some(&analyzer),
       None,
     )
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
+        .unwrap();
     let module = eszip.get_module("file:///external.ts").unwrap();
     assert_eq!(module.specifier, "file:///external.ts");
     assert!(eszip.get_module("external:fs").is_none());
@@ -820,6 +866,7 @@ mod tests {
       ModuleSpecifier::parse("file:///main.ts").unwrap(),
       deno_graph::ModuleKind::Esm,
     )];
+    let analyzer = CapturingParsedSourceAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -827,13 +874,14 @@ mod tests {
       &mut FileLoader,
       None,
       None,
-      None,
+      Some(&analyzer),
       None,
     )
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
+        .unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
     let source = module.source().await;
@@ -856,6 +904,7 @@ mod tests {
       ModuleSpecifier::parse("file:///json.ts").unwrap(),
       deno_graph::ModuleKind::Esm,
     )];
+    let analyzer = CapturingParsedSourceAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -863,13 +912,14 @@ mod tests {
       &mut FileLoader,
       None,
       None,
-      None,
+      Some(&analyzer),
       None,
     )
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
+        .unwrap();
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
     let source = module.source().await;
@@ -891,6 +941,7 @@ mod tests {
       ModuleSpecifier::parse("file:///dynamic.ts").unwrap(),
       deno_graph::ModuleKind::Esm,
     )];
+    let analyzer = CapturingParsedSourceAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -898,13 +949,14 @@ mod tests {
       &mut FileLoader,
       None,
       None,
-      None,
+      Some(&analyzer),
       None,
     )
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
+        .unwrap();
     let module = eszip.get_module("file:///dynamic.ts").unwrap();
     assert_eq!(module.specifier, "file:///dynamic.ts");
     let source = module.source().await;
@@ -1024,6 +1076,7 @@ mod tests {
       ModuleSpecifier::parse("file:///mapped.js").unwrap(),
       deno_graph::ModuleKind::Esm,
     )];
+    let analyzer = CapturingParsedSourceAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -1031,13 +1084,14 @@ mod tests {
       &mut FileLoader,
       Some(&ImportMapResolver(import_map.import_map)),
       None,
-      None,
+      Some(&analyzer),
       None,
     )
     .await;
     graph.valid().unwrap();
     let mut eszip =
-      super::EszipV2::from_graph(graph, EmitOptions::default()).unwrap();
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
+        .unwrap();
     let import_map_bytes = Arc::new(content.as_bytes().to_vec());
     eszip.add_import_map(specifier.to_string(), import_map_bytes);
 
