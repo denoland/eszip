@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
@@ -9,12 +8,9 @@ use std::task::Poll;
 use std::task::Waker;
 
 use deno_ast::EmitOptions;
-use deno_ast::ModuleSpecifier;
-use deno_ast::ParsedSource;
+use deno_graph::CapturingParsedSourceAnalyzer;
 use deno_ast::TranspiledSource;
-use deno_graph::ModuleAnalyzer;
 use deno_graph::ModuleGraph;
-use deno_graph::ParsedSourceAnalyzer;
 use futures::future::poll_fn;
 use sha2::Digest;
 use sha2::Sha256;
@@ -688,39 +684,6 @@ impl EszipV2 {
   pub fn specifiers(&self) -> Vec<String> {
     let modules = self.modules.lock().unwrap();
     modules.keys().cloned().collect()
-  }
-}
-
-/// A `deno_graph::ModuleAnalyzer` that captures parsed sources.
-#[derive(Default)]
-pub struct CapturingParsedSourceAnalyzer {
-  sources: RefCell<HashMap<ModuleSpecifier, ParsedSource>>,
-}
-
-impl CapturingParsedSourceAnalyzer {
-  pub fn parsed_source(
-    &self,
-    specifier: &ModuleSpecifier,
-  ) -> Option<ParsedSource> {
-    self.sources.borrow().get(specifier).cloned()
-  }
-}
-
-impl ModuleAnalyzer for CapturingParsedSourceAnalyzer {
-  fn analyze(
-    &self,
-    specifier: &ModuleSpecifier,
-    source: Arc<str>,
-    media_type: deno_ast::MediaType,
-  ) -> Result<deno_graph::ModuleInfo, deno_ast::Diagnostic> {
-    let parsed_source =
-      ParsedSourceAnalyzer::parse_module(specifier, source, media_type)?;
-    let module_info = ParsedSourceAnalyzer::module_info(&parsed_source);
-    self
-      .sources
-      .borrow_mut()
-      .insert(specifier.clone(), parsed_source);
-    Ok(module_info)
   }
 }
 

@@ -3,7 +3,7 @@ use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
 use deno_graph::ModuleSpecifier;
-use eszip::v2::CapturingParsedSourceAnalyzer;
+use deno_graph::CapturingParsedSourceAnalyzer;
 use js_sys::Promise;
 use js_sys::Uint8Array;
 use std::cell::RefCell;
