@@ -3,7 +3,6 @@ use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
 use deno_graph::ModuleSpecifier;
-use deno_graph::RefCellCapturingParsedSourceAnalyzer;
 use js_sys::Promise;
 use js_sys::Uint8Array;
 use std::cell::RefCell;
@@ -250,9 +249,7 @@ pub async fn build_eszip(
     .into_serde()
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let mut loader = GraphLoader(loader);
-  let store = deno_graph::DefaultParsedSourceStore::default();
-  let parser = deno_graph::CapturingModuleParser::new(None, &store);
-  let analyzer = deno_graph::DefaultModuleAnalyzer::new(&parser);
+  let analyzer = deno_graph::CapturingModuleAnalyzer::default();
   let graph = deno_graph::create_graph(
     roots
       .into_iter()
@@ -270,7 +267,7 @@ pub async fn build_eszip(
   graph
     .valid()
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
-  let eszip = eszip::EszipV2::from_graph(graph, &store, Default::default())
+  let eszip = eszip::EszipV2::from_graph(graph, &analyzer, Default::default())
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   Ok(Uint8Array::from(eszip.into_bytes().as_slice()))
 }

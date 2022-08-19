@@ -694,11 +694,9 @@ mod tests {
   use std::sync::Arc;
 
   use deno_ast::EmitOptions;
-  use deno_graph::source::LoadResponse;
+  use deno_graph::CapturingModuleAnalyzer;
+use deno_graph::source::LoadResponse;
   use deno_graph::source::ResolveResponse;
-  use deno_graph::CapturingModuleParser;
-  use deno_graph::DefaultModuleAnalyzer;
-  use deno_graph::DefaultParsedSourceStore;
   use deno_graph::ModuleSpecifier;
   use import_map::ImportMap;
   use pretty_assertions::assert_eq;
@@ -805,9 +803,7 @@ mod tests {
       }
     }
 
-    let store = DefaultParsedSourceStore::default();
-    let parser = CapturingModuleParser::new(None, &store);
-    let analyzer = DefaultModuleAnalyzer::new(&parser);
+    let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -821,7 +817,7 @@ mod tests {
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EszipV2::from_graph(graph, &store, EmitOptions::default())
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
         .unwrap();
     let module = eszip.get_module("file:///external.ts").unwrap();
     assert_eq!(module.specifier, "file:///external.ts");
@@ -834,9 +830,7 @@ mod tests {
       ModuleSpecifier::parse("file:///main.ts").unwrap(),
       deno_graph::ModuleKind::Esm,
     )];
-    let store = DefaultParsedSourceStore::default();
-    let parser = CapturingModuleParser::new(None, &store);
-    let analyzer = DefaultModuleAnalyzer::new(&parser);
+    let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -850,7 +844,7 @@ mod tests {
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EszipV2::from_graph(graph, &store, EmitOptions::default())
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
         .unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
@@ -874,9 +868,7 @@ mod tests {
       ModuleSpecifier::parse("file:///json.ts").unwrap(),
       deno_graph::ModuleKind::Esm,
     )];
-    let store = DefaultParsedSourceStore::default();
-    let parser = CapturingModuleParser::new(None, &store);
-    let analyzer = DefaultModuleAnalyzer::new(&parser);
+    let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -890,7 +882,7 @@ mod tests {
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EszipV2::from_graph(graph, &store, EmitOptions::default())
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
         .unwrap();
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
@@ -913,9 +905,7 @@ mod tests {
       ModuleSpecifier::parse("file:///dynamic.ts").unwrap(),
       deno_graph::ModuleKind::Esm,
     )];
-    let store = DefaultParsedSourceStore::default();
-    let parser = CapturingModuleParser::new(None, &store);
-    let analyzer = DefaultModuleAnalyzer::new(&parser);
+    let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -929,7 +919,7 @@ mod tests {
     .await;
     graph.valid().unwrap();
     let eszip =
-      super::EszipV2::from_graph(graph, &store, EmitOptions::default())
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
         .unwrap();
     let module = eszip.get_module("file:///dynamic.ts").unwrap();
     assert_eq!(module.specifier, "file:///dynamic.ts");
@@ -1050,9 +1040,7 @@ mod tests {
       ModuleSpecifier::parse("file:///mapped.js").unwrap(),
       deno_graph::ModuleKind::Esm,
     )];
-    let store = DefaultParsedSourceStore::default();
-    let parser = CapturingModuleParser::new(None, &store);
-    let analyzer = DefaultModuleAnalyzer::new(&parser);
+    let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
       false,
@@ -1066,7 +1054,7 @@ mod tests {
     .await;
     graph.valid().unwrap();
     let mut eszip =
-      super::EszipV2::from_graph(graph, &store, EmitOptions::default())
+      super::EszipV2::from_graph(graph, &analyzer, EmitOptions::default())
         .unwrap();
     let import_map_bytes = Arc::new(content.as_bytes().to_vec());
     eszip.add_import_map(specifier.to_string(), import_map_bytes);
