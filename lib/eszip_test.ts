@@ -42,9 +42,9 @@ Deno.test("roundtrip build + parse", async () => {
   assert(eszip instanceof Uint8Array);
   const parser = await Parser.createInstance();
   const specifiers = await parser.parseBytes(eszip);
-  assertEquals(specifiers, [
-    "https://example.com/mod.ts",
+  assertEquals(specifiers.sort(), [
     "https://example.com/a.ts",
+    "https://example.com/mod.ts",
   ]);
 
   await parser.load();
