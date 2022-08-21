@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 [dependencies]
 js-sys = { version = "0.3.58" }
 web-sys = { version = "0.3.58", features = ["ReadableStreamByobReader"] }
-deno_graph = { path = "../../deno_graph" }
+deno_graph = "0.31.0"
 eszip = { path = "../" }
 wasm-bindgen = { version = "0.2.81", features = ["serde-serialize"] }
 wasm-bindgen-futures = { version = "0.4.31" }
