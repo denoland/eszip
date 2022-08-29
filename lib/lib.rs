@@ -267,7 +267,7 @@ pub async fn build_eszip(
   graph
     .valid()
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
-  let eszip = eszip::EszipV2::from_graph(graph, &analyzer, Default::default())
+  let eszip = eszip::EszipV2::from_graph(graph, &analyzer.as_capturing_parser(), Default::default())
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   Ok(Uint8Array::from(eszip.into_bytes().as_slice()))
 }
