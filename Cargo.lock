@@ -343,7 +343,7 @@ dependencies = [
  "deno_ast",
  "deno_graph",
  "futures",
- "import_map",
+ "import_map 0.7.0",
  "pretty_assertions",
  "serde",
  "serde_json",
@@ -361,6 +361,7 @@ dependencies = [
  "console_error_panic_hook",
  "deno_graph",
  "eszip",
+ "import_map 0.12.1",
  "js-sys",
  "tokio",
  "wasm-bindgen",
@@ -549,6 +550,19 @@ name = "import_map"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a5e929cd5351ce1fe9e674a711b7d626dc00182350de310ed84d59a5ecb6a94"
+dependencies = [
+ "indexmap",
+ "log",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "import_map"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b827962ca5aa6d5bbe313c14e73d7cc517487fa3bad380bb6bdbd8421e591a29"
 dependencies = [
  "indexmap",
  "log",

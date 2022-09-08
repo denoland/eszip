@@ -21,11 +21,13 @@ export class Parser extends InternalParser {
 export async function build(
   roots: string[],
   loader: (url: string) => Promise<LoadResponse | undefined> = load,
+  importMapUrl?: string,
 ): Promise<Uint8Array> {
   const { build } = await instantiate();
   return build(
     roots,
     (specifier: string) =>
       loader(specifier).catch((err) => Promise.reject(String(err))),
+    importMapUrl,
   );
 }

@@ -59,6 +59,11 @@ Deno.test("build default loader", async () => {
   assert(eszip instanceof Uint8Array);
 });
 
+Deno.test("build with import map", async () => {
+  const eszip = await build(["data:application/javascript,import 'std/fs/mod.ts'"], undefined, "data:application/json,{\"imports\":{\"std/\":\"https://deno.land/std/\"}}");
+  assert(eszip instanceof Uint8Array);
+});
+
 Deno.test("loader errors", async () => {
   await assertRejects(
     () =>
