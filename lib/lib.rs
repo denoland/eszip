@@ -2,7 +2,11 @@ use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
+use deno_graph::source::ResolveResponse;
+use deno_graph::source::Resolver;
 use deno_graph::ModuleSpecifier;
+use eszip::v2::Url;
+use import_map::ImportMap;
 use js_sys::Promise;
 use js_sys::Uint8Array;
 use std::cell::RefCell;
@@ -11,6 +15,7 @@ use std::io::Error;
 use std::io::ErrorKind;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 use tokio::io::AsyncRead;
@@ -243,12 +248,41 @@ impl Parser {
 pub async fn build_eszip(
   roots: JsValue,
   loader: js_sys::Function,
+  import_map_url: JsValue,
 ) -> Result<Uint8Array, JsValue> {
   std::panic::set_hook(Box::new(console_error_panic_hook::hook));
   let roots: Vec<deno_graph::ModuleSpecifier> = roots
     .into_serde()
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let mut loader = GraphLoader(loader);
+  let import_map_url: Option<Url> = import_map_url
+    .into_serde()
+    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  let (maybe_import_map, maybe_import_map_data) =
+    if let Some(import_map_url) = import_map_url {
+      let resp =
+        deno_graph::source::Loader::load(&mut loader, &import_map_url, false)
+          .await
+          .map_err(|e| js_sys::Error::new(&e.to_string()))?
+          .ok_or_else(|| {
+            js_sys::Error::new(&format!(
+              "import map not found at '{import_map_url}'"
+            ))
+          })?;
+      match resp {
+        deno_graph::source::LoadResponse::Module {
+          specifier, content, ..
+        } => {
+          let import_map =
+            import_map::parse_from_json(&specifier, &content).unwrap();
+          (Some(import_map.import_map), Some((specifier, content)))
+        }
+        _ => unimplemented!(),
+      }
+    } else {
+      (None, None)
+    };
+  let resolver = GraphResolver(maybe_import_map);
   let analyzer = deno_graph::CapturingModuleAnalyzer::default();
   let graph = deno_graph::create_graph(
     roots
@@ -258,7 +292,7 @@ pub async fn build_eszip(
     false,
     None,
     &mut loader,
-    None,
+    Some(&resolver),
     None,
     Some(&analyzer),
     None,
@@ -267,8 +301,20 @@ pub async fn build_eszip(
   graph
     .valid()
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
-  let eszip = eszip::EszipV2::from_graph(graph, &analyzer.as_capturing_parser(), Default::default())
-    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  let mut eszip = eszip::EszipV2::from_graph(
+    graph,
+    &analyzer.as_capturing_parser(),
+    Default::default(),
+  )
+  .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  if let Some((import_map_specifier, import_map_content)) =
+    maybe_import_map_data
+  {
+    eszip.add_import_map(
+      import_map_specifier.to_string(),
+      Arc::new(import_map_content.as_bytes().to_vec()),
+    )
+  }
   Ok(Uint8Array::from(eszip.into_bytes().as_slice()))
 }
 
@@ -313,6 +359,29 @@ impl Loader for GraphLoader {
               .unwrap_or_else(|| "an error occured during loading".to_string()))
           })
       })
+    }
+  }
+}
+
+#[derive(Debug)]
+pub struct GraphResolver(Option<ImportMap>);
+
+impl Resolver for GraphResolver {
+  fn resolve(
+    &self,
+    specifier: &str,
+    referrer: &deno_graph::ModuleSpecifier,
+  ) -> ResolveResponse {
+    if let Some(import_map) = &self.0 {
+      match import_map.resolve(specifier, referrer) {
+        Ok(specifier) => ResolveResponse::Specifier(specifier),
+        Err(err) => ResolveResponse::Err(err.into()),
+      }
+    } else {
+      match deno_graph::resolve_import(specifier, referrer) {
+        Ok(specifier) => ResolveResponse::Specifier(specifier),
+        Err(err) => ResolveResponse::Err(err.into()),
+      }
     }
   }
 }
