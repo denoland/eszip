@@ -6,15 +6,23 @@ import {
 
 export type { LoadResponse } from "./loader.ts";
 
-export class Parser extends InternalParser {
-  private constructor() {
-    super();
-  }
+export class EszipError extends Error {
+  name = "EszipError";
 
-  static async createInstance() {
-    // insure instantiate is called
-    await instantiate();
-    return new Parser();
+  specifier?: string;
+  line?: number;
+  column?: number;
+
+  constructor(
+    message: string,
+    specifier?: string,
+    line?: number,
+    column?: number,
+  ) {
+    super(message);
+    this.specifier = specifier;
+    this.line = line;
+    this.column = column;
   }
 }
 
@@ -24,10 +32,17 @@ export async function build(
   importMapUrl?: string,
 ): Promise<Uint8Array> {
   const { build } = await instantiate();
-  return build(
-    roots,
-    (specifier: string) =>
-      loader(specifier).catch((err) => Promise.reject(String(err))),
-    importMapUrl,
-  );
+  try {
+    return await build(
+      roots,
+      (specifier: string) =>
+        loader(specifier).catch((err) => Promise.reject(String(err))),
+      importMapUrl,
+    );
+  } catch (e) {
+    if (!(e instanceof Error) && e.message) {
+      throw new EszipError(e.message, e.specifier, e.line, e.column);
+    }
+    throw e;
+  }
 }

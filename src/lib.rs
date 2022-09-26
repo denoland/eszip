@@ -12,6 +12,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
 use v2::ESZIP_V2_MAGIC;
 
+pub use crate::error::FromGraphError;
 pub use crate::error::ParseError;
 pub use crate::v1::EszipV1;
 pub use crate::v2::EszipV2;

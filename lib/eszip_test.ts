@@ -1,9 +1,9 @@
-import { build, Parser } from "./mod.ts";
+import { build, EszipError, Parser } from "./mod.ts";
 import {
   assert,
   assertEquals,
   assertRejects,
-} from "https://deno.land/std@0.123.0/testing/asserts.ts";
+} from "https://deno.land/std@0.155.0/testing/asserts.ts";
 
 Deno.test("roundtrip build + parse", async () => {
   const eszip = await build([
@@ -60,7 +60,11 @@ Deno.test("build default loader", async () => {
 });
 
 Deno.test("build with import map", async () => {
-  const eszip = await build(["data:application/javascript,import 'std/fs/mod.ts'"], undefined, "data:application/json,{\"imports\":{\"std/\":\"https://deno.land/std/\"}}");
+  const eszip = await build(
+    ["data:application/javascript,import 'std/fs/mod.ts'"],
+    undefined,
+    'data:application/json,{"imports":{"std/":"https://deno.land/std/"}}',
+  );
   assert(eszip instanceof Uint8Array);
 });
 
@@ -71,7 +75,22 @@ Deno.test("loader errors", async () => {
         ["https://deno.land/std@0.123.0/fs/mod.ts"],
         (specifier: string) => Promise.reject(new Error("oops")),
       ),
-    undefined,
+    Error,
     "oops",
+  );
+});
+
+Deno.test("eszip error", async () => {
+  const err = await assertRejects(
+    () => build(["file:///does/not/exist.ts"]),
+    EszipError,
+  );
+  assertEquals(
+    err.specifier,
+    "file:///does/not/exist.ts",
+  );
+  assertEquals(
+    err.message,
+    "Module not found.",
   );
 });
