@@ -4,11 +4,14 @@ use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
 use deno_graph::source::ResolveResponse;
 use deno_graph::source::Resolver;
+use deno_graph::MediaType;
+use deno_graph::ModuleGraphError;
 use deno_graph::ModuleSpecifier;
 use eszip::v2::Url;
 use import_map::ImportMap;
 use js_sys::Promise;
 use js_sys::Uint8Array;
+use serde::Serialize;
 use std::cell::RefCell;
 use std::future::Future;
 use std::io::Error;
@@ -243,6 +246,121 @@ impl Parser {
   }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EszipError {
+  message: String,
+  specifier: Option<String>,
+  line: Option<usize>,
+  column: Option<usize>,
+}
+
+impl From<ModuleGraphError> for EszipError {
+  fn from(e: ModuleGraphError) -> Self {
+    match e {
+      ModuleGraphError::InvalidSource(_, _) => todo!("related to lockfile"),
+      ModuleGraphError::InvalidTypeAssertion {
+        specifier,
+        actual_media_type,
+        expected_media_type,
+      } => Self {
+        message: format!(
+          "Expected a {} module, but identified a {} module.",
+          expected_media_type, actual_media_type
+        ),
+        specifier: Some(specifier.to_string()),
+        line: None,
+        column: None,
+      },
+      ModuleGraphError::LoadingErr(specifier, err) => Self {
+        message: err.to_string(),
+        specifier: Some(specifier.to_string()),
+        line: None,
+        column: None,
+      },
+      ModuleGraphError::Missing(specifier) => Self {
+        message: "Module not found.".to_owned(),
+        specifier: Some(specifier.to_string()),
+        line: None,
+        column: None,
+      },
+      ModuleGraphError::ParseErr(_, err) => Self {
+        message: err.message().to_string(),
+        specifier: Some(err.specifier),
+        line: Some(err.display_position.line_number),
+        column: Some(err.display_position.column_number),
+      },
+      ModuleGraphError::ResolutionError(err) => Self {
+        message: err.to_string(),
+        specifier: None,
+        line: None,
+        column: None,
+      },
+      ModuleGraphError::UnsupportedImportAssertionType(
+        specifier,
+        assertion,
+      ) => Self {
+        message: format!(
+          "The import assertion type of \"{}\" is unsupported.",
+          assertion
+        ),
+        specifier: Some(specifier.to_string()),
+        line: None,
+        column: None,
+      },
+      ModuleGraphError::UnsupportedMediaType(specifier, MediaType::Json) => {
+        Self {
+          message: "Expected a JavaScript or TypeScript module, but identified a Json module. Consider importing Json modules with an import assertion with the type of \"json\".".to_owned(),
+          specifier: Some(specifier.to_string()),
+          line: None,
+          column: None,
+        }
+      }
+      ModuleGraphError::UnsupportedMediaType(specifier, media_type) => {
+        Self {
+          message: format!(
+            "Expected a JavaScript or TypeScript module, but identified a {} module. Importing these types of modules is currently not supported.",
+            media_type
+          ),
+          specifier: Some(specifier.to_string()),
+          line: None,
+          column: None,
+        }
+      }
+    }
+  }
+}
+
+impl From<eszip::FromGraphError> for EszipError {
+  fn from(e: eszip::FromGraphError) -> Self {
+    match e {
+      eszip::FromGraphError::UnsupportedMediaType(specifier, media_type) => {
+        Self {
+          message: format!(
+            "Modules with type \"{}\" can not be stored in an eszip.",
+            media_type
+          ),
+          specifier: Some(specifier.to_string()),
+          line: None,
+          column: None,
+        }
+      }
+      eszip::FromGraphError::Parse(_, err) => Self {
+        message: err.message().to_string(),
+        specifier: Some(err.specifier),
+        line: Some(err.display_position.line_number),
+        column: Some(err.display_position.column_number),
+      },
+      eszip::FromGraphError::Emit(specifier, err) => Self {
+        message: err.to_string(),
+        specifier: Some(specifier.to_string()),
+        line: None,
+        column: None,
+      },
+    }
+  }
+}
+
 /// Serialize a module graph into eszip.
 #[wasm_bindgen(js_name = build)]
 pub async fn build_eszip(
@@ -300,13 +418,13 @@ pub async fn build_eszip(
   .await;
   graph
     .valid()
-    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+    .map_err(|err| JsValue::from_serde(&EszipError::from(err)).unwrap())?;
   let mut eszip = eszip::EszipV2::from_graph(
     graph,
     &analyzer.as_capturing_parser(),
     Default::default(),
   )
-  .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  .map_err(|err| JsValue::from_serde(&EszipError::from(err)).unwrap())?;
   if let Some((import_map_specifier, import_map_content)) =
     maybe_import_map_data
   {

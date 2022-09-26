@@ -18,6 +18,7 @@ deno_graph = "0.34.0"
 eszip = { path = "../" }
 import_map = "0.12.1"
 js-sys = { version = "0.3.58" }
+serde = { version = "1.0.145", features = ["derive"] }
 tokio = { version = "1.16", features = ["io-std", "io-util"] }
 wasm-bindgen = { version = "0.2.81", features = ["serde-serialize"] }
 wasm-bindgen-futures = { version = "0.4.31" }

@@ -1,4 +1,7 @@
+use deno_ast::Diagnostic;
+use deno_ast::MediaType;
 use thiserror::Error;
+use url::Url;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -25,4 +28,14 @@ pub enum ParseError {
 
   #[error(transparent)]
   Io(#[from] std::io::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum FromGraphError {
+  #[error("unsupported media type {1} for asset {0}")]
+  UnsupportedMediaType(Url, MediaType),
+  #[error("failed to parse {0}: {1}")]
+  Parse(Url, Diagnostic),
+  #[error("failed to emit {0}: {1}")]
+  Emit(Url, anyhow::Error),
 }
