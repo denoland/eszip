@@ -697,6 +697,7 @@ mod tests {
   use deno_ast::EmitOptions;
   use deno_graph::source::LoadResponse;
   use deno_graph::source::ResolveResponse;
+  use deno_graph::GraphOptions;
   use deno_graph::CapturingModuleAnalyzer;
   use deno_graph::ModuleSpecifier;
   use import_map::ImportMap;
@@ -807,13 +808,11 @@ mod tests {
     let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
-      false,
-      None,
       &mut ExternalLoader,
-      None,
-      None,
-      Some(&analyzer),
-      None,
+      GraphOptions {
+        module_analyzer: Some(&analyzer),
+        ..Default::default()
+      },
     )
     .await;
     graph.valid().unwrap();
@@ -834,13 +833,11 @@ mod tests {
     let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
-      false,
-      None,
       &mut FileLoader,
-      None,
-      None,
-      Some(&analyzer),
-      None,
+      GraphOptions {
+        module_analyzer: Some(&analyzer),
+        ..Default::default()
+      },
     )
     .await;
     graph.valid().unwrap();
@@ -872,13 +869,11 @@ mod tests {
     let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
-      false,
-      None,
       &mut FileLoader,
-      None,
-      None,
-      Some(&analyzer),
-      None,
+      GraphOptions {
+        module_analyzer: Some(&analyzer),
+        ..Default::default()
+      },
     )
     .await;
     graph.valid().unwrap();
@@ -909,13 +904,11 @@ mod tests {
     let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
-      false,
-      None,
       &mut FileLoader,
-      None,
-      None,
-      Some(&analyzer),
-      None,
+      GraphOptions {
+        module_analyzer: Some(&analyzer),
+        ..Default::default()
+      },
     )
     .await;
     graph.valid().unwrap();
@@ -1044,13 +1037,12 @@ mod tests {
     let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
-      false,
-      None,
       &mut FileLoader,
-      Some(&ImportMapResolver(import_map.import_map)),
-      None,
-      Some(&analyzer),
-      None,
+      GraphOptions {
+        resolver: Some(&ImportMapResolver(import_map.import_map)),
+        module_analyzer: Some(&analyzer),
+        ..Default::default()
+      },
     )
     .await;
     graph.valid().unwrap();
