@@ -17,8 +17,8 @@ console_error_panic_hook = "0.1.7"
 deno_graph = "0.34.0"
 eszip = { path = "../" }
 import_map = "0.12.1"
-js-sys = { version = "0.3.58" }
+js-sys = { version = "0.3.60" }
 tokio = { version = "1.16", features = ["io-std", "io-util"] }
-wasm-bindgen = { version = "0.2.81", features = ["serde-serialize"] }
-wasm-bindgen-futures = { version = "0.4.31" }
-web-sys = { version = "0.3.58", features = ["ReadableStreamByobReader"] }
+wasm-bindgen = { version = "0.2.83", features = ["serde-serialize"] }
+wasm-bindgen-futures = { version = "0.4.33" }
+web-sys = { version = "0.3.60", features = ["ReadableStreamByobReader"] }
