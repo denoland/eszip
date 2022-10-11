@@ -25,7 +25,7 @@ export async function build(
   loader: (url: string) => Promise<LoadResponse | undefined> = load,
   importMapUrl?: string,
 ): Promise<Uint8Array> {
-  const { build } = await instantiate({ url: wasmURL });
+  const { build } = await instantiate({ url: options.wasmURL });
   return build(
     roots,
     (specifier: string) =>
