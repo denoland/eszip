@@ -1,3 +1,4 @@
+use deno_graph::GraphOptions;
 use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
@@ -289,13 +290,12 @@ pub async fn build_eszip(
       .into_iter()
       .map(|r| (r, deno_graph::ModuleKind::Esm))
       .collect(),
-    false,
-    None,
     &mut loader,
-    Some(&resolver),
-    None,
-    Some(&analyzer),
-    None,
+    GraphOptions {
+      resolver: Some(&resolver),
+      module_analyzer: Some(&analyzer),
+      ..Default::default()
+    },
   )
   .await;
   graph
