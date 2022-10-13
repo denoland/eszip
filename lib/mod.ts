@@ -6,6 +6,8 @@ import {
 
 export type { LoadResponse } from "./loader.ts";
 
+export const options: { wasmURL: URL | undefined } = { wasmURL: undefined };
+
 export class Parser extends InternalParser {
   private constructor() {
     super();
@@ -13,7 +15,7 @@ export class Parser extends InternalParser {
 
   static async createInstance() {
     // insure instantiate is called
-    await instantiate();
+    await instantiate({ url: options.wasmURL });
     return new Parser();
   }
 }
@@ -23,7 +25,7 @@ export async function build(
   loader: (url: string) => Promise<LoadResponse | undefined> = load,
   importMapUrl?: string,
 ): Promise<Uint8Array> {
-  const { build } = await instantiate();
+  const { build } = await instantiate({ url: options.wasmURL });
   return build(
     roots,
     (specifier: string) =>

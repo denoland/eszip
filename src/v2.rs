@@ -509,8 +509,11 @@ impl EszipV2 {
             | deno_graph::MediaType::Tsx
             | deno_graph::MediaType::Dts
             | deno_graph::MediaType::Dmts => {
-              let parsed_source =
-                parser.parse_module(&module.specifier, module.maybe_source.clone().unwrap(), module.media_type)?;
+              let parsed_source = parser.parse_module(
+                &module.specifier,
+                module.maybe_source.clone().unwrap(),
+                module.media_type,
+              )?;
               let TranspiledSource {
                 text: source,
                 source_map: maybe_source_map,
@@ -816,9 +819,12 @@ mod tests {
     )
     .await;
     graph.valid().unwrap();
-    let eszip =
-      super::EszipV2::from_graph(graph, &analyzer.as_capturing_parser(), EmitOptions::default())
-        .unwrap();
+    let eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
     let module = eszip.get_module("file:///external.ts").unwrap();
     assert_eq!(module.specifier, "file:///external.ts");
     assert!(eszip.get_module("external:fs").is_none());
@@ -841,9 +847,12 @@ mod tests {
     )
     .await;
     graph.valid().unwrap();
-    let eszip =
-      super::EszipV2::from_graph(graph, &analyzer.as_capturing_parser(), EmitOptions::default())
-        .unwrap();
+    let eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
     let source = module.source().await;
@@ -877,9 +886,12 @@ mod tests {
     )
     .await;
     graph.valid().unwrap();
-    let eszip =
-      super::EszipV2::from_graph(graph, &analyzer.as_capturing_parser(), EmitOptions::default())
-        .unwrap();
+    let eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
     let source = module.source().await;
@@ -912,9 +924,12 @@ mod tests {
     )
     .await;
     graph.valid().unwrap();
-    let eszip =
-      super::EszipV2::from_graph(graph, &analyzer.as_capturing_parser(), EmitOptions::default())
-        .unwrap();
+    let eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
     let module = eszip.get_module("file:///dynamic.ts").unwrap();
     assert_eq!(module.specifier, "file:///dynamic.ts");
     let source = module.source().await;
@@ -1046,9 +1061,12 @@ mod tests {
     )
     .await;
     graph.valid().unwrap();
-    let mut eszip =
-      super::EszipV2::from_graph(graph, &analyzer.as_capturing_parser(), EmitOptions::default())
-        .unwrap();
+    let mut eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
     let import_map_bytes = Arc::new(content.as_bytes().to_vec());
     eszip.add_import_map(specifier.to_string(), import_map_bytes);
 
