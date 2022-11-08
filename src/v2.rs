@@ -99,7 +99,7 @@ impl EszipV2 {
     let header_bytes = &header_and_hash[..header_len];
 
     let mut hasher = Sha256::new();
-    hasher.update(&header_bytes);
+    hasher.update(header_bytes);
     let actual_hash = hasher.finalize();
     let expected_hash = &header_and_hash[header_bytes.len()..];
     if &*actual_hash != expected_hash {
@@ -445,7 +445,7 @@ impl EszipV2 {
     // add header hash
     let header_bytes = &header[ESZIP_V2_MAGIC.len() + size_of::<u32>()..];
     let mut hasher = sha2::Sha256::new();
-    hasher.update(&header_bytes);
+    hasher.update(header_bytes);
     let header_hash = hasher.finalize();
     header.extend_from_slice(&header_hash);
 
