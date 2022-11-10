@@ -215,15 +215,6 @@ dependencies = [
 
 [[package]]
 name = "data-url"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a30bfce702bcfa94e906ef82421f2c0e61c076ad76030c16ee5d2e9a32fe193"
-dependencies = [
- "matches",
-]
-
-[[package]]
-name = "data-url"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d7439c3735f405729d52c3fbbe4de140eaf938a1fe47d227c27f8254d4302a5"
@@ -239,13 +230,13 @@ dependencies = [
 
 [[package]]
 name = "deno_ast"
-version = "0.20.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "322f52615649f4f096eed78ec8e2a7eb68ff0bf5f330d59302c5479c7a8fa158"
+checksum = "e95105b29938cac5c987017a3c3d245776d71de77838658e5abe917ad75b1929"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
- "data-url 0.2.0",
+ "data-url",
  "dprint-swc-ext",
  "serde",
  "swc_atoms",
@@ -270,13 +261,13 @@ dependencies = [
 
 [[package]]
 name = "deno_graph"
-version = "0.37.0"
+version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "243dab5334674854bc3a3c648e3e55ede4d86516db7599309edf12efbc2465ec"
+checksum = "65eb6b2223b71a759b12bc21ee35842193d3703157950d1411c0243239f072eb"
 dependencies = [
  "anyhow",
  "cfg-if",
- "data-url 0.1.1",
+ "data-url",
  "deno_ast",
  "futures",
  "lazy_static",
@@ -286,7 +277,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sourcemap",
- "termcolor",
  "url",
 ]
 
@@ -717,12 +707,6 @@ checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if",
 ]
-
-[[package]]
-name = "matches"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3e378b66a060d48947b590737b30a1be76706c8dd7b8ba0f2fe3989c68a853f"
 
 [[package]]
 name = "memchr"
@@ -1605,15 +1589,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "termcolor"
-version = "1.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bab24d30b911b2376f3a13cc2cd443142f0c81dda04c118693e35b3835757755"
-dependencies = [
- "winapi-util",
-]
-
-[[package]]
 name = "text_lines"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1913,15 +1888,6 @@ name = "winapi-i686-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
-
-[[package]]
-name = "winapi-util"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70ec6ce85bb158151cae5e5c87f95a8e97d2c0c4b001223f33a334e3ce5de178"
-dependencies = [
- "winapi",
-]
 
 [[package]]
 name = "winapi-x86_64-pc-windows-gnu"
