@@ -13,9 +13,9 @@ use deno_graph::CapturingModuleParser;
 use deno_graph::ModuleGraph;
 use deno_graph::ModuleParser;
 use futures::future::poll_fn;
+use futures::io::AsyncReadExt;
 use sha2::Digest;
 use sha2::Sha256;
-use tokio::io::AsyncReadExt;
 pub use url::Url;
 
 use crate::error::ParseError;
@@ -76,12 +76,12 @@ impl EszipV2 {
   /// header section of the eszip has been parsed. Once this function returns,
   /// the data section will not necessarially have been parsed yet. To parse
   /// the data section, poll/await the future returned in the second tuple slot.
-  pub async fn parse<R: tokio::io::AsyncRead + Unpin>(
-    mut reader: tokio::io::BufReader<R>,
+  pub async fn parse<R: futures::io::AsyncRead + Unpin>(
+    mut reader: futures::io::BufReader<R>,
   ) -> Result<
     (
       EszipV2,
-      impl Future<Output = Result<tokio::io::BufReader<R>, ParseError>>,
+      impl Future<Output = Result<futures::io::BufReader<R>, ParseError>>,
     ),
     ParseError,
   > {
@@ -92,7 +92,7 @@ impl EszipV2 {
       return Err(ParseError::InvalidV2);
     }
 
-    let header_len = reader.read_u32().await? as usize;
+    let header_len = read_u32(&mut reader).await? as usize;
     let mut header_and_hash = vec![0u8; header_len + 32];
     reader.read_exact(&mut header_and_hash).await?;
 
@@ -222,7 +222,7 @@ impl EszipV2 {
     let fut = async move {
       let modules = modules_;
 
-      let sources_len = reader.read_u32().await? as usize;
+      let sources_len = read_u32(&mut reader).await? as usize;
       let mut read = 0;
 
       while read < sources_len {
@@ -268,7 +268,7 @@ impl EszipV2 {
         }
       }
 
-      let source_maps_len = reader.read_u32().await? as usize;
+      let source_maps_len = read_u32(&mut reader).await? as usize;
       let mut read = 0;
 
       while read < source_maps_len {
@@ -691,6 +691,14 @@ impl EszipV2 {
   }
 }
 
+async fn read_u32<R: futures::io::AsyncRead + Unpin>(
+  reader: &mut futures::io::BufReader<R>,
+) -> Result<u32, ParseError> {
+  let mut buf = [0u8; 4];
+  reader.read_exact(&mut buf).await?;
+  Ok(u32::from_be_bytes(buf))
+}
+
 #[cfg(test)]
 mod tests {
   use std::io::Cursor;
@@ -703,9 +711,10 @@ mod tests {
   use deno_graph::CapturingModuleAnalyzer;
   use deno_graph::GraphOptions;
   use deno_graph::ModuleSpecifier;
+  use futures::io::AllowStdIo;
+  use futures::io::BufReader;
   use import_map::ImportMap;
   use pretty_assertions::assert_eq;
-  use tokio::io::BufReader;
   use url::Url;
 
   use crate::ModuleKind;
@@ -735,7 +744,7 @@ mod tests {
       Box::pin(async move {
         let path = Path::new(&path);
         let resolved = path.canonicalize().unwrap();
-        let source = tokio::fs::read_to_string(&resolved).await.unwrap();
+        let source = std::fs::read_to_string(&resolved).unwrap();
         let specifier =
           resolved.file_name().unwrap().to_string_lossy().to_string();
         let specifier = Url::parse(&format!("file:///{}", specifier)).unwrap();
@@ -794,7 +803,7 @@ mod tests {
         Box::pin(async move {
           let path = Path::new(&path);
           let resolved = path.canonicalize().unwrap();
-          let source = tokio::fs::read_to_string(&resolved).await.unwrap();
+          let source = std::fs::read_to_string(&resolved).unwrap();
           let specifier =
             resolved.file_name().unwrap().to_string_lossy().to_string();
           let specifier =
@@ -942,11 +951,11 @@ mod tests {
 
   #[tokio::test]
   async fn file_format_parse_redirect() {
-    let file = tokio::fs::File::open("./src/testdata/redirect.eszip2")
-      .await
-      .unwrap();
+    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
     let (eszip, fut) =
-      super::EszipV2::parse(BufReader::new(file)).await.unwrap();
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
 
     let test = async move {
       let module = eszip.get_module("file:///main.ts").unwrap();
@@ -972,11 +981,11 @@ mod tests {
 
   #[tokio::test]
   async fn file_format_parse_json() {
-    let file = tokio::fs::File::open("./src/testdata/json.eszip2")
-      .await
-      .unwrap();
+    let file = std::fs::File::open("./src/testdata/json.eszip2").unwrap();
     let (eszip, fut) =
-      super::EszipV2::parse(BufReader::new(file)).await.unwrap();
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
 
     let test = async move {
       let module = eszip.get_module("file:///json.ts").unwrap();
@@ -1001,15 +1010,17 @@ mod tests {
 
   #[tokio::test]
   async fn file_format_roundtrippable() {
-    let file = tokio::fs::File::open("./src/testdata/redirect.eszip2")
-      .await
-      .unwrap();
+    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
     let (eszip, fut) =
-      super::EszipV2::parse(BufReader::new(file)).await.unwrap();
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
     fut.await.unwrap();
     let cursor = Cursor::new(eszip.into_bytes());
     let (eszip, fut) =
-      super::EszipV2::parse(BufReader::new(cursor)).await.unwrap();
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
+        .await
+        .unwrap();
     fut.await.unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");

@@ -2,11 +2,13 @@ use std::rc::Rc;
 
 use deno_core::error::type_error;
 use eszip::EszipV2;
+use futures::io::AllowStdIo;
+use futures::io::BufReader;
 use futures::FutureExt;
 use import_map::ImportMap;
 use url::Url;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
   let args = std::env::args().collect::<Vec<_>>();
   let path = args.get(1).unwrap();
@@ -14,8 +16,8 @@ async fn main() {
   let url = Url::parse(url).unwrap();
   let maybe_import_map = args.get(3).map(|url| Url::parse(url).unwrap());
 
-  let file = tokio::fs::File::open(path).await.unwrap();
-  let bufreader = tokio::io::BufReader::new(file);
+  let file = std::fs::File::open(path).unwrap();
+  let bufreader = BufReader::new(AllowStdIo::new(file));
   let (eszip, loader) = eszip::EszipV2::parse(bufreader).await.unwrap();
 
   let loader_fut = loader.map(|r| r.map_err(anyhow::Error::new));

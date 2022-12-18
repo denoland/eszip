@@ -1,10 +1,13 @@
-#[tokio::main]
+use futures::io::AllowStdIo;
+use futures::io::BufReader;
+
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
   let args = std::env::args().collect::<Vec<_>>();
   let path = args.get(1).unwrap();
 
-  let file = tokio::fs::File::open(path).await.unwrap();
-  let bufreader = tokio::io::BufReader::new(file);
+  let file = std::fs::File::open(path).unwrap();
+  let bufreader = BufReader::new(AllowStdIo::new(file));
   let (eszip, loader) = eszip::EszipV2::parse(bufreader).await.unwrap();
 
   let fut = async move {

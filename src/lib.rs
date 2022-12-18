@@ -5,11 +5,11 @@ pub mod v2;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use futures::io::AsyncBufReadExt;
+use futures::io::AsyncReadExt;
 use futures::Future;
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncReadExt;
 use v2::ESZIP_V2_MAGIC;
 
 pub use crate::error::ParseError;
@@ -26,17 +26,17 @@ pub enum Eszip {
 
 /// This future needs to polled to parse the eszip file.
 type EszipParserFuture<R> =
-  Pin<Box<dyn Future<Output = Result<tokio::io::BufReader<R>, ParseError>>>>;
+  Pin<Box<dyn Future<Output = Result<futures::io::BufReader<R>, ParseError>>>>;
 
 impl Eszip {
   /// Parse a byte stream into an Eszip. This function completes when the header
   /// is fully received. This does not mean that the entire file is fully
   /// received or parsed yet. To finish parsing, the future returned by this
   /// function in the second tuple slot needs to be polled.
-  pub async fn parse<R: tokio::io::AsyncRead + Unpin + 'static>(
+  pub async fn parse<R: futures::io::AsyncRead + Unpin + 'static>(
     reader: R,
   ) -> Result<(Eszip, EszipParserFuture<R>), ParseError> {
-    let mut reader = tokio::io::BufReader::new(reader);
+    let mut reader = futures::io::BufReader::new(reader);
     reader.fill_buf().await?;
     let buffer = reader.buffer();
     if buffer.len() >= 8 && &buffer[..8] == ESZIP_V2_MAGIC {
@@ -102,13 +102,12 @@ pub enum ModuleKind {
 #[cfg(test)]
 mod tests {
   use crate::Eszip;
+  use futures::io::AllowStdIo;
 
   #[tokio::test]
   async fn parse_v1() {
-    let file = tokio::fs::File::open("./src/testdata/basic.json")
-      .await
-      .unwrap();
-    let (eszip, fut) = Eszip::parse(file).await.unwrap();
+    let file = std::fs::File::open("./src/testdata/basic.json").unwrap();
+    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
     fut.await.unwrap();
     assert!(matches!(eszip, Eszip::V1(_)));
     eszip.get_module("https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js").unwrap();
@@ -116,10 +115,8 @@ mod tests {
 
   #[tokio::test]
   async fn parse_v2() {
-    let file = tokio::fs::File::open("./src/testdata/redirect.eszip2")
-      .await
-      .unwrap();
-    let (eszip, fut) = Eszip::parse(file).await.unwrap();
+    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
+    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
     fut.await.unwrap();
     assert!(matches!(eszip, Eszip::V2(_)));
     eszip.get_module("file:///main.ts").unwrap();

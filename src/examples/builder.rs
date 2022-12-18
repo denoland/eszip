@@ -9,7 +9,7 @@ use import_map::ImportMap;
 use reqwest::StatusCode;
 use url::Url;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
   let args = std::env::args().collect::<Vec<_>>();
   let url = args.get(1).unwrap();
@@ -117,10 +117,8 @@ impl deno_graph::source::Loader for Loader {
       match specifier.scheme() {
         "data" => deno_graph::source::load_data_url(&specifier),
         "file" => {
-          let path =
-            tokio::fs::canonicalize(specifier.to_file_path().unwrap()).await?;
-          let content = tokio::fs::read(&path).await?;
-          let content = String::from_utf8(content)?;
+          let path = std::fs::canonicalize(specifier.to_file_path().unwrap())?;
+          let content = std::fs::read_to_string(&path)?;
           Ok(Some(deno_graph::source::LoadResponse::Module {
             specifier: Url::from_file_path(&path).unwrap(),
             maybe_headers: None,

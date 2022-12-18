@@ -1,12 +1,14 @@
-use deno_graph::GraphOptions;
 use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
 use deno_graph::source::ResolveResponse;
 use deno_graph::source::Resolver;
+use deno_graph::GraphOptions;
 use deno_graph::ModuleSpecifier;
 use eszip::v2::Url;
+use futures::io::AsyncRead;
+use futures::io::BufReader;
 use import_map::ImportMap;
 use js_sys::Promise;
 use js_sys::Uint8Array;
@@ -19,9 +21,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
-use tokio::io::AsyncRead;
-use tokio::io::BufReader;
-use tokio::io::ReadBuf;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -70,8 +69,8 @@ impl AsyncRead for ParserStream {
   fn poll_read(
     mut self: Pin<&mut Self>,
     cx: &mut Context<'_>,
-    buf: &mut ReadBuf<'_>,
-  ) -> Poll<Result<(), Error>> {
+    buf: &mut [u8],
+  ) -> Poll<Result<usize, Error>> {
     match *self {
       ParserStream::Byob(ref mut stream) => {
         // If we have a pending future, poll it.
@@ -79,7 +78,7 @@ impl AsyncRead for ParserStream {
         let fut = match stream.fut.as_mut() {
           Some(fut) => fut,
           None => {
-            let length = buf.remaining();
+            let length = buf.len();
             let buffer = Uint8Array::new_with_length(length as u32);
             match &stream.inner {
               Some(reader) => {
@@ -87,7 +86,7 @@ impl AsyncRead for ParserStream {
                   JsFuture::from(reader.read_with_array_buffer_view(&buffer));
                 stream.fut.insert(fut)
               }
-              None => return Poll::Ready(Ok(())),
+              None => return Poll::Ready(Ok(0)),
             }
           }
         };
@@ -105,17 +104,15 @@ impl AsyncRead for ParserStream {
               true => {
                 // Drop the readable stream.
                 stream.inner = None;
-                Poll::Ready(Ok(()))
+                Poll::Ready(Ok(0))
               }
               false => {
                 let value = result.value().unwrap_throw();
                 let length = value.byte_length() as usize;
 
-                let mut bytes = vec![0; length];
-                value.copy_to(&mut bytes);
-                buf.put_slice(&bytes);
+                value.copy_to(buf);
 
-                Poll::Ready(Ok(()))
+                Poll::Ready(Ok(length))
               }
             }
           }
@@ -130,11 +127,11 @@ impl AsyncRead for ParserStream {
       ParserStream::Buffer(ref mut buffer) => {
         // Put the requested bytes into the buffer and
         // assign the remaining bytes back into the sink.
-        let amt = std::cmp::min(buffer.len(), buf.remaining());
+        let amt = std::cmp::min(buffer.len(), buf.len());
         let (a, b) = buffer.split_at(amt);
-        buf.put_slice(a);
+        buf[..amt].copy_from_slice(a);
         *buffer = b.to_vec();
-        Poll::Ready(Ok(()))
+        Poll::Ready(Ok(amt))
       }
     }
   }
