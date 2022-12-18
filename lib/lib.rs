@@ -249,13 +249,13 @@ pub async fn build_eszip(
   import_map_url: JsValue,
 ) -> Result<Uint8Array, JsValue> {
   std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-  let roots: Vec<deno_graph::ModuleSpecifier> = roots
-    .into_serde()
-    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  let roots: Vec<deno_graph::ModuleSpecifier> =
+    serde_wasm_bindgen::from_value(roots)
+      .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let mut loader = GraphLoader(loader);
-  let import_map_url: Option<Url> = import_map_url
-    .into_serde()
-    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  let import_map_url: Option<Url> =
+    serde_wasm_bindgen::from_value(import_map_url)
+      .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let (maybe_import_map, maybe_import_map_data) =
     if let Some(import_map_url) = import_map_url {
       let resp =
@@ -349,7 +349,7 @@ impl Loader for GraphLoader {
           Err(err) => Err(err),
         };
         response
-          .map(|value| value.into_serde().unwrap())
+          .map(|value| serde_wasm_bindgen::from_value(value).unwrap())
           .map_err(|err| {
             anyhow::anyhow!(err
               .as_string()
