@@ -19,6 +19,18 @@ opt-level = "z"
 name = "eszip"
 path = "src/lib.rs"
 
+[[example]]
+name = "eszip_builder"
+path = "src/examples/builder.rs"
+
+[[example]]
+name = "eszip_viewer"
+path = "src/examples/viewer.rs"
+
+[[example]]
+name = "eszip_load"
+path = "src/examples/load.rs"
+
 [dependencies]
 anyhow = "1"
 base64 = "0.13.0"
@@ -36,3 +48,5 @@ url = "2.2.2"
 import_map = "0.7.0"
 pretty_assertions = "1"
 tokio = { version = "1", features = ["full"] }
+deno_core = { version = "0.164.0" }
+reqwest = { version = "0.11", features = ["rustls-tls"] }

@@ -700,8 +700,8 @@ mod tests {
   use deno_ast::EmitOptions;
   use deno_graph::source::LoadResponse;
   use deno_graph::source::ResolveResponse;
-  use deno_graph::GraphOptions;
   use deno_graph::CapturingModuleAnalyzer;
+  use deno_graph::GraphOptions;
   use deno_graph::ModuleSpecifier;
   use import_map::ImportMap;
   use pretty_assertions::assert_eq;
