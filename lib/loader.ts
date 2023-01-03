@@ -17,7 +17,7 @@ export interface LoadResponseModule {
 export interface LoadResponseExternalBuiltIn {
   /** The loaded module is either _external_ or _built-in_ to the runtime. */
   kind: "external" | "builtIn";
-  /** The strung URL of the resource. If there were redirects, the final
+  /** The string URL of the resource. If there were redirects, the final
    * specifier should be set here, otherwise the requested specifier. */
   specifier: string;
 }
