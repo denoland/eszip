@@ -34,13 +34,19 @@ enum HeaderFrameKind {
 
 /// Version 2 of the Eszip format. This format supports streaming sources and
 /// source maps.
+///
+/// # Clone
+///
+/// This struct supports cloning, but when its data is complete. If the
+/// `EszipV2` returned from [`Self::parse`] is cloned before the future
+/// successfully resolves, the clone operation will panic.
 #[derive(Debug, Default)]
 pub struct EszipV2 {
   modules: Arc<Mutex<HashMap<String, EszipV2Module>>>,
   pub ordered_modules: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EszipV2Module {
   Module {
     kind: ModuleKind,
@@ -67,6 +73,16 @@ impl EszipV2SourceSlot {
     match self {
       EszipV2SourceSlot::Ready(v) => v,
       _ => panic!("EszipV2SourceSlot::bytes() called on a pending slot"),
+    }
+  }
+}
+
+impl Clone for EszipV2SourceSlot {
+  fn clone(&self) -> EszipV2SourceSlot {
+    if let EszipV2SourceSlot::Ready(bytes) = self {
+      EszipV2SourceSlot::Ready(bytes.clone())
+    } else {
+      panic!("Can't clone a pending eszip source slot");
     }
   }
 }
@@ -691,6 +707,23 @@ impl EszipV2 {
   }
 }
 
+impl Clone for EszipV2 {
+  fn clone(&self) -> EszipV2 {
+    let modules = {
+      let self_modules = self.modules.lock().unwrap();
+      let mut modules = HashMap::with_capacity(self_modules.len());
+      for (specifier, module) in self_modules.iter() {
+        modules.insert(specifier.clone(), module.clone());
+      }
+      modules
+    };
+    EszipV2 {
+      modules: Arc::new(Mutex::new(modules)),
+      ordered_modules: self.ordered_modules.clone(),
+    }
+  }
+}
+
 async fn read_u32<R: futures::io::AsyncRead + Unpin>(
   reader: &mut futures::io::BufReader<R>,
 ) -> Result<u32, ParseError> {
@@ -1104,5 +1137,38 @@ mod tests {
     let source_map = module.source_map().await.unwrap();
     assert_matches_file!(source_map, "./testdata/emit/b.ts.map");
     assert_eq!(module.kind, ModuleKind::JavaScript);
+  }
+
+  #[tokio::test]
+  #[should_panic]
+  #[allow(unused_must_use)]
+  async fn clone_fails_when_pending() {
+    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
+    let (eszip, _) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
+    // We don't await for the future!
+
+    // Panics
+    eszip.clone();
+  }
+
+  #[tokio::test]
+  async fn clone_is_disconnected() {
+    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
+    let (mut original, fut) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
+    fut.await.unwrap();
+    let clone = original.clone();
+
+    let source =
+      std::fs::read("./src/testdata/source/import_map.json").unwrap();
+    original
+      .add_import_map("file:///import_map.json".to_string(), Arc::new(source));
+    assert!(original.get_module("file:///import_map.json").is_some());
+    assert!(clone.get_module("file:///import_map.json").is_none());
   }
 }
