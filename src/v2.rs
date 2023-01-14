@@ -1141,7 +1141,6 @@ mod tests {
 
   #[tokio::test]
   #[should_panic]
-  #[allow(unused_must_use)]
   async fn clone_fails_when_pending() {
     let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
     let (eszip, _) =
@@ -1151,7 +1150,10 @@ mod tests {
     // We don't await for the future!
 
     // Panics
-    eszip.clone();
+    let cloned = eszip.clone();
+
+    // We do this to avoid an redundant clone or unused value lint.
+    let _ = (eszip, cloned);
   }
 
   #[tokio::test]
