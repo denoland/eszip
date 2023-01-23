@@ -2,7 +2,6 @@ use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
-use deno_graph::source::ResolveResponse;
 use deno_graph::source::Resolver;
 use deno_graph::GraphOptions;
 use deno_graph::ModuleSpecifier;
@@ -283,10 +282,7 @@ pub async fn build_eszip(
   let resolver = GraphResolver(maybe_import_map);
   let analyzer = deno_graph::CapturingModuleAnalyzer::default();
   let graph = deno_graph::create_graph(
-    roots
-      .into_iter()
-      .map(|r| (r, deno_graph::ModuleKind::Esm))
-      .collect(),
+    roots,
     &mut loader,
     GraphOptions {
       resolver: Some(&resolver),
@@ -368,17 +364,11 @@ impl Resolver for GraphResolver {
     &self,
     specifier: &str,
     referrer: &deno_graph::ModuleSpecifier,
-  ) -> ResolveResponse {
+  ) -> Result<deno_graph::ModuleSpecifier, anyhow::Error> {
     if let Some(import_map) = &self.0 {
-      match import_map.resolve(specifier, referrer) {
-        Ok(specifier) => ResolveResponse::Specifier(specifier),
-        Err(err) => ResolveResponse::Err(err.into()),
-      }
+      Ok(import_map.resolve(specifier, referrer)?)
     } else {
-      match deno_graph::resolve_import(specifier, referrer) {
-        Ok(specifier) => ResolveResponse::Specifier(specifier),
-        Err(err) => ResolveResponse::Err(err.into()),
-      }
+      Ok(deno_graph::resolve_import(specifier, referrer)?)
     }
   }
 }
