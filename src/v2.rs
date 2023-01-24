@@ -552,9 +552,7 @@ impl EszipV2 {
             modules.insert(specifier, module);
           }
         }
-        deno_graph::ModuleKind::External | deno_graph::ModuleKind::BuiltIn => {
-          return Ok(())
-        }
+        deno_graph::ModuleKind::External => return Ok(()),
         _ => {}
       }
 
@@ -578,11 +576,7 @@ impl EszipV2 {
       Ok(())
     }
 
-    for (root, kind) in &graph.roots {
-      assert!(matches!(
-        kind,
-        deno_graph::ModuleKind::Esm | deno_graph::ModuleKind::Asserted
-      ));
+    for root in &graph.roots {
       visit_module(
         &graph,
         parser,
@@ -707,7 +701,6 @@ mod tests {
 
   use deno_ast::EmitOptions;
   use deno_graph::source::LoadResponse;
-  use deno_graph::source::ResolveResponse;
   use deno_graph::CapturingModuleAnalyzer;
   use deno_graph::GraphOptions;
   use deno_graph::ModuleSpecifier;
@@ -765,20 +758,14 @@ mod tests {
       &self,
       specifier: &str,
       referrer: &ModuleSpecifier,
-    ) -> ResolveResponse {
-      match self.0.resolve(specifier, referrer) {
-        Ok(specifier) => ResolveResponse::Specifier(specifier),
-        Err(err) => ResolveResponse::Err(err.into()),
-      }
+    ) -> Result<ModuleSpecifier, anyhow::Error> {
+      Ok(self.0.resolve(specifier, referrer)?)
     }
   }
 
   #[tokio::test]
   async fn test_graph_external() {
-    let roots = vec![(
-      ModuleSpecifier::parse("file:///external.ts").unwrap(),
-      deno_graph::ModuleKind::Esm,
-    )];
+    let roots = vec![ModuleSpecifier::parse("file:///external.ts").unwrap()];
 
     struct ExternalLoader;
 
@@ -841,10 +828,7 @@ mod tests {
 
   #[tokio::test]
   async fn from_graph_redirect() {
-    let roots = vec![(
-      ModuleSpecifier::parse("file:///main.ts").unwrap(),
-      deno_graph::ModuleKind::Esm,
-    )];
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
@@ -880,10 +864,7 @@ mod tests {
 
   #[tokio::test]
   async fn from_graph_json() {
-    let roots = vec![(
-      ModuleSpecifier::parse("file:///json.ts").unwrap(),
-      deno_graph::ModuleKind::Esm,
-    )];
+    let roots = vec![ModuleSpecifier::parse("file:///json.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
@@ -918,10 +899,7 @@ mod tests {
 
   #[tokio::test]
   async fn from_graph_dynamic() {
-    let roots = vec![(
-      ModuleSpecifier::parse("file:///dynamic.ts").unwrap(),
-      deno_graph::ModuleKind::Esm,
-    )];
+    let roots = vec![ModuleSpecifier::parse("file:///dynamic.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
@@ -1056,10 +1034,7 @@ mod tests {
       _ => unimplemented!(),
     };
     let import_map = import_map::parse_from_json(&specifier, &content).unwrap();
-    let roots = vec![(
-      ModuleSpecifier::parse("file:///mapped.js").unwrap(),
-      deno_graph::ModuleKind::Esm,
-    )];
+    let roots = vec![ModuleSpecifier::parse("file:///mapped.js").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let graph = deno_graph::create_graph(
       roots,
