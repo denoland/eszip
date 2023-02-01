@@ -15,19 +15,19 @@ async fn main() {
     for specifier in specifiers {
       let module = eszip.get_module(&specifier).unwrap();
       if module.specifier == specifier {
-        println!("Specifier: {}", specifier);
-        println!("Kind: {:?}", module.kind);
+        println!("Specifier: {specifier}",);
+        println!("Kind: {kind:?}", kind = module.kind);
 
         let source = module.source().await;
         let source = std::str::from_utf8(&source).unwrap();
         println!("---");
-        println!("{}", source);
+        println!("{source}");
 
         let source_map = module.source_map().await;
         if let Some(source_map) = source_map {
           let source_map = std::str::from_utf8(&source_map).unwrap();
           println!("---");
-          println!("{}", source_map);
+          println!("{source_map}");
         }
 
         println!("============");

@@ -740,7 +740,7 @@ mod tests {
         let source = std::fs::read_to_string(&resolved).unwrap();
         let specifier =
           resolved.file_name().unwrap().to_string_lossy().to_string();
-        let specifier = Url::parse(&format!("file:///{}", specifier)).unwrap();
+        let specifier = Url::parse(&format!("file:///{specifier}")).unwrap();
         Ok(Some(LoadResponse::Module {
           content: source.into(),
           maybe_headers: None,
@@ -793,8 +793,7 @@ mod tests {
           let source = std::fs::read_to_string(&resolved).unwrap();
           let specifier =
             resolved.file_name().unwrap().to_string_lossy().to_string();
-          let specifier =
-            Url::parse(&format!("file:///{}", specifier)).unwrap();
+          let specifier = Url::parse(&format!("file:///{specifier}")).unwrap();
           Ok(Some(LoadResponse::Module {
             content: source.into(),
             maybe_headers: None,
