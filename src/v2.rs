@@ -1087,6 +1087,7 @@ mod tests {
     assert_eq!(module.kind, ModuleKind::JavaScript);
   }
 
+  // https://github.com/denoland/eszip/issues/110
   #[tokio::test]
   async fn import_map_imported_from_program() {
     let mut loader = FileLoader;
