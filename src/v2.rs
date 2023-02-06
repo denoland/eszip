@@ -348,8 +348,8 @@ impl EszipV2 {
     let old_module_ordering =
       std::mem::replace(&mut self.ordered_modules, module_ordering);
     // `old_module_ordering` might contain the same module as the import map
-    // that the given `specifier specifies. To avoid having duplicate module, we
-    // check and exclude that from `old_module_ordering`.
+    // that the given `specifier` specifies. To avoid having duplicate module,
+    // we check and exclude that from `old_module_ordering`.
     let old_module_ordering_without_import_map =
       old_module_ordering.into_iter().filter(|x| x != &specifier);
     self
