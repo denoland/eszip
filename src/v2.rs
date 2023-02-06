@@ -344,10 +344,17 @@ impl EszipV2 {
     }
     let mut module_ordering =
       Vec::with_capacity(self.ordered_modules.len() + 1);
-    module_ordering.push(specifier);
+    module_ordering.push(specifier.clone());
     let old_module_ordering =
       std::mem::replace(&mut self.ordered_modules, module_ordering);
-    self.ordered_modules.extend_from_slice(&old_module_ordering);
+    // `old_module_ordering` might contain the same module as the import map
+    // that the given `specifier specifies. To avoid having duplicate module, we
+    // check and exclude that from `old_module_ordering`.
+    let old_module_ordering_without_import_map =
+      old_module_ordering.into_iter().filter(|x| x != &specifier);
+    self
+      .ordered_modules
+      .extend(old_module_ordering_without_import_map);
   }
 
   /// Serialize the eszip archive into a byte buffer.
