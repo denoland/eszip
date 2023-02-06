@@ -1086,4 +1086,59 @@ mod tests {
     assert_matches_file!(source_map, "./testdata/emit/b.ts.map");
     assert_eq!(module.kind, ModuleKind::JavaScript);
   }
+
+  #[tokio::test]
+  async fn import_map_imported_from_program() {
+    let mut loader = FileLoader;
+    let resp = deno_graph::source::Loader::load(
+      &mut loader,
+      &Url::parse("file:///import_map.json").unwrap(),
+      false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let (specifier, content) = match resp {
+      deno_graph::source::LoadResponse::Module {
+        specifier, content, ..
+      } => (specifier, content),
+      _ => unimplemented!(),
+    };
+    let import_map = import_map::parse_from_json(&specifier, &content).unwrap();
+    let roots =
+      // This file imports `import_map.json` as a module.
+      vec![ModuleSpecifier::parse("file:///import_import_map.js").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let graph = deno_graph::create_graph(
+      roots,
+      &mut FileLoader,
+      GraphOptions {
+        resolver: Some(&ImportMapResolver(import_map.import_map)),
+        module_analyzer: Some(&analyzer),
+        ..Default::default()
+      },
+    )
+    .await;
+    graph.valid().unwrap();
+    let mut eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
+    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    eszip.add_import_map(specifier.to_string(), import_map_bytes);
+
+    // Verify that the resulting eszip consists of two unique modules even
+    // though `import_map.json` is referenced twice:
+    // 1. imported from JS
+    // 2. specified as the import map
+    assert_eq!(
+      &eszip.ordered_modules,
+      &[
+        "file:///import_map.json".to_string(),
+        "file:///import_import_map.js".to_string(),
+      ]
+    );
+  }
 }
