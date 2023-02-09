@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use deno_ast::EmitOptions;
+use deno_graph::BuildOptions;
 use deno_graph::CapturingModuleAnalyzer;
-use deno_graph::GraphOptions;
+use deno_graph::ModuleGraph;
 use import_map::ImportMap;
 use reqwest::StatusCode;
 use url::Url;
@@ -39,16 +40,19 @@ async fn main() {
     };
 
   let analyzer = CapturingModuleAnalyzer::default();
-  let graph = deno_graph::create_code_graph(
-    vec![url],
-    &mut loader,
-    GraphOptions {
-      resolver: Some(&Resolver(maybe_import_map)),
-      module_analyzer: Some(&analyzer),
-      ..Default::default()
-    },
-  )
-  .await;
+
+  let mut graph = ModuleGraph::default();
+  graph
+    .build(
+      vec![url],
+      &mut loader,
+      BuildOptions {
+        resolver: Some(&Resolver(maybe_import_map)),
+        module_analyzer: Some(&analyzer),
+        ..Default::default()
+      },
+    )
+    .await;
 
   graph.valid().unwrap();
 
