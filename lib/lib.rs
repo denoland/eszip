@@ -3,7 +3,8 @@ use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
 use deno_graph::source::Resolver;
-use deno_graph::GraphOptions;
+use deno_graph::BuildOptions;
+use deno_graph::ModuleGraph;
 use deno_graph::ModuleSpecifier;
 use eszip::v2::Url;
 use futures::io::AsyncRead;
@@ -281,16 +282,18 @@ pub async fn build_eszip(
     };
   let resolver = GraphResolver(maybe_import_map);
   let analyzer = deno_graph::CapturingModuleAnalyzer::default();
-  let graph = deno_graph::create_graph(
-    roots,
-    &mut loader,
-    GraphOptions {
-      resolver: Some(&resolver),
-      module_analyzer: Some(&analyzer),
-      ..Default::default()
-    },
-  )
-  .await;
+  let mut graph = ModuleGraph::default();
+  graph
+    .build(
+      roots,
+      &mut loader,
+      BuildOptions {
+        resolver: Some(&resolver),
+        module_analyzer: Some(&analyzer),
+        ..Default::default()
+      },
+    )
+    .await;
   graph
     .valid()
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;

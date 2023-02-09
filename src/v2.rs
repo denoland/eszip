@@ -708,8 +708,9 @@ mod tests {
 
   use deno_ast::EmitOptions;
   use deno_graph::source::LoadResponse;
+  use deno_graph::BuildOptions;
   use deno_graph::CapturingModuleAnalyzer;
-  use deno_graph::GraphOptions;
+  use deno_graph::ModuleGraph;
   use deno_graph::ModuleSpecifier;
   use futures::io::AllowStdIo;
   use futures::io::BufReader;
@@ -811,15 +812,17 @@ mod tests {
     }
 
     let analyzer = CapturingModuleAnalyzer::default();
-    let graph = deno_graph::create_graph(
-      roots,
-      &mut ExternalLoader,
-      GraphOptions {
-        module_analyzer: Some(&analyzer),
-        ..Default::default()
-      },
-    )
-    .await;
+    let mut graph = ModuleGraph::default();
+    graph
+      .build(
+        roots,
+        &mut ExternalLoader,
+        BuildOptions {
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(
       graph,
@@ -836,15 +839,17 @@ mod tests {
   async fn from_graph_redirect() {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let graph = deno_graph::create_graph(
-      roots,
-      &mut FileLoader,
-      GraphOptions {
-        module_analyzer: Some(&analyzer),
-        ..Default::default()
-      },
-    )
-    .await;
+    let mut graph = ModuleGraph::default();
+    graph
+      .build(
+        roots,
+        &mut FileLoader,
+        BuildOptions {
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(
       graph,
@@ -872,15 +877,17 @@ mod tests {
   async fn from_graph_json() {
     let roots = vec![ModuleSpecifier::parse("file:///json.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let graph = deno_graph::create_graph(
-      roots,
-      &mut FileLoader,
-      GraphOptions {
-        module_analyzer: Some(&analyzer),
-        ..Default::default()
-      },
-    )
-    .await;
+    let mut graph = ModuleGraph::default();
+    graph
+      .build(
+        roots,
+        &mut FileLoader,
+        BuildOptions {
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(
       graph,
@@ -907,15 +914,17 @@ mod tests {
   async fn from_graph_dynamic() {
     let roots = vec![ModuleSpecifier::parse("file:///dynamic.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let graph = deno_graph::create_graph(
-      roots,
-      &mut FileLoader,
-      GraphOptions {
-        module_analyzer: Some(&analyzer),
-        ..Default::default()
-      },
-    )
-    .await;
+    let mut graph = ModuleGraph::default();
+    graph
+      .build(
+        roots,
+        &mut FileLoader,
+        BuildOptions {
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(
       graph,
@@ -1042,16 +1051,18 @@ mod tests {
     let import_map = import_map::parse_from_json(&specifier, &content).unwrap();
     let roots = vec![ModuleSpecifier::parse("file:///mapped.js").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let graph = deno_graph::create_graph(
-      roots,
-      &mut FileLoader,
-      GraphOptions {
-        resolver: Some(&ImportMapResolver(import_map.import_map)),
-        module_analyzer: Some(&analyzer),
-        ..Default::default()
-      },
-    )
-    .await;
+    let mut graph = ModuleGraph::default();
+    graph
+      .build(
+        roots,
+        &mut FileLoader,
+        BuildOptions {
+          resolver: Some(&ImportMapResolver(import_map.import_map)),
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
     graph.valid().unwrap();
     let mut eszip = super::EszipV2::from_graph(
       graph,
@@ -1110,16 +1121,18 @@ mod tests {
       // This file imports `import_map.json` as a module.
       vec![ModuleSpecifier::parse("file:///import_import_map.js").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let graph = deno_graph::create_graph(
-      roots,
-      &mut FileLoader,
-      GraphOptions {
-        resolver: Some(&ImportMapResolver(import_map.import_map)),
-        module_analyzer: Some(&analyzer),
-        ..Default::default()
-      },
-    )
-    .await;
+    let mut graph = ModuleGraph::default();
+    graph
+      .build(
+        roots,
+        &mut FileLoader,
+        BuildOptions {
+          resolver: Some(&ImportMapResolver(import_map.import_map)),
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
     graph.valid().unwrap();
     let mut eszip = super::EszipV2::from_graph(
       graph,
