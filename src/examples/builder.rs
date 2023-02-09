@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use deno_ast::EmitOptions;
-use deno_graph::source::ResolveResponse;
 use deno_graph::CapturingModuleAnalyzer;
 use deno_graph::GraphOptions;
 use import_map::ImportMap;
@@ -41,7 +40,7 @@ async fn main() {
 
   let analyzer = CapturingModuleAnalyzer::default();
   let graph = deno_graph::create_code_graph(
-    vec![(url, deno_graph::ModuleKind::Esm)],
+    vec![url],
     &mut loader,
     GraphOptions {
       resolver: Some(&Resolver(maybe_import_map)),
@@ -84,17 +83,11 @@ impl deno_graph::source::Resolver for Resolver {
     &self,
     specifier: &str,
     referrer: &deno_graph::ModuleSpecifier,
-  ) -> ResolveResponse {
+  ) -> Result<deno_graph::ModuleSpecifier, anyhow::Error> {
     if let Some(import_map) = &self.0 {
-      match import_map.resolve(specifier, referrer) {
-        Ok(specifier) => ResolveResponse::Specifier(specifier),
-        Err(err) => ResolveResponse::Err(err.into()),
-      }
+      Ok(import_map.resolve(specifier, referrer)?)
     } else {
-      match deno_graph::resolve_import(specifier, referrer) {
-        Ok(specifier) => ResolveResponse::Specifier(specifier),
-        Err(err) => ResolveResponse::Err(err.into()),
-      }
+      Ok(deno_graph::resolve_import(specifier, referrer)?)
     }
   }
 }

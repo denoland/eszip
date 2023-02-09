@@ -47,7 +47,7 @@ impl EszipV1 {
       visited.insert(specifier);
       let module = self.modules.get(specifier)?;
       match module {
-        &ModuleInfo::Redirect(ref redirect) => {
+        ModuleInfo::Redirect(redirect) => {
           specifier = redirect;
           if visited.contains(specifier) {
             return None;
