@@ -565,9 +565,6 @@ impl EszipV2 {
 
       ordered_modules.push(specifier.to_string());
       for dep in module.dependencies.values() {
-        if dep.is_dynamic {
-          continue;
-        }
         if let Some(specifier) = dep.get_code() {
           visit_module(
             graph,
@@ -735,11 +732,8 @@ mod tests {
     fn load(
       &mut self,
       specifier: &ModuleSpecifier,
-      is_dynamic: bool,
+      _is_dynamic: bool,
     ) -> deno_graph::source::LoadFuture {
-      if is_dynamic {
-        return Box::pin(async { Ok(None) });
-      }
       assert_eq!(specifier.scheme(), "file");
       let path = format!("./src/testdata/source{}", specifier.path());
       Box::pin(async move {
@@ -939,7 +933,7 @@ mod tests {
     let _source_map = module.source_map().await.unwrap();
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json");
-    assert!(module.is_none());
+    assert!(module.is_some()); // we include statically analyzable dynamic imports
   }
 
   #[tokio::test]
