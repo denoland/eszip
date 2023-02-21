@@ -498,17 +498,16 @@ impl EszipV2 {
       specifier: &Url,
     ) -> Result<(), anyhow::Error> {
       let module = graph.get(specifier).unwrap();
-      let specifier = module.specifier.as_str();
+      let specifier = module.specifier().as_str();
       if modules.contains_key(specifier) {
         return Ok(());
       }
 
-      match module.kind {
-        deno_graph::ModuleKind::Esm => {
+      match module {
+        deno_graph::Module::Esm(module) => {
           let (source, source_map) = match module.media_type {
             deno_graph::MediaType::JavaScript | deno_graph::MediaType::Mjs => {
-              let source = module.maybe_source.as_ref().unwrap();
-              (source.as_bytes().to_owned(), vec![])
+              (module.source.as_bytes().to_owned(), vec![])
             }
             deno_graph::MediaType::Jsx
             | deno_graph::MediaType::TypeScript
@@ -518,15 +517,15 @@ impl EszipV2 {
             | deno_graph::MediaType::Dmts => {
               let parsed_source = parser.parse_module(
                 &module.specifier,
-                module.maybe_source.clone().unwrap(),
+                module.source.clone(),
                 module.media_type,
               )?;
               let TranspiledSource {
-                text: source,
+                text,
                 source_map: maybe_source_map,
               } = parsed_source.transpile(emit_options)?;
               let source_map = maybe_source_map.unwrap_or_default();
-              (source.into_bytes(), source_map.into_bytes())
+              (text.into_bytes(), source_map.into_bytes())
             }
             _ => {
               return Err(anyhow::anyhow!(
@@ -538,46 +537,45 @@ impl EszipV2 {
           };
 
           let specifier = module.specifier.to_string();
-          let module = EszipV2Module::Module {
+          let eszip_module = EszipV2Module::Module {
             kind: ModuleKind::JavaScript,
             source: EszipV2SourceSlot::Ready(Arc::new(source)),
             source_map: EszipV2SourceSlot::Ready(Arc::new(source_map)),
           };
-          modules.insert(specifier, module);
-        }
-        deno_graph::ModuleKind::Asserted => {
-          if module.media_type == deno_graph::MediaType::Json {
-            let source = module.maybe_source.as_ref().unwrap();
-            let specifier = module.specifier.to_string();
-            let module = EszipV2Module::Module {
-              kind: ModuleKind::Json,
-              source: EszipV2SourceSlot::Ready(Arc::new(
-                source.as_bytes().to_owned(),
-              )),
-              source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
-            };
-            modules.insert(specifier, module);
+          modules.insert(specifier.clone(), eszip_module);
+          ordered_modules.push(specifier);
+
+          // now walk the code dependencies
+          for dep in module.dependencies.values() {
+            if let Some(specifier) = dep.get_code() {
+              visit_module(
+                graph,
+                parser,
+                emit_options,
+                modules,
+                ordered_modules,
+                specifier,
+              )?;
+            }
           }
-        }
-        deno_graph::ModuleKind::External => return Ok(()),
-        _ => {}
-      }
 
-      ordered_modules.push(specifier.to_string());
-      for dep in module.dependencies.values() {
-        if let Some(specifier) = dep.get_code() {
-          visit_module(
-            graph,
-            parser,
-            emit_options,
-            modules,
-            ordered_modules,
-            specifier,
-          )?;
+          Ok(())
         }
+        deno_graph::Module::Json(module) => {
+          let specifier = module.specifier.to_string();
+          let eszip_module = EszipV2Module::Module {
+            kind: ModuleKind::Json,
+            source: EszipV2SourceSlot::Ready(Arc::new(
+              module.source.as_bytes().to_owned(),
+            )),
+            source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+          };
+          modules.insert(specifier.clone(), eszip_module);
+          ordered_modules.push(specifier);
+          Ok(())
+        }
+        deno_graph::Module::External(_) | deno_graph::Module::Npm(_) => Ok(()),
       }
-
-      Ok(())
     }
 
     for root in &graph.roots {
