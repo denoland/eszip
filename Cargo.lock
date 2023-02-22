@@ -260,12 +260,13 @@ dependencies = [
 
 [[package]]
 name = "deno_graph"
-version = "0.43.2"
+version = "0.43.3"
 dependencies = [
  "anyhow",
  "data-url",
  "deno_ast",
  "futures",
+ "indexmap",
  "monch",
  "once_cell",
  "parking_lot",

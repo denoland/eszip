@@ -574,7 +574,9 @@ impl EszipV2 {
           ordered_modules.push(specifier);
           Ok(())
         }
-        deno_graph::Module::External(_) | deno_graph::Module::Npm(_) => Ok(()),
+        deno_graph::Module::External(_)
+        | deno_graph::Module::Npm(_)
+        | deno_graph::Module::Node(_) => Ok(()),
       }
     }
 
