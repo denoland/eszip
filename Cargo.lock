@@ -260,19 +260,22 @@ dependencies = [
 
 [[package]]
 name = "deno_graph"
-version = "0.43.0"
+version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f71bb48b14950d62552aee1d05d0b90c203319b293b36358021ec77e05eaf9a4"
+checksum = "f03c7b4d4990cc1f09c09c6ae94ee0dc039c9fcf66a97f8e5954ee102ba0eedf"
 dependencies = [
  "anyhow",
  "data-url",
  "deno_ast",
  "futures",
+ "indexmap",
+ "monch",
  "once_cell",
  "parking_lot",
  "regex",
  "serde",
  "serde_json",
+ "thiserror",
  "url",
 ]
 
@@ -880,6 +883,12 @@ dependencies = [
  "wasi",
  "windows-sys 0.42.0",
 ]
+
+[[package]]
+name = "monch"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f13de1c3edc9a5b9dc3a1029f56e9ab3eba34640010aff4fc01044c42ef67afa"
 
 [[package]]
 name = "native-tls"
