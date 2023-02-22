@@ -40,6 +40,37 @@ impl EszipV1 {
     serde_json::to_vec(&self).unwrap()
   }
 
+  pub fn take_module(&mut self, specifier: &str) -> Option<Module> {
+    let specifier = &Url::parse(specifier).ok()?;
+    let mut visited = HashSet::new();
+    loop {
+      visited.insert(specifier);
+      let module = self.modules.remove(specifier)?;
+      match module {
+        ModuleInfo::Redirect(redirect) => {
+          if visited.contains(&redirect) {
+            return None;
+          }
+        }
+        ModuleInfo::Source(source) => {
+          let module = Module {
+            specifier: specifier.to_string(),
+            kind: ModuleKind::JavaScript,
+            inner: ModuleInner::V1(Arc::new(
+              source
+                .transpiled
+                .as_ref()
+                .unwrap_or(&source.source)
+                .as_bytes()
+                .to_owned(),
+            )),
+          };
+          return Some(module);
+        }
+      }
+    }
+  }
+
   pub fn get_module(&self, specifier: &str) -> Option<Module> {
     let mut specifier = &Url::parse(specifier).ok()?;
     let mut visited = HashSet::new();
