@@ -672,7 +672,7 @@ impl EszipV2 {
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
         EszipV2Module::Module { source, .. } => {
-          eprintln!("take_module_source: {}", specifier);
+          eprintln!("take_module_source: {specifier}");
           std::mem::replace(source, EszipV2SourceSlot::Taken)
         }
         EszipV2Module::Redirect { .. } => {
@@ -725,7 +725,7 @@ impl EszipV2 {
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
         EszipV2Module::Module { source_map, .. } => {
-          eprintln!("take_module_source_map: {}", specifier);
+          eprintln!("take_module_source_map: {specifier}");
           std::mem::replace(source_map, EszipV2SourceSlot::Taken)
         }
         EszipV2Module::Redirect { .. } => {
