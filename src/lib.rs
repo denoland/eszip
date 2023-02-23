@@ -80,7 +80,7 @@ impl Module {
     }
   }
 
-  pub async fn take_source(self) -> Option<Arc<Vec<u8>>> {
+  pub async fn take_source(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
       ModuleInner::V1(eszip_v1) => eszip_v1.take_module_source(&self.specifier),
       ModuleInner::V2(eszip_v2) => {
