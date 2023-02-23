@@ -498,10 +498,9 @@ impl EszipV2 {
       ordered_modules: &mut Vec<String>,
       specifier: &Url,
     ) -> Result<(), anyhow::Error> {
-      let module = graph.get(specifier).ok_or(anyhow::anyhow!(
-        "module not found {}",
-        specifier
-      ))?;
+      let module = graph
+        .get(specifier)
+        .ok_or(anyhow::anyhow!("module not found {}", specifier))?;
       let specifier = module.specifier().as_str();
       if modules.contains_key(specifier) {
         return Ok(());
@@ -673,6 +672,7 @@ impl EszipV2 {
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
         EszipV2Module::Module { source, .. } => {
+          eprintln!("take_module_source: {}", specifier);
           std::mem::replace(source, EszipV2SourceSlot::Taken)
         }
         EszipV2Module::Redirect { .. } => {
@@ -725,6 +725,7 @@ impl EszipV2 {
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
         EszipV2Module::Module { source_map, .. } => {
+          eprintln!("take_module_source_map: {}", specifier);
           std::mem::replace(source_map, EszipV2SourceSlot::Taken)
         }
         EszipV2Module::Redirect { .. } => {
@@ -794,21 +795,30 @@ mod tests {
       specifier: &ModuleSpecifier,
       _is_dynamic: bool,
     ) -> deno_graph::source::LoadFuture {
-      assert_eq!(specifier.scheme(), "file");
-      let path = format!("./src/testdata/source{}", specifier.path());
-      Box::pin(async move {
-        let path = Path::new(&path);
-        let resolved = path.canonicalize().unwrap();
-        let source = std::fs::read_to_string(&resolved).unwrap();
-        let specifier =
-          resolved.file_name().unwrap().to_string_lossy().to_string();
-        let specifier = Url::parse(&format!("file:///{specifier}")).unwrap();
-        Ok(Some(LoadResponse::Module {
-          content: source.into(),
-          maybe_headers: None,
-          specifier,
-        }))
-      })
+      match specifier.scheme() {
+        "file" => {
+          let path = format!("./src/testdata/source{}", specifier.path());
+          Box::pin(async move {
+            let path = Path::new(&path);
+            let resolved = path.canonicalize().unwrap();
+            let source = std::fs::read_to_string(&resolved).unwrap();
+            let specifier =
+              resolved.file_name().unwrap().to_string_lossy().to_string();
+            let specifier =
+              Url::parse(&format!("file:///{specifier}")).unwrap();
+            Ok(Some(LoadResponse::Module {
+              content: source.into(),
+              maybe_headers: None,
+              specifier,
+            }))
+          })
+        }
+        "data" => {
+          let result = deno_graph::source::load_data_url(specifier);
+          Box::pin(async move { result })
+        }
+        _ => unreachable!(),
+      }
     }
   }
 
@@ -994,6 +1004,35 @@ mod tests {
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json");
     assert!(module.is_some()); // we include statically analyzable dynamic imports
+  }
+
+  #[tokio::test]
+  async fn from_graph_dynamic_data() {
+    let roots =
+      vec![ModuleSpecifier::parse("file:///dynamic_data.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::default();
+    graph
+      .build(
+        roots,
+        &mut FileLoader,
+        BuildOptions {
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
+    let module = eszip.get_module("file:///dynamic_data.ts").unwrap();
+    assert_eq!(module.specifier, "file:///dynamic_data.ts");
+    let source = module.source().await.unwrap();
+    assert_matches_file!(source, "./testdata/emit/dynamic_data.ts");
   }
 
   #[tokio::test]
