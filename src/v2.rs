@@ -670,6 +670,31 @@ impl EszipV2 {
       let mut modules = self.modules.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
+        EszipV2Module::Module { source, .. } => source,
+        EszipV2Module::Redirect { .. } => {
+          panic!("redirects are already resolved")
+        }
+      };
+      match slot {
+        EszipV2SourceSlot::Pending { wakers, .. } => {
+          wakers.push(cx.waker().clone());
+          Poll::Pending
+        }
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
+        EszipV2SourceSlot::Taken => Poll::Ready(None),
+      }
+    })
+    .await
+  }
+
+  pub(crate) async fn take_module_source<'a>(
+    &'a self,
+    specifier: &str,
+  ) -> Option<Arc<Vec<u8>>> {
+    poll_fn(|cx| {
+      let mut modules = self.modules.lock().unwrap();
+      let module = modules.get_mut(specifier).unwrap();
+      let slot = match module {
         EszipV2Module::Module { source, .. } => {
           std::mem::replace(source, EszipV2SourceSlot::Taken)
         }
@@ -690,6 +715,31 @@ impl EszipV2 {
   }
 
   pub(crate) async fn get_module_source_map<'a>(
+    &'a self,
+    specifier: &str,
+  ) -> Option<Arc<Vec<u8>>> {
+    poll_fn(|cx| {
+      let mut modules = self.modules.lock().unwrap();
+      let module = modules.get_mut(specifier).unwrap();
+      let slot = match module {
+        EszipV2Module::Module { source_map, .. } => source_map,
+        EszipV2Module::Redirect { .. } => {
+          panic!("redirects are already resolved")
+        }
+      };
+      match slot {
+        EszipV2SourceSlot::Pending { wakers, .. } => {
+          wakers.push(cx.waker().clone());
+          Poll::Pending
+        }
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
+        EszipV2SourceSlot::Taken => Poll::Ready(None),
+      }
+    })
+    .await
+  }
+
+  pub(crate) async fn take_module_source_map<'a>(
     &'a self,
     specifier: &str,
   ) -> Option<Arc<Vec<u8>>> {
@@ -886,14 +936,14 @@ mod tests {
     .unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/emit/main.ts");
     let source_map = module.source_map().await.unwrap();
     assert_matches_file!(source_map, "./testdata/emit/main.ts.map");
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///a.ts").unwrap();
     assert_eq!(module.specifier, "file:///b.ts");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/emit/b.ts");
     let source_map = module.source_map().await.unwrap();
     assert_matches_file!(source_map, "./testdata/emit/b.ts.map");
@@ -924,13 +974,13 @@ mod tests {
     .unwrap();
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/emit/json.ts");
     let _source_map = module.source_map().await.unwrap();
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json").unwrap();
     assert_eq!(module.specifier, "file:///data.json");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/emit/data.json");
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
@@ -961,7 +1011,7 @@ mod tests {
     .unwrap();
     let module = eszip.get_module("file:///dynamic.ts").unwrap();
     assert_eq!(module.specifier, "file:///dynamic.ts");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/emit/dynamic.ts");
     let _source_map = module.source_map().await.unwrap();
     assert_eq!(module.kind, ModuleKind::JavaScript);
@@ -980,14 +1030,14 @@ mod tests {
     let test = async move {
       let module = eszip.get_module("file:///main.ts").unwrap();
       assert_eq!(module.specifier, "file:///main.ts");
-      let source = module.source().await;
+      let source = module.source().await.unwrap();
       assert_matches_file!(source, "./testdata/redirect_data/main.ts");
       let source_map = module.source_map().await.unwrap();
       assert_matches_file!(source_map, "./testdata/redirect_data/main.ts.map");
       assert_eq!(module.kind, ModuleKind::JavaScript);
       let module = eszip.get_module("file:///a.ts").unwrap();
       assert_eq!(module.specifier, "file:///b.ts");
-      let source = module.source().await;
+      let source = module.source().await.unwrap();
       assert_matches_file!(source, "./testdata/redirect_data/b.ts");
       let source_map = module.source_map().await.unwrap();
       assert_matches_file!(source_map, "./testdata/redirect_data/b.ts.map");
@@ -1010,13 +1060,13 @@ mod tests {
     let test = async move {
       let module = eszip.get_module("file:///json.ts").unwrap();
       assert_eq!(module.specifier, "file:///json.ts");
-      let source = module.source().await;
+      let source = module.source().await.unwrap();
       assert_matches_file!(source, "./testdata/emit/json.ts");
       let _source_map = module.source_map().await.unwrap();
       assert_eq!(module.kind, ModuleKind::JavaScript);
       let module = eszip.get_module("file:///data.json").unwrap();
       assert_eq!(module.specifier, "file:///data.json");
-      let source = module.source().await;
+      let source = module.source().await.unwrap();
       assert_matches_file!(source, "./testdata/emit/data.json");
       let source_map = module.source_map().await.unwrap();
       assert_eq!(&*source_map, &[0; 0]);
@@ -1044,14 +1094,14 @@ mod tests {
     fut.await.unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/redirect_data/main.ts");
     let source_map = module.source_map().await.unwrap();
     assert_matches_file!(source_map, "./testdata/redirect_data/main.ts.map");
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///a.ts").unwrap();
     assert_eq!(module.specifier, "file:///b.ts");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/redirect_data/b.ts");
     let source_map = module.source_map().await.unwrap();
     assert_matches_file!(source_map, "./testdata/redirect_data/b.ts.map");
@@ -1102,7 +1152,7 @@ mod tests {
 
     let module = eszip.get_module("file:///import_map.json").unwrap();
     assert_eq!(module.specifier, "file:///import_map.json");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/source/import_map.json");
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
@@ -1110,7 +1160,7 @@ mod tests {
 
     let module = eszip.get_module("file:///mapped.js").unwrap();
     assert_eq!(module.specifier, "file:///mapped.js");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/source/mapped.js");
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
@@ -1118,7 +1168,7 @@ mod tests {
 
     let module = eszip.get_module("file:///a.ts").unwrap();
     assert_eq!(module.specifier, "file:///b.ts");
-    let source = module.source().await;
+    let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/emit/b.ts");
     let source_map = module.source_map().await.unwrap();
     assert_matches_file!(source_map, "./testdata/emit/b.ts.map");

@@ -80,11 +80,15 @@ pub enum ModuleInner {
 impl Module {
   pub async fn source(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
-      ModuleInner::V1(source) => {
-        let mut source = source.lock().unwrap();
-        source.take()
-      }
+      ModuleInner::V1(source) => source.lock().unwrap().clone(),
       ModuleInner::V2(eszip) => eszip.get_module_source(&self.specifier).await,
+    }
+  }
+
+  pub async fn take_source(&self) -> Option<Arc<Vec<u8>>> {
+    match &self.inner {
+      ModuleInner::V1(source) => source.lock().unwrap().take(),
+      ModuleInner::V2(eszip) => eszip.take_module_source(&self.specifier).await,
     }
   }
 
@@ -93,6 +97,15 @@ impl Module {
       ModuleInner::V1(_) => None,
       ModuleInner::V2(eszip) => {
         eszip.get_module_source_map(&self.specifier).await
+      }
+    }
+  }
+
+  pub async fn take_source_map(&self) -> Option<Arc<Vec<u8>>> {
+    match &self.inner {
+      ModuleInner::V1(_) => None,
+      ModuleInner::V2(eszip) => {
+        eszip.take_module_source_map(&self.specifier).await
       }
     }
   }
