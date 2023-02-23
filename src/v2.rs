@@ -60,6 +60,7 @@ pub enum EszipV2SourceSlot {
     wakers: Vec<Waker>,
   },
   Ready(Arc<Vec<u8>>),
+  Taken,
 }
 
 impl EszipV2SourceSlot {
@@ -664,22 +665,25 @@ impl EszipV2 {
   pub(crate) async fn get_module_source<'a>(
     &'a self,
     specifier: &str,
-  ) -> Arc<Vec<u8>> {
+  ) -> Option<Arc<Vec<u8>>> {
     poll_fn(|cx| {
       let mut modules = self.modules.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
-        EszipV2Module::Module { source, .. } => source,
+        EszipV2Module::Module { source, .. } => {
+          std::mem::replace(source, EszipV2SourceSlot::Taken)
+        }
         EszipV2Module::Redirect { .. } => {
           panic!("redirects are already resolved")
         }
       };
       match slot {
-        EszipV2SourceSlot::Pending { wakers, .. } => {
+        EszipV2SourceSlot::Pending { mut wakers, .. } => {
           wakers.push(cx.waker().clone());
           Poll::Pending
         }
-        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(bytes.clone()),
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes)),
+        EszipV2SourceSlot::Taken => Poll::Ready(None),
       }
     })
     .await
@@ -688,22 +692,25 @@ impl EszipV2 {
   pub(crate) async fn get_module_source_map<'a>(
     &'a self,
     specifier: &str,
-  ) -> Arc<Vec<u8>> {
+  ) -> Option<Arc<Vec<u8>>> {
     poll_fn(|cx| {
       let mut modules = self.modules.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
-        EszipV2Module::Module { source_map, .. } => source_map,
+        EszipV2Module::Module { source_map, .. } => {
+          std::mem::replace(source_map, EszipV2SourceSlot::Taken)
+        }
         EszipV2Module::Redirect { .. } => {
           panic!("redirects are already resolved")
         }
       };
       match slot {
-        EszipV2SourceSlot::Pending { wakers, .. } => {
+        EszipV2SourceSlot::Pending { mut wakers, .. } => {
           wakers.push(cx.waker().clone());
           Poll::Pending
         }
-        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(bytes.clone()),
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes)),
+        EszipV2SourceSlot::Taken => Poll::Ready(None),
       }
     })
     .await

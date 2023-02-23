@@ -73,14 +73,17 @@ pub struct Module {
 }
 
 pub enum ModuleInner {
-  V1(Arc<Vec<u8>>),
+  V1(std::sync::Mutex<Option<Arc<Vec<u8>>>>),
   V2(EszipV2),
 }
 
 impl Module {
-  pub async fn source(&self) -> Arc<Vec<u8>> {
+  pub async fn source(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
-      ModuleInner::V1(source) => source.clone(),
+      ModuleInner::V1(source) => {
+        let mut source = source.lock().unwrap();
+        source.take()
+      }
       ModuleInner::V2(eszip) => eszip.get_module_source(&self.specifier).await,
     }
   }
@@ -89,7 +92,7 @@ impl Module {
     match &self.inner {
       ModuleInner::V1(_) => None,
       ModuleInner::V2(eszip) => {
-        Some(eszip.get_module_source_map(&self.specifier).await)
+        eszip.get_module_source_map(&self.specifier).await
       }
     }
   }
