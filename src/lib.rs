@@ -57,13 +57,6 @@ impl Eszip {
       Eszip::V2(eszip) => eszip.get_module(specifier),
     }
   }
-
-  pub fn take_module(&mut self, specifier: &str) -> Option<Module> {
-    match self {
-      Eszip::V1(eszip) => eszip.take_module(specifier),
-      Eszip::V2(eszip) => eszip.take_module(specifier),
-    }
-  }
 }
 
 pub struct Module {
@@ -143,23 +136,5 @@ mod tests {
     fut.await.unwrap();
     assert!(matches!(eszip, Eszip::V2(_)));
     eszip.get_module("file:///main.ts").unwrap();
-  }
-
-  #[tokio::test]
-  async fn take_module_v1() {
-    let file = std::fs::File::open("./src/testdata/basic.json").unwrap();
-    let (mut eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
-    fut.await.unwrap();
-    assert!(matches!(eszip, Eszip::V1(_)));
-    eszip.take_module("https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js").unwrap();
-  }
-
-  #[tokio::test]
-  async fn take_module_v2() {
-    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
-    let (mut eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
-    fut.await.unwrap();
-    assert!(matches!(eszip, Eszip::V2(_)));
-    eszip.take_module("file:///main.ts").unwrap();
   }
 }

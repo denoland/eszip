@@ -636,32 +636,6 @@ impl EszipV2 {
     }
   }
 
-  pub fn take_module(&mut self, specifier: &str) -> Option<Module> {
-    let mut visited = HashSet::new();
-    let mut modules = self.modules.lock().unwrap();
-    loop {
-      visited.insert(specifier);
-      let module = modules.remove(specifier)?;
-      match module {
-        EszipV2Module::Module { kind, .. } => {
-          return Some(Module {
-            specifier: specifier.to_string(),
-            kind,
-            inner: ModuleInner::V2(EszipV2 {
-              modules: self.modules.clone(),
-              ordered_modules: vec![],
-            }),
-          });
-        }
-        EszipV2Module::Redirect { target } => {
-          if visited.contains(&target.as_ref()) {
-            return None;
-          }
-        }
-      }
-    }
-  }
-
   pub(crate) async fn get_module_source<'a>(
     &'a self,
     specifier: &str,
