@@ -66,22 +66,26 @@ pub struct Module {
 }
 
 pub enum ModuleInner {
-  V1(std::sync::Mutex<Option<Arc<Vec<u8>>>>),
+  V1(EszipV1),
   V2(EszipV2),
 }
 
 impl Module {
   pub async fn source(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
-      ModuleInner::V1(source) => source.lock().unwrap().clone(),
-      ModuleInner::V2(eszip) => eszip.get_module_source(&self.specifier).await,
+      ModuleInner::V1(eszip_v1) => eszip_v1.get_module_source(&self.specifier),
+      ModuleInner::V2(eszip_v2) => {
+        eszip_v2.get_module_source(&self.specifier).await
+      }
     }
   }
 
-  pub async fn take_source(&self) -> Option<Arc<Vec<u8>>> {
+  pub async fn take_source(self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
-      ModuleInner::V1(source) => source.lock().unwrap().take(),
-      ModuleInner::V2(eszip) => eszip.take_module_source(&self.specifier).await,
+      ModuleInner::V1(eszip_v1) => eszip_v1.take_module_source(&self.specifier),
+      ModuleInner::V2(eszip_v2) => {
+        eszip_v2.take_module_source(&self.specifier).await
+      }
     }
   }
 
@@ -136,5 +140,40 @@ mod tests {
     fut.await.unwrap();
     assert!(matches!(eszip, Eszip::V2(_)));
     eszip.get_module("file:///main.ts").unwrap();
+  }
+
+  #[tokio::test]
+  async fn take_source_v1() {
+    let file = std::fs::File::open("./src/testdata/basic.json").unwrap();
+    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
+    fut.await.unwrap();
+    assert!(matches!(eszip, Eszip::V1(_)));
+    let specifier = "https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js";
+    let module = eszip.get_module(specifier).unwrap();
+    assert_eq!(module.specifier, specifier);
+    // We're taking the source from memory.
+    let source = module.take_source().await.unwrap();
+    assert!(!source.is_empty());
+    let module = eszip.get_module(specifier).unwrap();
+    assert_eq!(module.specifier, specifier);
+    // Source shouldn't be available anymore.
+    assert!(module.source().await.is_none());
+  }
+
+  #[tokio::test]
+  async fn take_source_v2() {
+    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
+    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
+    fut.await.unwrap();
+    assert!(matches!(eszip, Eszip::V2(_)));
+    let specifier = "file:///main.ts";
+    let module = eszip.get_module(specifier).unwrap();
+    // We're taking the source from memory.
+    let source = module.take_source().await.unwrap();
+    assert!(!source.is_empty());
+    let module = eszip.get_module(specifier).unwrap();
+    assert_eq!(module.specifier, specifier);
+    // Source shouldn't be available anymore.
+    assert!(module.source().await.is_none());
   }
 }

@@ -17,14 +17,14 @@ pub const ESZIP_V1_GRAPH_VERSION: u32 = 1;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EszipV1 {
   version: u32,
-  modules: HashMap<Url, ModuleInfo>,
+  modules: Arc<Mutex<HashMap<Url, ModuleInfo>>>,
 }
 
 impl EszipV1 {
   pub fn from_modules(modules: HashMap<Url, ModuleInfo>) -> Self {
     Self {
       version: ESZIP_V1_GRAPH_VERSION,
-      modules,
+      modules: Arc::new(Mutex::new(modules)),
     }
   }
 
@@ -44,9 +44,10 @@ impl EszipV1 {
   pub fn get_module(&self, specifier: &str) -> Option<Module> {
     let mut specifier = &Url::parse(specifier).ok()?;
     let mut visited = HashSet::new();
+    let modules = self.modules.lock().unwrap();
     loop {
       visited.insert(specifier);
-      let module = self.modules.get(specifier)?;
+      let module = modules.get(specifier)?;
       match module {
         ModuleInfo::Redirect(redirect) => {
           specifier = redirect;
@@ -54,21 +55,55 @@ impl EszipV1 {
             return None;
           }
         }
-        ModuleInfo::Source(source) => {
+        ModuleInfo::Source(..) => {
           let module = Module {
             specifier: specifier.to_string(),
             kind: ModuleKind::JavaScript,
-            inner: ModuleInner::V1(Mutex::new(Some(Arc::new(
-              source
-                .transpiled
-                .as_ref()
-                .unwrap_or(&source.source)
-                .as_bytes()
-                .to_owned(),
-            )))),
+            inner: ModuleInner::V1(EszipV1 {
+              version: self.version,
+              modules: self.modules.clone(),
+            }),
           };
           return Some(module);
         }
+      }
+    }
+  }
+
+  pub(crate) fn get_module_source(
+    &self,
+    specifier: &str,
+  ) -> Option<Arc<Vec<u8>>> {
+    let specifier = &Url::parse(specifier).ok()?;
+    let modules = self.modules.lock().unwrap();
+    let module = modules.get(specifier).unwrap();
+    match module {
+      ModuleInfo::Redirect(_) => panic!("Redirects should be resolved"),
+      ModuleInfo::Source(module) => {
+        let source = module.transpiled.as_ref().unwrap_or(&module.source);
+        if source.is_empty() {
+          None
+        } else {
+          Some(Arc::new(source.clone().into_bytes()))
+        }
+      }
+    }
+  }
+
+  pub(crate) fn take_module_source(
+    &self,
+    specifier: &str,
+  ) -> Option<Arc<Vec<u8>>> {
+    let specifier = &Url::parse(specifier).ok()?;
+    let mut modules = self.modules.lock().unwrap();
+    let module = modules.get_mut(specifier).unwrap();
+    match module {
+      ModuleInfo::Redirect(_) => panic!("Redirects should be resolved"),
+      ModuleInfo::Source(module) => {
+        let transpiled = std::mem::take(&mut module.transpiled);
+        let source = std::mem::take(&mut module.source);
+        let source = transpiled.unwrap_or(source);
+        Some(Arc::new(source.into_bytes()))
       }
     }
   }
@@ -97,12 +132,15 @@ mod tests {
     let data = include_bytes!("./testdata/basic.json");
     let eszip = EszipV1::parse(data).unwrap();
     assert_eq!(eszip.version, 1);
-    assert_eq!(eszip.modules.len(), 1);
-    let module = eszip.get_module("https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js").unwrap();
-    assert_eq!(module.specifier, "https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js");
+    assert_eq!(eszip.modules.lock().unwrap().len(), 1);
+    let specifier = "https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js";
+    let module = eszip.get_module(specifier).unwrap();
+    assert_eq!(module.specifier, specifier);
     let inner = module.inner;
     let bytes = match inner {
-      crate::ModuleInner::V1(bytes) => bytes.lock().unwrap().take().unwrap(),
+      crate::ModuleInner::V1(eszip) => {
+        eszip.get_module_source(specifier).unwrap()
+      }
       crate::ModuleInner::V2(_) => unreachable!(),
     };
     assert_eq!(*bytes, b"addEventListener(\"fetch\", (event)=>{\n    event.respondWith(new Response(\"Hello World\", {\n        headers: {\n            \"content-type\": \"text/plain\"\n        }\n    }));\n});\n//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIjxodHRwczovL2dpc3QuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2x1Y2FjYXNvbmF0by9mM2UyMTQwNTMyMjI1OWNhNGVkMTU1NzIyMzkwZmRhMi9yYXcvZTI1YWNiNDliNjgxZThlMWRhNWEyYTMzNzQ0YjdhMzZkNTM4NzEyZC9oZWxsby5qcz4iXSwic291cmNlc0NvbnRlbnQiOlsiYWRkRXZlbnRMaXN0ZW5lcihcImZldGNoXCIsIChldmVudCkgPT4ge1xuICBldmVudC5yZXNwb25kV2l0aChuZXcgUmVzcG9uc2UoXCJIZWxsbyBXb3JsZFwiLCB7XG4gICAgaGVhZGVyczogeyBcImNvbnRlbnQtdHlwZVwiOiBcInRleHQvcGxhaW5cIiB9LFxuICB9KSk7XG59KTsiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IkFBQUEsZ0JBQUEsRUFBQSxLQUFBLElBQUEsS0FBQTtBQUNBLFNBQUEsQ0FBQSxXQUFBLEtBQUEsUUFBQSxFQUFBLFdBQUE7QUFDQSxlQUFBO2FBQUEsWUFBQSxJQUFBLFVBQUEifQ==");
