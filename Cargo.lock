@@ -343,11 +343,11 @@ name = "eszip"
 version = "0.37.0"
 dependencies = [
  "anyhow",
- "base64 0.13.1",
+ "base64 0.21.0",
  "deno_ast",
  "deno_graph",
  "futures",
- "import_map 0.7.0",
+ "import_map 0.15.0",
  "pretty_assertions",
  "reqwest",
  "serde",
@@ -678,9 +678,9 @@ checksum = "cb56e1aa765b4b4f3aadfab769793b7087bb03a4ea4920644a6d238e2df5b9ed"
 
 [[package]]
 name = "import_map"
-version = "0.7.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a5e929cd5351ce1fe9e674a711b7d626dc00182350de310ed84d59a5ecb6a94"
+checksum = "b827962ca5aa6d5bbe313c14e73d7cc517487fa3bad380bb6bdbd8421e591a29"
 dependencies = [
  "indexmap",
  "log",
@@ -691,10 +691,11 @@ dependencies = [
 
 [[package]]
 name = "import_map"
-version = "0.12.1"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b827962ca5aa6d5bbe313c14e73d7cc517487fa3bad380bb6bdbd8421e591a29"
+checksum = "632089ec08bd62e807311104122fb26d5c911ab172e2b9864be154a575979e29"
 dependencies = [
+ "cfg-if",
  "indexmap",
  "log",
  "serde",
