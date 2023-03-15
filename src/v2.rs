@@ -667,28 +667,37 @@ impl EszipV2 {
     &'a self,
     specifier: &str,
   ) -> Option<Arc<Vec<u8>>> {
-    poll_fn(|cx| {
+    let source = poll_fn(|cx| {
       let mut modules = self.modules.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
-        EszipV2Module::Module { source, .. } => {
-          eprintln!("take_module_source: {specifier}");
-          std::mem::replace(source, EszipV2SourceSlot::Taken)
-        }
+        EszipV2Module::Module { source, .. } => source,
         EszipV2Module::Redirect { .. } => {
           panic!("redirects are already resolved")
         }
       };
       match slot {
-        EszipV2SourceSlot::Pending { mut wakers, .. } => {
+        EszipV2SourceSlot::Pending { wakers, .. } => {
           wakers.push(cx.waker().clone());
           Poll::Pending
         }
-        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes)),
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
         EszipV2SourceSlot::Taken => Poll::Ready(None),
       }
     })
-    .await
+    .await;
+    // Drop the source from memory.
+    let mut modules = self.modules.lock().unwrap();
+    let module = modules.get_mut(specifier).unwrap();
+    match module {
+      EszipV2Module::Module { source, .. } => {
+        *source = EszipV2SourceSlot::Taken;
+      }
+      EszipV2Module::Redirect { .. } => {
+        panic!("redirects are already resolved")
+      }
+    };
+    source
   }
 
   pub(crate) async fn get_module_source_map<'a>(
@@ -720,28 +729,38 @@ impl EszipV2 {
     &'a self,
     specifier: &str,
   ) -> Option<Arc<Vec<u8>>> {
-    poll_fn(|cx| {
+    let source = poll_fn(|cx| {
       let mut modules = self.modules.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
-        EszipV2Module::Module { source_map, .. } => {
-          eprintln!("take_module_source_map: {specifier}");
-          std::mem::replace(source_map, EszipV2SourceSlot::Taken)
-        }
+        EszipV2Module::Module { source_map, .. } => source_map,
         EszipV2Module::Redirect { .. } => {
           panic!("redirects are already resolved")
         }
       };
       match slot {
-        EszipV2SourceSlot::Pending { mut wakers, .. } => {
+        EszipV2SourceSlot::Pending { wakers, .. } => {
           wakers.push(cx.waker().clone());
           Poll::Pending
         }
-        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes)),
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
         EszipV2SourceSlot::Taken => Poll::Ready(None),
       }
     })
-    .await
+    .await;
+
+    // Drop the source map from memory.
+    let mut modules = self.modules.lock().unwrap();
+    let module = modules.get_mut(specifier).unwrap();
+    match module {
+      EszipV2Module::Module { source_map, .. } => {
+        *source_map = EszipV2SourceSlot::Taken;
+      }
+      EszipV2Module::Redirect { .. } => {
+        panic!("redirects are already resolved")
+      }
+    };
+    source
   }
 
   pub fn specifiers(&self) -> Vec<String> {
