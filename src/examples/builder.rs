@@ -102,15 +102,11 @@ impl deno_graph::source::Loader for Loader {
   fn load(
     &mut self,
     specifier: &deno_graph::ModuleSpecifier,
-    is_dynamic: bool,
+    _is_dynamic: bool,
   ) -> deno_graph::source::LoadFuture {
     let specifier = specifier.clone();
 
     Box::pin(async move {
-      if is_dynamic {
-        return Ok(None);
-      }
-
       match specifier.scheme() {
         "data" => deno_graph::source::load_data_url(&specifier),
         "file" => {

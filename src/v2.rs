@@ -498,9 +498,6 @@ impl EszipV2 {
       ordered_modules: &mut Vec<String>,
       specifier: &Url,
     ) -> Result<(), anyhow::Error> {
-      if specifier.scheme() == "data" {
-        return Ok(());
-      }
       let module = graph
         .get(specifier)
         .ok_or(anyhow::anyhow!("module not found {}", specifier))?;
