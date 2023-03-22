@@ -55,7 +55,7 @@ impl EszipV1 {
             return None;
           }
         }
-        ModuleInfo::Source(..) => {
+        ModuleInfo::SourceTaken | ModuleInfo::Source(..) => {
           let module = Module {
             specifier: specifier.to_string(),
             kind: ModuleKind::JavaScript,
@@ -81,12 +81,9 @@ impl EszipV1 {
       ModuleInfo::Redirect(_) => panic!("Redirects should be resolved"),
       ModuleInfo::Source(module) => {
         let source = module.transpiled.as_ref().unwrap_or(&module.source);
-        if source.is_empty() {
-          None
-        } else {
-          Some(Arc::new(source.clone().into_bytes()))
-        }
+        Some(Arc::new(source.clone().into_bytes()))
       }
+      ModuleInfo::SourceTaken => None,
     }
   }
 
@@ -99,12 +96,14 @@ impl EszipV1 {
     let module = modules.get_mut(specifier).unwrap();
     match module {
       ModuleInfo::Redirect(_) => panic!("Redirects should be resolved"),
-      ModuleInfo::Source(module) => {
-        let transpiled = std::mem::take(&mut module.transpiled);
-        let source = std::mem::take(&mut module.source);
+      ModuleInfo::Source(module_source) => {
+        let transpiled = std::mem::take(&mut module_source.transpiled);
+        let source = std::mem::take(&mut module_source.source);
         let source = transpiled.unwrap_or(source);
+        *module = ModuleInfo::SourceTaken;
         Some(Arc::new(source.into_bytes()))
       }
+      ModuleInfo::SourceTaken => None,
     }
   }
 }
@@ -113,6 +112,7 @@ impl EszipV1 {
 pub enum ModuleInfo {
   Redirect(Url),
   Source(ModuleSource),
+  SourceTaken,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
