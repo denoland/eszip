@@ -164,6 +164,8 @@ mod tests {
     assert_eq!(module.specifier, specifier);
     // Source shouldn't be available anymore.
     assert!(module.source().await.is_none());
+    // Source maps are not supported in v1 and should always return None.
+    assert!(module.source_map().await.is_none());
   }
 
   #[tokio::test]
@@ -181,5 +183,12 @@ mod tests {
     assert_eq!(module.specifier, specifier);
     // Source shouldn't be available anymore.
     assert!(module.source().await.is_none());
+    // We didn't take the source map, so it should still be available.
+    assert!(module.source_map().await.is_some());
+    // Now we're taking the source map.
+    let source_map = module.take_source_map().await.unwrap();
+    assert!(!source_map.is_empty());
+    // Source map shouldn't be available anymore.
+    assert!(module.source_map().await.is_none());
   }
 }
