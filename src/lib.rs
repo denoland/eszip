@@ -71,6 +71,7 @@ pub enum ModuleInner {
 }
 
 impl Module {
+  /// Get source code of the module.
   pub async fn source(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
       ModuleInner::V1(eszip_v1) => eszip_v1.get_module_source(&self.specifier),
@@ -80,6 +81,8 @@ impl Module {
     }
   }
 
+  /// Take source code of the module. This will remove the source code from memory and
+  /// the subsequent calls to `take_source()` will return `None`.
   pub async fn take_source(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
       ModuleInner::V1(eszip_v1) => eszip_v1.take_module_source(&self.specifier),
@@ -89,6 +92,7 @@ impl Module {
     }
   }
 
+  /// Get source map of the module.
   pub async fn source_map(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
       ModuleInner::V1(_) => None,
@@ -98,6 +102,8 @@ impl Module {
     }
   }
 
+  /// Take source map of the module. This will remove the source map from memory and
+  /// the subsequent calls to `take_source_map()` will return `None`.
   pub async fn take_source_map(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
       ModuleInner::V1(_) => None,
