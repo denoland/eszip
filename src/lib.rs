@@ -83,9 +83,11 @@ impl Module {
 
   /// Take source code of the module. This will remove the source code from memory and
   /// the subsequent calls to `take_source()` will return `None`.
+  /// For V1, this will take the entire module and returns the source code. We don't need
+  /// to preserve module metadata for V1.
   pub async fn take_source(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
-      ModuleInner::V1(eszip_v1) => eszip_v1.take_module_source(&self.specifier),
+      ModuleInner::V1(eszip_v1) => eszip_v1.take(&self.specifier),
       ModuleInner::V2(eszip_v2) => {
         eszip_v2.take_module_source(&self.specifier).await
       }
@@ -160,12 +162,10 @@ mod tests {
     // We're taking the source from memory.
     let source = module.take_source().await.unwrap();
     assert!(!source.is_empty());
-    let module = eszip.get_module(specifier).unwrap();
-    assert_eq!(module.specifier, specifier);
-    // Source shouldn't be available anymore.
-    assert!(module.source().await.is_none());
     // Source maps are not supported in v1 and should always return None.
     assert!(module.source_map().await.is_none());
+    // Module shouldn't be available anymore.
+    assert!(eszip.get_module(specifier).is_none());
   }
 
   #[tokio::test]

@@ -55,7 +55,7 @@ impl EszipV1 {
             return None;
           }
         }
-        ModuleInfo::SourceTaken | ModuleInfo::Source(..) => {
+        ModuleInfo::Source(..) => {
           let module = Module {
             specifier: specifier.to_string(),
             kind: ModuleKind::JavaScript,
@@ -70,6 +70,7 @@ impl EszipV1 {
     }
   }
 
+  /// Get source code of the module.
   pub(crate) fn get_module_source(
     &self,
     specifier: &str,
@@ -83,27 +84,23 @@ impl EszipV1 {
         let source = module.transpiled.as_ref().unwrap_or(&module.source);
         Some(Arc::new(source.clone().into_bytes()))
       }
-      ModuleInfo::SourceTaken => None,
     }
   }
 
-  pub(crate) fn take_module_source(
-    &self,
-    specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  /// Removes the module from the modules map and returns the source code.
+  pub(crate) fn take(&self, specifier: &str) -> Option<Arc<Vec<u8>>> {
     let specifier = &Url::parse(specifier).ok()?;
     let mut modules = self.modules.lock().unwrap();
-    let module = modules.get_mut(specifier).unwrap();
+    // Note: we don't have a need to preserve the module in the map for v1, so we can
+    // remove the module from the map. In v2, we need to preserve the module in the map
+    // to be able to get source map for the module.
+    let module = modules.remove(specifier)?;
     match module {
       ModuleInfo::Redirect(_) => panic!("Redirects should be resolved"),
       ModuleInfo::Source(module_source) => {
-        let transpiled = std::mem::take(&mut module_source.transpiled);
-        let source = std::mem::take(&mut module_source.source);
-        let source = transpiled.unwrap_or(source);
-        *module = ModuleInfo::SourceTaken;
+        let source = module_source.transpiled.unwrap_or(module_source.source);
         Some(Arc::new(source.into_bytes()))
       }
-      ModuleInfo::SourceTaken => None,
     }
   }
 }
@@ -112,7 +109,6 @@ impl EszipV1 {
 pub enum ModuleInfo {
   Redirect(Url),
   Source(ModuleSource),
-  SourceTaken,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
