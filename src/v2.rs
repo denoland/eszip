@@ -667,7 +667,7 @@ impl EszipV2 {
     &'a self,
     specifier: &str,
   ) -> Option<Arc<Vec<u8>>> {
-    let source = poll_fn(|cx| {
+    poll_fn(|cx| {
       let mut modules = self.modules.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
@@ -679,25 +679,15 @@ impl EszipV2 {
       match slot {
         EszipV2SourceSlot::Pending { wakers, .. } => {
           wakers.push(cx.waker().clone());
-          Poll::Pending
+          return Poll::Pending;
         }
-        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
-        EszipV2SourceSlot::Taken => Poll::Ready(None),
-      }
+        EszipV2SourceSlot::Ready(_) => {},
+        EszipV2SourceSlot::Taken => return Poll::Ready(None),
+      };
+      let EszipV2SourceSlot::Ready(bytes) = std::mem::replace(slot, EszipV2SourceSlot::Taken) else { unreachable!() };
+      Poll::Ready(Some(bytes))
     })
-    .await;
-    // Drop the source from memory.
-    let mut modules = self.modules.lock().unwrap();
-    let module = modules.get_mut(specifier).unwrap();
-    match module {
-      EszipV2Module::Module { source, .. } => {
-        *source = EszipV2SourceSlot::Taken;
-      }
-      EszipV2Module::Redirect { .. } => {
-        panic!("redirects are already resolved")
-      }
-    };
-    source
+    .await
   }
 
   pub(crate) async fn get_module_source_map<'a>(
