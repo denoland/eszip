@@ -66,23 +66,51 @@ pub struct Module {
 }
 
 pub enum ModuleInner {
-  V1(Arc<Vec<u8>>),
+  V1(EszipV1),
   V2(EszipV2),
 }
 
 impl Module {
-  pub async fn source(&self) -> Arc<Vec<u8>> {
+  /// Get source code of the module.
+  pub async fn source(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
-      ModuleInner::V1(source) => source.clone(),
-      ModuleInner::V2(eszip) => eszip.get_module_source(&self.specifier).await,
+      ModuleInner::V1(eszip_v1) => eszip_v1.get_module_source(&self.specifier),
+      ModuleInner::V2(eszip_v2) => {
+        eszip_v2.get_module_source(&self.specifier).await
+      }
     }
   }
 
+  /// Take source code of the module. This will remove the source code from memory and
+  /// the subsequent calls to `take_source()` will return `None`.
+  /// For V1, this will take the entire module and returns the source code. We don't need
+  /// to preserve module metadata for V1.
+  pub async fn take_source(&self) -> Option<Arc<Vec<u8>>> {
+    match &self.inner {
+      ModuleInner::V1(eszip_v1) => eszip_v1.take(&self.specifier),
+      ModuleInner::V2(eszip_v2) => {
+        eszip_v2.take_module_source(&self.specifier).await
+      }
+    }
+  }
+
+  /// Get source map of the module.
   pub async fn source_map(&self) -> Option<Arc<Vec<u8>>> {
     match &self.inner {
       ModuleInner::V1(_) => None,
       ModuleInner::V2(eszip) => {
-        Some(eszip.get_module_source_map(&self.specifier).await)
+        eszip.get_module_source_map(&self.specifier).await
+      }
+    }
+  }
+
+  /// Take source map of the module. This will remove the source map from memory and
+  /// the subsequent calls to `take_source_map()` will return `None`.
+  pub async fn take_source_map(&self) -> Option<Arc<Vec<u8>>> {
+    match &self.inner {
+      ModuleInner::V1(_) => None,
+      ModuleInner::V2(eszip) => {
+        eszip.take_module_source_map(&self.specifier).await
       }
     }
   }
@@ -120,5 +148,47 @@ mod tests {
     fut.await.unwrap();
     assert!(matches!(eszip, Eszip::V2(_)));
     eszip.get_module("file:///main.ts").unwrap();
+  }
+
+  #[tokio::test]
+  async fn take_source_v1() {
+    let file = std::fs::File::open("./src/testdata/basic.json").unwrap();
+    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
+    fut.await.unwrap();
+    assert!(matches!(eszip, Eszip::V1(_)));
+    let specifier = "https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js";
+    let module = eszip.get_module(specifier).unwrap();
+    assert_eq!(module.specifier, specifier);
+    // We're taking the source from memory.
+    let source = module.take_source().await.unwrap();
+    assert!(!source.is_empty());
+    // Source maps are not supported in v1 and should always return None.
+    assert!(module.source_map().await.is_none());
+    // Module shouldn't be available anymore.
+    assert!(eszip.get_module(specifier).is_none());
+  }
+
+  #[tokio::test]
+  async fn take_source_v2() {
+    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
+    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
+    fut.await.unwrap();
+    assert!(matches!(eszip, Eszip::V2(_)));
+    let specifier = "file:///main.ts";
+    let module = eszip.get_module(specifier).unwrap();
+    // We're taking the source from memory.
+    let source = module.take_source().await.unwrap();
+    assert!(!source.is_empty());
+    let module = eszip.get_module(specifier).unwrap();
+    assert_eq!(module.specifier, specifier);
+    // Source shouldn't be available anymore.
+    assert!(module.source().await.is_none());
+    // We didn't take the source map, so it should still be available.
+    assert!(module.source_map().await.is_some());
+    // Now we're taking the source map.
+    let source_map = module.take_source_map().await.unwrap();
+    assert!(!source_map.is_empty());
+    // Source map shouldn't be available anymore.
+    assert!(module.source_map().await.is_none());
   }
 }

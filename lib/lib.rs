@@ -211,7 +211,7 @@ impl Parser {
       // Drop the borrow for the loader
       // to mutably borrow.
       drop(p);
-      let source = module.source().await;
+      let source = module.source().await.expect("source already taken");
       let source = std::str::from_utf8(&source).unwrap();
       Ok(source.to_string().into())
     })

@@ -18,7 +18,7 @@ async fn main() {
         println!("Specifier: {specifier}",);
         println!("Kind: {kind:?}", kind = module.kind);
 
-        let source = module.source().await;
+        let source = module.source().await.expect("source already taken");
         let source = std::str::from_utf8(&source).unwrap();
         println!("---");
         println!("{source}");
