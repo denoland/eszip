@@ -497,10 +497,26 @@ impl EszipV2 {
       modules: &mut HashMap<String, EszipV2Module>,
       ordered_modules: &mut Vec<String>,
       specifier: &Url,
+      is_dynamic: bool,
     ) -> Result<(), anyhow::Error> {
-      let module = graph
-        .get(specifier)
-        .ok_or(anyhow::anyhow!("module not found {}", specifier))?;
+      let module = match graph.try_get(specifier) {
+        Ok(Some(module)) => module,
+        Ok(None) => {
+          return Err(anyhow::anyhow!("module not found {}", specifier));
+        }
+        Err(err) => {
+          if is_dynamic {
+            // dynamic imports are allowed to fail
+            return Ok(());
+          }
+          return Err(anyhow::anyhow!(
+            "failed to load '{}': {}",
+            specifier,
+            err
+          ));
+        }
+      };
+
       let specifier = module.specifier().as_str();
       if modules.contains_key(specifier) {
         return Ok(());
@@ -558,6 +574,7 @@ impl EszipV2 {
                 modules,
                 ordered_modules,
                 specifier,
+                dep.is_dynamic,
               )?;
             }
           }
@@ -591,6 +608,7 @@ impl EszipV2 {
         &mut modules,
         &mut ordered_modules,
         root,
+        false,
       )?;
     }
 
@@ -809,7 +827,9 @@ mod tests {
           let path = format!("./src/testdata/source{}", specifier.path());
           Box::pin(async move {
             let path = Path::new(&path);
-            let resolved = path.canonicalize().unwrap();
+            let Ok(resolved) = path.canonicalize() else {
+              return Ok(None);
+            };
             let source = std::fs::read_to_string(&resolved).unwrap();
             let specifier =
               resolved.file_name().unwrap().to_string_lossy().to_string();
@@ -1013,6 +1033,9 @@ mod tests {
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json");
     assert!(module.is_some()); // we include statically analyzable dynamic imports
+    let mut specifiers = eszip.specifiers();
+    specifiers.sort();
+    assert_eq!(specifiers, vec!["file:///data.json", "file:///dynamic.ts"]);
   }
 
   #[tokio::test]
