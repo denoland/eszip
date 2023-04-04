@@ -32,5 +32,5 @@ await build({
   },
 });
 
-Deno.copyFileSync("LICENSE.md", "npm/LICENSE");
+Deno.copyFileSync("LICENSE", "npm/LICENSE");
 Deno.copyFileSync("README.md", "npm/README.md");
