@@ -260,13 +260,14 @@ dependencies = [
 
 [[package]]
 name = "deno_graph"
-version = "0.45.0"
+version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46c47969e9745b8ecd0bbf674e374a47a2cc465b00887716295b422ddb5ae56b"
+checksum = "1fb5531f3c2be6926e51ce5888fcffa434ca83516c53d26563882533aee871d0"
 dependencies = [
  "anyhow",
  "data-url",
  "deno_ast",
+ "deno_semver",
  "futures",
  "indexmap",
  "monch",
@@ -275,6 +276,18 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "thiserror",
+ "url",
+]
+
+[[package]]
+name = "deno_semver"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c2c0b6d783f6e7b2fce69893962023dcb1a31b3506c9d8e04bf666749fae054"
+dependencies = [
+ "monch",
+ "serde",
  "thiserror",
  "url",
 ]
