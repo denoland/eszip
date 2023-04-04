@@ -30,20 +30,33 @@ jobs:
         run: cargo clippy --all-targets --locked
 
       - name: Build
-        run: deno task node
+        run: deno task build && deno task node
 
       - name: Test
         run: |
           cargo test --all-targets --locked
           deno task test
 
-      - name: Check Wasm up to date
-        run: deno task build --check
+      - name: Get tag version
+        if: startsWith(github.ref, 'refs/tags/')
+        id: get_tag_version
+        run: echo ::set-output name=TAG_VERSION::${GITHUB_REF/refs\/tags\//}
+
+      - name: Publish deno.land/x
+        uses: denoland/publish-folder@82ce065074e7174baf444332c4b7c40869a4909a
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          folder: js
+          branch: deno_registry
+          tag: deno/${{ steps.get_tag_version.outputs.TAG_VERSION }}
+          token: ${{ secrets.DENOBOT_PAT }}
+          git-user-name: denobot
+          git-user-email: denobot@users.noreply.github.com
 
       - name: Build npm
         run: deno run -A ./build_npm.ts ${{ github.ref_name }}
 
-      - name: Publish
+      - name: Publish npm
         if: |
           github.repository == 'denoland/eszip' &&
           startsWith(github.ref, 'refs/tags/')
