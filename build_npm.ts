@@ -4,13 +4,13 @@ await emptyDir("./npm");
 Deno.mkdirSync("npm/esm", { recursive: true });
 Deno.mkdirSync("npm/script");
 
-Deno.copyFileSync("lib/eszip_wasm_bg.wasm", "npm/esm/eszip_wasm_bg.wasm");
+Deno.copyFileSync("js/eszip_wasm_bg.wasm", "npm/esm/eszip_wasm_bg.wasm");
 // todo(dsherret): how to not include two copies of this in the npm
 // package? Does using a symlink work?
-Deno.copyFileSync("lib/eszip_wasm_bg.wasm", "npm/script/eszip_wasm_bg.wasm");
+Deno.copyFileSync("js/eszip_wasm_bg.wasm", "npm/script/eszip_wasm_bg.wasm");
 
 await build({
-  entryPoints: ["./lib/mod.ts"],
+  entryPoints: ["./js/mod.ts"],
   outDir: "./npm",
   shims: {
     deno: true,
@@ -32,5 +32,5 @@ await build({
   },
 });
 
-Deno.copyFileSync("LICENSE.md", "npm/LICENSE");
+Deno.copyFileSync("LICENSE", "npm/LICENSE");
 Deno.copyFileSync("README.md", "npm/README.md");
