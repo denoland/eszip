@@ -4,6 +4,7 @@ use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
 use deno_graph::source::Resolver;
 use deno_graph::BuildOptions;
+use deno_graph::GraphKind;
 use deno_graph::ModuleGraph;
 use deno_graph::ModuleSpecifier;
 use eszip::v2::Url;
@@ -282,7 +283,7 @@ pub async fn build_eszip(
     };
   let resolver = GraphResolver(maybe_import_map);
   let analyzer = deno_graph::CapturingModuleAnalyzer::default();
-  let mut graph = ModuleGraph::default();
+  let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
   graph
     .build(
       roots,
@@ -294,9 +295,6 @@ pub async fn build_eszip(
       },
     )
     .await;
-  graph
-    .valid()
-    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let mut eszip = eszip::EszipV2::from_graph(
     graph,
     &analyzer.as_capturing_parser(),

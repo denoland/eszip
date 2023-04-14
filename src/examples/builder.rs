@@ -4,6 +4,7 @@ use std::sync::Arc;
 use deno_ast::EmitOptions;
 use deno_graph::BuildOptions;
 use deno_graph::CapturingModuleAnalyzer;
+use deno_graph::GraphKind;
 use deno_graph::ModuleGraph;
 use import_map::ImportMap;
 use reqwest::StatusCode;
@@ -41,7 +42,7 @@ async fn main() {
 
   let analyzer = CapturingModuleAnalyzer::default();
 
-  let mut graph = ModuleGraph::default();
+  let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
   graph
     .build(
       vec![url],
@@ -53,8 +54,6 @@ async fn main() {
       },
     )
     .await;
-
-  graph.valid().unwrap();
 
   let mut eszip = eszip::EszipV2::from_graph(
     graph,
