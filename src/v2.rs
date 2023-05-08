@@ -148,6 +148,7 @@ impl EszipV2 {
           let kind = match read!(1, "module kind")[0] {
             0 => ModuleKind::JavaScript,
             1 => ModuleKind::Json,
+            2 => ModuleKind::Jsonc,
             n => return Err(ParseError::InvalidV2ModuleKind(n, read)),
           };
           let source = if source_offset == 0 && source_len == 0 {
@@ -590,6 +591,30 @@ impl EszipV2 {
   /// follow redirects. The returned module has functions that can be used to
   /// obtain the module source and source map.
   pub fn get_module(&self, specifier: &str) -> Option<Module> {
+    let module = self.lookup(specifier)?;
+
+    // JSONC is contained in this eszip only for use as an import map. In
+    // order for the caller to get this JSONS, call `get_import_map` instead.
+    if module.kind == ModuleKind::Jsonc {
+      return None;
+    }
+
+    Some(module)
+  }
+
+  pub fn get_import_map(&self, specifier: &str) -> Option<Module> {
+    let import_map = self.lookup(specifier)?;
+
+    // Import map must be either JSON or JSONC (but JSONC is a special case;
+    // it's allowed when embedded in a Deno's config file)
+    if import_map.kind == ModuleKind::JavaScript {
+      return None;
+    }
+
+    Some(import_map)
+  }
+
+  fn lookup(&self, specifier: &str) -> Option<Module> {
     let mut specifier = specifier;
     let mut visited = HashSet::new();
     let modules = self.modules.lock().unwrap();
@@ -597,6 +622,11 @@ impl EszipV2 {
       visited.insert(specifier);
       let module = modules.get(specifier)?;
       match module {
+        // JSONC is contained in this eszip only for use as an import map. In
+        // order for the caller to get this JSONS, call `get_import_map` instead.
+        EszipV2Module::Module { kind, .. } if *kind == ModuleKind::Jsonc => {
+          return None;
+        }
         EszipV2Module::Module { kind, .. } => {
           return Some(Module {
             specifier: specifier.to_string(),
