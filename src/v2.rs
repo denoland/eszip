@@ -14,6 +14,7 @@ use deno_graph::ModuleGraph;
 use deno_graph::ModuleParser;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
+use hashlink::linked_hash_map::LinkedHashMap;
 use sha2::Digest;
 use sha2::Sha256;
 pub use url::Url;
@@ -36,8 +37,7 @@ enum HeaderFrameKind {
 /// source maps.
 #[derive(Debug, Default)]
 pub struct EszipV2 {
-  modules: Arc<Mutex<HashMap<String, EszipV2Module>>>,
-  ordered_modules: Vec<String>,
+  modules: Arc<Mutex<LinkedHashMap<String, EszipV2Module>>>,
 }
 
 #[derive(Debug)]
@@ -107,7 +107,7 @@ impl EszipV2 {
       return Err(ParseError::InvalidV2HeaderHash);
     }
 
-    let mut modules: HashMap<String, EszipV2Module> = HashMap::new();
+    let mut modules = LinkedHashMap::<String, EszipV2Module>::new();
 
     let mut read = 0;
 
@@ -249,19 +249,19 @@ impl EszipV2 {
         let wakers = {
           let mut modules = modules.lock().unwrap();
           let module = modules.get_mut(&specifier).expect("module not found");
-          if let EszipV2Module::Module { source, .. } = module {
-            let slot = std::mem::replace(
-              source,
-              EszipV2SourceSlot::Ready(Arc::new(source_bytes)),
-            );
+          match module {
+            EszipV2Module::Module { ref mut source, .. } => {
+              let slot = std::mem::replace(
+                source,
+                EszipV2SourceSlot::Ready(Arc::new(source_bytes)),
+              );
 
-            if let EszipV2SourceSlot::Pending { wakers, .. } = slot {
-              wakers
-            } else {
-              panic!("already populated source slot");
+              match slot {
+                EszipV2SourceSlot::Pending { wakers, .. } => wakers,
+                _ => panic!("already populated source slot"),
+              }
             }
-          } else {
-            panic!("invalid module type");
+            _ => panic!("invalid module type"),
           }
         };
         for w in wakers {
@@ -295,19 +295,21 @@ impl EszipV2 {
         let wakers = {
           let mut modules = modules.lock().unwrap();
           let module = modules.get_mut(&specifier).expect("module not found");
-          if let EszipV2Module::Module { source_map, .. } = module {
-            let slot = std::mem::replace(
-              source_map,
-              EszipV2SourceSlot::Ready(Arc::new(source_map_bytes)),
-            );
+          match module {
+            EszipV2Module::Module {
+              ref mut source_map, ..
+            } => {
+              let slot = std::mem::replace(
+                source_map,
+                EszipV2SourceSlot::Ready(Arc::new(source_map_bytes)),
+              );
 
-            if let EszipV2SourceSlot::Pending { wakers, .. } = slot {
-              wakers
-            } else {
-              panic!("already populated source_map slot");
+              match slot {
+                EszipV2SourceSlot::Pending { wakers, .. } => wakers,
+                _ => panic!("already populated source_map slot"),
+              }
             }
-          } else {
-            panic!("invalid module type");
+            _ => panic!("invalid module type"),
           }
         };
         for w in wakers {
@@ -318,13 +320,7 @@ impl EszipV2 {
       Ok(reader)
     };
 
-    Ok((
-      EszipV2 {
-        modules,
-        ordered_modules: vec![], // TODO
-      },
-      fut,
-    ))
+    Ok((EszipV2 { modules }, fut))
   }
 
   /// Add an import map to the eszip archive. The import map will always be
@@ -340,22 +336,8 @@ impl EszipV2 {
       source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
     };
     let mut modules = self.modules.lock().unwrap();
-    if modules.get(&specifier).is_none() {
-      modules.insert(specifier.clone(), module);
-    }
-    let mut module_ordering =
-      Vec::with_capacity(self.ordered_modules.len() + 1);
-    module_ordering.push(specifier.clone());
-    let old_module_ordering =
-      std::mem::replace(&mut self.ordered_modules, module_ordering);
-    // `old_module_ordering` might contain the same module as the import map
-    // that the given `specifier` specifies. To avoid having duplicate module,
-    // we check and exclude that from `old_module_ordering`.
-    let old_module_ordering_without_import_map =
-      old_module_ordering.into_iter().filter(|x| x != &specifier);
-    self
-      .ordered_modules
-      .extend(old_module_ordering_without_import_map);
+    modules.insert(specifier.clone(), module);
+    modules.to_front(&specifier);
   }
 
   /// Serialize the eszip archive into a byte buffer.
@@ -367,21 +349,7 @@ impl EszipV2 {
 
     let modules = self.modules.lock().unwrap();
 
-    let mut ordered_modules = self.ordered_modules.clone();
-    let seen_modules: HashSet<String> =
-      self.ordered_modules.into_iter().collect();
-
-    for specifier in modules.keys() {
-      let specifier = specifier.as_str();
-      if seen_modules.contains(specifier) {
-        continue;
-      }
-      ordered_modules.push(specifier.to_string());
-    }
-
-    for specifier in ordered_modules {
-      let module = modules.get(&specifier).unwrap();
-
+    for (specifier, module) in modules.iter() {
       let specifier_bytes = specifier.as_bytes();
       let specifier_length = specifier_bytes.len() as u32;
       header.extend_from_slice(&specifier_length.to_be_bytes());
@@ -486,16 +454,13 @@ impl EszipV2 {
     emit_options.inline_source_map = false;
     emit_options.source_map = true;
 
-    let mut modules = HashMap::new();
-
-    let mut ordered_modules = vec![];
+    let mut modules = LinkedHashMap::new();
 
     fn visit_module(
       graph: &ModuleGraph,
       parser: &CapturingModuleParser,
       emit_options: &EmitOptions,
-      modules: &mut HashMap<String, EszipV2Module>,
-      ordered_modules: &mut Vec<String>,
+      modules: &mut LinkedHashMap<String, EszipV2Module>,
       specifier: &Url,
       is_dynamic: bool,
     ) -> Result<(), anyhow::Error> {
@@ -562,7 +527,6 @@ impl EszipV2 {
             source_map: EszipV2SourceSlot::Ready(Arc::new(source_map)),
           };
           modules.insert(specifier.clone(), eszip_module);
-          ordered_modules.push(specifier);
 
           // now walk the code dependencies
           for dep in module.dependencies.values() {
@@ -572,7 +536,6 @@ impl EszipV2 {
                 parser,
                 emit_options,
                 modules,
-                ordered_modules,
                 specifier,
                 dep.is_dynamic,
               )?;
@@ -591,7 +554,6 @@ impl EszipV2 {
             source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
           };
           modules.insert(specifier.clone(), eszip_module);
-          ordered_modules.push(specifier);
           Ok(())
         }
         deno_graph::Module::External(_)
@@ -601,15 +563,7 @@ impl EszipV2 {
     }
 
     for root in &graph.roots {
-      visit_module(
-        &graph,
-        parser,
-        &emit_options,
-        &mut modules,
-        &mut ordered_modules,
-        root,
-        false,
-      )?;
+      visit_module(&graph, parser, &emit_options, &mut modules, root, false)?;
     }
 
     for (specifier, target) in &graph.redirects {
@@ -621,7 +575,6 @@ impl EszipV2 {
 
     Ok(Self {
       modules: Arc::new(Mutex::new(modules)),
-      ordered_modules,
     })
   }
 
@@ -642,11 +595,10 @@ impl EszipV2 {
             kind: *kind,
             inner: ModuleInner::V2(EszipV2 {
               modules: self.modules.clone(),
-              ordered_modules: vec![],
             }),
           });
         }
-        EszipV2Module::Redirect { target } => {
+        EszipV2Module::Redirect { ref target } => {
           specifier = target;
           if visited.contains(specifier) {
             return None;
@@ -689,7 +641,7 @@ impl EszipV2 {
       let mut modules = self.modules.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
-        EszipV2Module::Module { source, .. } => source,
+        EszipV2Module::Module { ref mut source, .. } => source,
         EszipV2Module::Redirect { .. } => {
           panic!("redirects are already resolved")
         }
@@ -1273,8 +1225,8 @@ mod tests {
     // 1. imported from JS
     // 2. specified as the import map
     assert_eq!(
-      &eszip.ordered_modules,
-      &[
+      eszip.specifiers(),
+      vec![
         "file:///import_map.json".to_string(),
         "file:///import_import_map.js".to_string(),
       ]
