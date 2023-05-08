@@ -330,12 +330,14 @@ impl EszipV2 {
   ///
   /// If a module with this specifier is already present, then this is a no-op
   /// (except that this specifier will now be at the top of the archive).
-  pub fn add_import_map(&mut self, specifier: String, source: Arc<Vec<u8>>) {
-    let module = EszipV2Module::Module {
-      kind: ModuleKind::Json,
-      source: EszipV2SourceSlot::Ready(source),
-      source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
-    };
+  pub fn add_import_map(
+    &mut self,
+    kind: ModuleKind,
+    specifier: String,
+    source: Arc<Vec<u8>>,
+  ) {
+    debug_assert_ne!(kind, ModuleKind::JavaScript);
+
     let mut modules = self.modules.lock().unwrap();
 
     // If an entry with the specifier already exists, we just move that to the
@@ -345,7 +347,14 @@ impl EszipV2 {
       return;
     }
 
-    modules.insert(specifier.clone(), module);
+    modules.insert(
+      specifier.clone(),
+      EszipV2Module::Module {
+        kind,
+        source: EszipV2SourceSlot::Ready(source),
+        source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+      },
+    );
     modules.to_front(&specifier);
   }
 
