@@ -336,7 +336,7 @@ impl EszipV2 {
     specifier: String,
     source: Arc<Vec<u8>>,
   ) {
-    debug_assert_ne!(kind, ModuleKind::JavaScript);
+    debug_assert!(matches!(kind, ModuleKind::Json | ModuleKind::Jsonc));
 
     let mut modules = self.modules.lock().unwrap();
 
