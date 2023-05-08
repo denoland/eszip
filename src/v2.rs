@@ -336,6 +336,14 @@ impl EszipV2 {
       source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
     };
     let mut modules = self.modules.lock().unwrap();
+
+    // If an entry with the specifier already exists, we just move that to the
+    // top and return without inserting new source.
+    if modules.contains_key(&specifier) {
+      modules.to_front(&specifier);
+      return;
+    }
+
     modules.insert(specifier.clone(), module);
     modules.to_front(&specifier);
   }
