@@ -117,14 +117,18 @@ impl Module {
 }
 
 /// This is the kind of module that is being stored. This is the same enum as is
-/// present in [deno_core], but because we can not depend on that crate, this
-/// is a copy of that definition.
+/// present in [deno_core::ModuleType] except that this has additional variant
+/// `Jsonc` which is used when an import map is embedded in Deno's config file
+/// that can be JSONC.
+/// Note that a module of type `Jsonc` can be used only as an import map, not as
+/// a normal module.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ModuleKind {
   JavaScript = 0,
   Json = 1,
+  Jsonc = 2,
 }
 
 #[cfg(test)]
