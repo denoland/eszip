@@ -1195,7 +1195,11 @@ mod tests {
     )
     .unwrap();
     let import_map_bytes = Arc::new(content.as_bytes().to_vec());
-    eszip.add_import_map(specifier.to_string(), import_map_bytes);
+    eszip.add_import_map(
+      ModuleKind::Json,
+      specifier.to_string(),
+      import_map_bytes,
+    );
 
     let module = eszip.get_module("file:///import_map.json").unwrap();
     assert_eq!(module.specifier, "file:///import_map.json");
@@ -1265,7 +1269,11 @@ mod tests {
     )
     .unwrap();
     let import_map_bytes = Arc::new(content.as_bytes().to_vec());
-    eszip.add_import_map(specifier.to_string(), import_map_bytes);
+    eszip.add_import_map(
+      ModuleKind::Json,
+      specifier.to_string(),
+      import_map_bytes,
+    );
 
     // Verify that the resulting eszip consists of two unique modules even
     // though `import_map.json` is referenced twice:
