@@ -37,7 +37,7 @@ enum HeaderFrameKind {
 #[derive(Debug, Default)]
 pub struct EszipV2 {
   modules: Arc<Mutex<HashMap<String, EszipV2Module>>>,
-  pub ordered_modules: Vec<String>,
+  ordered_modules: Vec<String>,
 }
 
 #[derive(Debug)]
