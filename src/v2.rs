@@ -526,7 +526,7 @@ impl EszipV2 {
             source: EszipV2SourceSlot::Ready(Arc::new(source)),
             source_map: EszipV2SourceSlot::Ready(Arc::new(source_map)),
           };
-          modules.insert(specifier.clone(), eszip_module);
+          modules.insert(specifier, eszip_module);
 
           // now walk the code dependencies
           for dep in module.dependencies.values() {
@@ -553,7 +553,7 @@ impl EszipV2 {
             )),
             source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
           };
-          modules.insert(specifier.clone(), eszip_module);
+          modules.insert(specifier, eszip_module);
           Ok(())
         }
         deno_graph::Module::External(_)
