@@ -33,6 +33,7 @@ base64 = "0.21.0"
 deno_ast = { version = "0.26.0", features = ["transpiling"] }
 deno_graph = "0.48.0"
 futures = "0.3.26"
+hashlink = "0.8.1"
 serde = "1"
 serde_json = "1"
 sha2 = "0.10.1"
