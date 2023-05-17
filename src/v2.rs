@@ -631,11 +631,6 @@ impl EszipV2 {
       visited.insert(specifier);
       let module = modules.get(specifier)?;
       match module {
-        // JSONC is contained in this eszip only for use as an import map. In
-        // order for the caller to get this JSONC, call `get_import_map` instead.
-        EszipV2Module::Module { kind, .. } if *kind == ModuleKind::Jsonc => {
-          return None;
-        }
         EszipV2Module::Module { kind, .. } => {
           return Some(Module {
             specifier: specifier.to_string(),
