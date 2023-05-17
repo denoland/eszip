@@ -603,7 +603,7 @@ impl EszipV2 {
     let module = self.lookup(specifier)?;
 
     // JSONC is contained in this eszip only for use as an import map. In
-    // order for the caller to get this JSONS, call `get_import_map` instead.
+    // order for the caller to get this JSONC, call `get_import_map` instead.
     if module.kind == ModuleKind::Jsonc {
       return None;
     }
@@ -632,7 +632,7 @@ impl EszipV2 {
       let module = modules.get(specifier)?;
       match module {
         // JSONC is contained in this eszip only for use as an import map. In
-        // order for the caller to get this JSONS, call `get_import_map` instead.
+        // order for the caller to get this JSONC, call `get_import_map` instead.
         EszipV2Module::Module { kind, .. } if *kind == ModuleKind::Jsonc => {
           return None;
         }
