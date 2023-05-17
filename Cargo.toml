@@ -45,3 +45,4 @@ import_map = "0.15.0"
 pretty_assertions = "1"
 tokio = { version = "1", features = ["macros", "rt"] }
 reqwest = { version = "0.11", features = ["rustls-tls"] }
+jsonc-parser = { version = "0.21.1", features = ["serde"] }

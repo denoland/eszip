@@ -1300,4 +1300,79 @@ mod tests {
       ]
     );
   }
+
+  #[tokio::test]
+  async fn deno_jsonc_as_import_map() {
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/deno_jsonc_as_import_map".to_string(),
+    };
+    let resp = deno_graph::source::Loader::load(
+      &mut loader,
+      &Url::parse("file:///deno.jsonc").unwrap(),
+      false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let (specifier, content) = match resp {
+      deno_graph::source::LoadResponse::Module {
+        specifier, content, ..
+      } => (specifier, content),
+      _ => unimplemented!(),
+    };
+    let import_map = import_map::parse_from_value(
+      &specifier,
+      jsonc_parser::parse_to_serde_value(&content, &Default::default())
+        .unwrap()
+        .unwrap(),
+    )
+    .unwrap();
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::default();
+    graph
+      .build(
+        roots,
+        &mut loader,
+        BuildOptions {
+          resolver: Some(&ImportMapResolver(import_map.import_map)),
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let mut eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
+    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    eszip.add_import_map(
+      ModuleKind::Jsonc,
+      specifier.to_string(),
+      import_map_bytes,
+    );
+
+    assert_eq!(
+      eszip.specifiers(),
+      vec![
+        "file:///deno.jsonc".to_string(),
+        "file:///main.ts".to_string(),
+        "file:///a.ts".to_string(),
+      ],
+    );
+
+    // JSONC can be obtained by calling `get_import_map`
+    let deno_jsonc = eszip.get_import_map("file:///deno.jsonc").unwrap();
+    let source = deno_jsonc.source().await.unwrap();
+    assert_matches_file!(
+      source,
+      "./testdata/deno_jsonc_as_import_map/deno.jsonc"
+    );
+
+    // JSONC can NOT be obtained as a module
+    assert!(eszip.get_module("file:///deno.jsonc").is_none());
+  }
 }
