@@ -799,7 +799,9 @@ mod tests {
 
   use crate::ModuleKind;
 
-  struct FileLoader;
+  struct FileLoader {
+    base_dir: String,
+  }
 
   macro_rules! assert_matches_file {
     ($source:ident, $file:literal) => {
@@ -818,7 +820,7 @@ mod tests {
     ) -> deno_graph::source::LoadFuture {
       match specifier.scheme() {
         "file" => {
-          let path = format!("./src/testdata/source{}", specifier.path());
+          let path = format!("{}{}", self.base_dir, specifier.path());
           Box::pin(async move {
             let path = Path::new(&path);
             let Ok(resolved) = path.canonicalize() else {
@@ -927,10 +929,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           module_analyzer: Some(&analyzer),
           ..Default::default()
@@ -965,10 +970,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///json.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           module_analyzer: Some(&analyzer),
           ..Default::default()
@@ -1002,10 +1010,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///dynamic.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           module_analyzer: Some(&analyzer),
           ..Default::default()
@@ -1038,10 +1049,13 @@ mod tests {
       vec![ModuleSpecifier::parse("file:///dynamic_data.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           module_analyzer: Some(&analyzer),
           ..Default::default()
@@ -1152,7 +1166,9 @@ mod tests {
 
   #[tokio::test]
   async fn import_map() {
-    let mut loader = FileLoader;
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     let resp = deno_graph::source::Loader::load(
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
@@ -1174,7 +1190,7 @@ mod tests {
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
           module_analyzer: Some(&analyzer),
@@ -1224,7 +1240,9 @@ mod tests {
   // https://github.com/denoland/eszip/issues/110
   #[tokio::test]
   async fn import_map_imported_from_program() {
-    let mut loader = FileLoader;
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     let resp = deno_graph::source::Loader::load(
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
@@ -1248,7 +1266,7 @@ mod tests {
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
           module_analyzer: Some(&analyzer),
