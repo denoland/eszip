@@ -70,7 +70,7 @@ async fn main() {
       Arc::new(import_map_content.as_bytes().to_vec()),
     )
   }
-  for specifier in &eszip.ordered_modules {
+  for specifier in eszip.specifiers() {
     println!("source: {specifier}")
   }
 
