@@ -598,7 +598,11 @@ impl EszipV2 {
 
   /// Get the module metadata for a given module specifier. This function will
   /// follow redirects. The returned module has functions that can be used to
-  /// obtain the module source and source map.
+  /// obtain the module source and source map. The module returned from this
+  /// function is guaranteed to be a valid module, which can be loaded into v8.
+  ///
+  /// Note that this function should be used to obtain a module; if you wish to
+  /// get an import map, use [`get_import_map`](Self::get_import_map) instead.
   pub fn get_module(&self, specifier: &str) -> Option<Module> {
     let module = self.lookup(specifier)?;
 
@@ -611,6 +615,12 @@ impl EszipV2 {
     Some(module)
   }
 
+  /// Get the import map for a given specifier.
+  ///
+  /// Note that this function should be used to obtain an import map; the returned
+  /// "Module" is not necessarily a valid module that can be loaded into v8 (in
+  /// other words, JSONC may be returned). If you wish to get a valid module,
+  /// use [`get_module`](Self::get_module) instead.
   pub fn get_import_map(&self, specifier: &str) -> Option<Module> {
     let import_map = self.lookup(specifier)?;
 
