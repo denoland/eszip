@@ -57,6 +57,13 @@ impl Eszip {
       Eszip::V2(eszip) => eszip.get_module(specifier),
     }
   }
+
+  pub fn get_import_map(&self, specifier: &str) -> Option<Module> {
+    match self {
+      Eszip::V1(eszip) => eszip.get_import_map(specifier),
+      Eszip::V2(eszip) => eszip.get_import_map(specifier),
+    }
+  }
 }
 
 pub struct Module {

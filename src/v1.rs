@@ -70,6 +70,12 @@ impl EszipV1 {
     }
   }
 
+  pub fn get_import_map(&self, _specifier: &str) -> Option<Module> {
+    // V1 never contains an import map in it. This method exists to make it
+    // consistent with V2's interface.
+    None
+  }
+
   /// Get source code of the module.
   pub(crate) fn get_module_source(
     &self,
