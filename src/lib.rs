@@ -51,10 +51,30 @@ impl Eszip {
     }
   }
 
+  /// Get the module metadata for a given module specifier. This function will
+  /// follow redirects. The returned module has functions that can be used to
+  /// obtain the module source and source map. The module returned from this
+  /// function is guaranteed to be a valid module, which can be loaded into v8.
+  ///
+  /// Note that this function should be used to obtain a module; if you wish to
+  /// get an import map, use [`get_import_map`](Self::get_import_map) instead.
   pub fn get_module(&self, specifier: &str) -> Option<Module> {
     match self {
       Eszip::V1(eszip) => eszip.get_module(specifier),
       Eszip::V2(eszip) => eszip.get_module(specifier),
+    }
+  }
+
+  /// Get the import map for a given specifier.
+  ///
+  /// Note that this function should be used to obtain an import map; the returned
+  /// "Module" is not necessarily a valid module that can be loaded into v8 (in
+  /// other words, JSONC may be returned). If you wish to get a valid module,
+  /// use [`get_module`](Self::get_module) instead.
+  pub fn get_import_map(&self, specifier: &str) -> Option<Module> {
+    match self {
+      Eszip::V1(eszip) => eszip.get_import_map(specifier),
+      Eszip::V2(eszip) => eszip.get_import_map(specifier),
     }
   }
 }
@@ -117,14 +137,18 @@ impl Module {
 }
 
 /// This is the kind of module that is being stored. This is the same enum as is
-/// present in [deno_core], but because we can not depend on that crate, this
-/// is a copy of that definition.
+/// present in [deno_core::ModuleType] except that this has additional variant
+/// `Jsonc` which is used when an import map is embedded in Deno's config file
+/// that can be JSONC.
+/// Note that a module of type `Jsonc` can be used only as an import map, not as
+/// a normal module.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ModuleKind {
   JavaScript = 0,
   Json = 1,
+  Jsonc = 2,
 }
 
 #[cfg(test)]

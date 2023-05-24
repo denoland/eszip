@@ -148,6 +148,7 @@ impl EszipV2 {
           let kind = match read!(1, "module kind")[0] {
             0 => ModuleKind::JavaScript,
             1 => ModuleKind::Json,
+            2 => ModuleKind::Jsonc,
             n => return Err(ParseError::InvalidV2ModuleKind(n, read)),
           };
           let source = if source_offset == 0 && source_len == 0 {
@@ -329,12 +330,14 @@ impl EszipV2 {
   ///
   /// If a module with this specifier is already present, then this is a no-op
   /// (except that this specifier will now be at the top of the archive).
-  pub fn add_import_map(&mut self, specifier: String, source: Arc<Vec<u8>>) {
-    let module = EszipV2Module::Module {
-      kind: ModuleKind::Json,
-      source: EszipV2SourceSlot::Ready(source),
-      source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
-    };
+  pub fn add_import_map(
+    &mut self,
+    kind: ModuleKind,
+    specifier: String,
+    source: Arc<Vec<u8>>,
+  ) {
+    debug_assert!(matches!(kind, ModuleKind::Json | ModuleKind::Jsonc));
+
     let mut modules = self.modules.lock().unwrap();
 
     // If an entry with the specifier already exists, we just move that to the
@@ -344,7 +347,14 @@ impl EszipV2 {
       return;
     }
 
-    modules.insert(specifier.clone(), module);
+    modules.insert(
+      specifier.clone(),
+      EszipV2Module::Module {
+        kind,
+        source: EszipV2SourceSlot::Ready(source),
+        source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+      },
+    );
     modules.to_front(&specifier);
   }
 
@@ -588,8 +598,42 @@ impl EszipV2 {
 
   /// Get the module metadata for a given module specifier. This function will
   /// follow redirects. The returned module has functions that can be used to
-  /// obtain the module source and source map.
+  /// obtain the module source and source map. The module returned from this
+  /// function is guaranteed to be a valid module, which can be loaded into v8.
+  ///
+  /// Note that this function should be used to obtain a module; if you wish to
+  /// get an import map, use [`get_import_map`](Self::get_import_map) instead.
   pub fn get_module(&self, specifier: &str) -> Option<Module> {
+    let module = self.lookup(specifier)?;
+
+    // JSONC is contained in this eszip only for use as an import map. In
+    // order for the caller to get this JSONC, call `get_import_map` instead.
+    if module.kind == ModuleKind::Jsonc {
+      return None;
+    }
+
+    Some(module)
+  }
+
+  /// Get the import map for a given specifier.
+  ///
+  /// Note that this function should be used to obtain an import map; the returned
+  /// "Module" is not necessarily a valid module that can be loaded into v8 (in
+  /// other words, JSONC may be returned). If you wish to get a valid module,
+  /// use [`get_module`](Self::get_module) instead.
+  pub fn get_import_map(&self, specifier: &str) -> Option<Module> {
+    let import_map = self.lookup(specifier)?;
+
+    // Import map must be either JSON or JSONC (but JSONC is a special case;
+    // it's allowed when embedded in a Deno's config file)
+    if import_map.kind == ModuleKind::JavaScript {
+      return None;
+    }
+
+    Some(import_map)
+  }
+
+  fn lookup(&self, specifier: &str) -> Option<Module> {
     let mut specifier = specifier;
     let mut visited = HashSet::new();
     let modules = self.modules.lock().unwrap();
@@ -765,7 +809,9 @@ mod tests {
 
   use crate::ModuleKind;
 
-  struct FileLoader;
+  struct FileLoader {
+    base_dir: String,
+  }
 
   macro_rules! assert_matches_file {
     ($source:ident, $file:literal) => {
@@ -784,7 +830,7 @@ mod tests {
     ) -> deno_graph::source::LoadFuture {
       match specifier.scheme() {
         "file" => {
-          let path = format!("./src/testdata/source{}", specifier.path());
+          let path = format!("{}{}", self.base_dir, specifier.path());
           Box::pin(async move {
             let path = Path::new(&path);
             let Ok(resolved) = path.canonicalize() else {
@@ -893,10 +939,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           module_analyzer: Some(&analyzer),
           ..Default::default()
@@ -931,10 +980,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///json.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           module_analyzer: Some(&analyzer),
           ..Default::default()
@@ -968,10 +1020,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///dynamic.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           module_analyzer: Some(&analyzer),
           ..Default::default()
@@ -1004,10 +1059,13 @@ mod tests {
       vec![ModuleSpecifier::parse("file:///dynamic_data.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           module_analyzer: Some(&analyzer),
           ..Default::default()
@@ -1118,7 +1176,9 @@ mod tests {
 
   #[tokio::test]
   async fn import_map() {
-    let mut loader = FileLoader;
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     let resp = deno_graph::source::Loader::load(
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
@@ -1140,7 +1200,7 @@ mod tests {
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
           module_analyzer: Some(&analyzer),
@@ -1156,7 +1216,11 @@ mod tests {
     )
     .unwrap();
     let import_map_bytes = Arc::new(content.as_bytes().to_vec());
-    eszip.add_import_map(specifier.to_string(), import_map_bytes);
+    eszip.add_import_map(
+      ModuleKind::Json,
+      specifier.to_string(),
+      import_map_bytes,
+    );
 
     let module = eszip.get_module("file:///import_map.json").unwrap();
     assert_eq!(module.specifier, "file:///import_map.json");
@@ -1186,7 +1250,9 @@ mod tests {
   // https://github.com/denoland/eszip/issues/110
   #[tokio::test]
   async fn import_map_imported_from_program() {
-    let mut loader = FileLoader;
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
     let resp = deno_graph::source::Loader::load(
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
@@ -1210,7 +1276,7 @@ mod tests {
     graph
       .build(
         roots,
-        &mut FileLoader,
+        &mut loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
           module_analyzer: Some(&analyzer),
@@ -1226,7 +1292,11 @@ mod tests {
     )
     .unwrap();
     let import_map_bytes = Arc::new(content.as_bytes().to_vec());
-    eszip.add_import_map(specifier.to_string(), import_map_bytes);
+    eszip.add_import_map(
+      ModuleKind::Json,
+      specifier.to_string(),
+      import_map_bytes,
+    );
 
     // Verify that the resulting eszip consists of two unique modules even
     // though `import_map.json` is referenced twice:
@@ -1239,5 +1309,80 @@ mod tests {
         "file:///import_import_map.js".to_string(),
       ]
     );
+  }
+
+  #[tokio::test]
+  async fn deno_jsonc_as_import_map() {
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/deno_jsonc_as_import_map".to_string(),
+    };
+    let resp = deno_graph::source::Loader::load(
+      &mut loader,
+      &Url::parse("file:///deno.jsonc").unwrap(),
+      false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let (specifier, content) = match resp {
+      deno_graph::source::LoadResponse::Module {
+        specifier, content, ..
+      } => (specifier, content),
+      _ => unimplemented!(),
+    };
+    let import_map = import_map::parse_from_value(
+      &specifier,
+      jsonc_parser::parse_to_serde_value(&content, &Default::default())
+        .unwrap()
+        .unwrap(),
+    )
+    .unwrap();
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::default();
+    graph
+      .build(
+        roots,
+        &mut loader,
+        BuildOptions {
+          resolver: Some(&ImportMapResolver(import_map.import_map)),
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let mut eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
+    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    eszip.add_import_map(
+      ModuleKind::Jsonc,
+      specifier.to_string(),
+      import_map_bytes,
+    );
+
+    assert_eq!(
+      eszip.specifiers(),
+      vec![
+        "file:///deno.jsonc".to_string(),
+        "file:///main.ts".to_string(),
+        "file:///a.ts".to_string(),
+      ],
+    );
+
+    // JSONC can be obtained by calling `get_import_map`
+    let deno_jsonc = eszip.get_import_map("file:///deno.jsonc").unwrap();
+    let source = deno_jsonc.source().await.unwrap();
+    assert_matches_file!(
+      source,
+      "./testdata/deno_jsonc_as_import_map/deno.jsonc"
+    );
+
+    // JSONC can NOT be obtained as a module
+    assert!(eszip.get_module("file:///deno.jsonc").is_none());
   }
 }
