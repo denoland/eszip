@@ -37,7 +37,7 @@ The file format looks as follows:
 
 ```
 Eszip:
-| Magic (8) | Header size (4) | Header (n) | Header hash (32) | Sources size (4) | Sources (n) | SourceMaps size (4) | SourceMaps (n) |
+| Magic (8) | Header size (4) | Header (n) | Header hash (32) | NPM snapshot size (4) | NPM snapshot (n) | NPM snapshot hash (32) | Sources size (4) | Sources (n) | SourceMaps size (4) | SourceMaps (n) |
 
 Header:
 ( | Specifier size (4) | Specifier (n) | Entry type (1) | Entry (n) | )*
@@ -47,6 +47,15 @@ Entry (redirect):
 
 Entry (module):
 | Source offset (4) | Source size (4) | SourceMap offset (4) | SourceMap size (4) | Module type (1) |
+
+Entry (npm specifier):
+| Package id (4) |
+
+NPM modules:
+( | Name size (4) | Name (n) | NPM dependencies size (4) | NPM dependencies (n) )*
+
+NPM dependencies:
+( | Name size (4) | Name (n) | Package id (4) | )*
 
 Sources:
 ( | Source (n) | Hash (32) | )*
