@@ -1,13 +1,9 @@
 {
-  "fmt": {
-    "files": {
-      "exclude": ["./npm", "./src/testdata/", "./target"]
-    }
-  },
   "tasks": {
     "build": "cp LICENSE js/LICENSE && RUSTFLAGS=--cfg=web_sys_unstable_apis deno run -A --unstable https://deno.land/x/wasmbuild@0.10.4/main.ts --out js",
     "node": "deno run -A ./build_npm.ts 0.0.0",
     "test": "deno test -A js/",
     "fmt": "deno fmt && cargo fmt --all"
-  }
+  },
+  "exclude": ["./npm", "./src/testdata/", "./target"]
 }
