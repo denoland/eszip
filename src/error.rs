@@ -22,6 +22,14 @@ pub enum ParseError {
   InvalidV2SourceOffset(usize),
   #[error("invalid eszip v2 source hash (specifier {0})")]
   InvalidV2SourceHash(String),
+  #[error("invalid eszip v3 npm snapshot hash")]
+  InvalidV3NpmSnapshotHash,
+  #[error("invalid eszip v3 npm package at index {0}. {1:#}")]
+  InvalidV3NpmPackageOffset(usize, std::io::Error),
+  #[error("invalid eszip v3 npm package '{0}'. {1:#}")]
+  InvalidV3NpmPackage(String, anyhow::Error),
+  #[error("invalid eszip v3 npm req '{0}'. {1:#}")]
+  InvalidV3NpmPackageReq(String, anyhow::Error),
 
   #[error(transparent)]
   Io(#[from] std::io::Error),

@@ -5,12 +5,13 @@ pub mod v2;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
 use futures::io::AsyncBufReadExt;
 use futures::io::AsyncReadExt;
 use futures::Future;
 use serde::Deserialize;
 use serde::Serialize;
-use v2::ESZIP_V2_MAGIC;
+use v2::EszipV2Modules;
 
 pub use crate::error::ParseError;
 pub use crate::v1::EszipV1;
@@ -39,7 +40,7 @@ impl Eszip {
     let mut reader = futures::io::BufReader::new(reader);
     reader.fill_buf().await?;
     let buffer = reader.buffer();
-    if buffer.len() >= 8 && &buffer[..8] == ESZIP_V2_MAGIC {
+    if EszipV2::has_magic(buffer) {
       let (eszip, fut) = EszipV2::parse(reader).await?;
       Ok((Eszip::V2(eszip), Box::pin(fut)))
     } else {
@@ -77,6 +78,16 @@ impl Eszip {
       Eszip::V2(eszip) => eszip.get_import_map(specifier),
     }
   }
+
+  /// Takes the npm snapshot out of the eszip.
+  pub fn take_npm_snapshot(
+    &mut self,
+  ) -> Option<ValidSerializedNpmResolutionSnapshot> {
+    match self {
+      Eszip::V1(_) => None,
+      Eszip::V2(eszip) => eszip.take_npm_snapshot(),
+    }
+  }
 }
 
 pub struct Module {
@@ -87,7 +98,7 @@ pub struct Module {
 
 pub enum ModuleInner {
   V1(EszipV1),
-  V2(EszipV2),
+  V2(EszipV2Modules),
 }
 
 impl Module {

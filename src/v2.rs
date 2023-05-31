@@ -12,6 +12,11 @@ use deno_ast::TranspiledSource;
 use deno_graph::CapturingModuleParser;
 use deno_graph::ModuleGraph;
 use deno_graph::ModuleParser;
+use deno_npm::resolution::SerializedNpmResolutionSnapshot;
+use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
+use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
+use deno_npm::NpmPackageId;
+use deno_semver::npm::NpmPackageReq;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
 use hashlink::linked_hash_map::LinkedHashMap;
@@ -24,20 +29,143 @@ use crate::Module;
 use crate::ModuleInner;
 pub use crate::ModuleKind;
 
-pub(crate) const ESZIP_V2_MAGIC: &[u8; 8] = b"ESZIP_V2";
+const ESZIP_V2_MAGIC: &[u8; 8] = b"ESZIP_V2";
+const ESZIP_V3_MAGIC: &[u8; 8] = b"ESZIP_V3";
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
 enum HeaderFrameKind {
   Module = 0,
   Redirect = 1,
+  NpmSpecifier = 2,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct EszipV2Modules(Arc<Mutex<LinkedHashMap<String, EszipV2Module>>>);
+
+impl EszipV2Modules {
+  pub(crate) async fn get_module_source<'a>(
+    &'a self,
+    specifier: &str,
+  ) -> Option<Arc<Vec<u8>>> {
+    poll_fn(|cx| {
+      let mut modules = self.0.lock().unwrap();
+      let module = modules.get_mut(specifier).unwrap();
+      let slot = match module {
+        EszipV2Module::Module { source, .. } => source,
+        EszipV2Module::Redirect { .. } => {
+          panic!("redirects are already resolved")
+        }
+      };
+      match slot {
+        EszipV2SourceSlot::Pending { wakers, .. } => {
+          wakers.push(cx.waker().clone());
+          Poll::Pending
+        }
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
+        EszipV2SourceSlot::Taken => Poll::Ready(None),
+      }
+    })
+    .await
+  }
+
+  pub(crate) async fn take_module_source<'a>(
+    &'a self,
+    specifier: &str,
+  ) -> Option<Arc<Vec<u8>>> {
+    poll_fn(|cx| {
+      let mut modules = self.0.lock().unwrap();
+      let module = modules.get_mut(specifier).unwrap();
+      let slot = match module {
+        EszipV2Module::Module { ref mut source, .. } => source,
+        EszipV2Module::Redirect { .. } => {
+          panic!("redirects are already resolved")
+        }
+      };
+      match slot {
+        EszipV2SourceSlot::Pending { wakers, .. } => {
+          wakers.push(cx.waker().clone());
+          return Poll::Pending;
+        }
+        EszipV2SourceSlot::Ready(_) => {},
+        EszipV2SourceSlot::Taken => return Poll::Ready(None),
+      };
+      let EszipV2SourceSlot::Ready(bytes) = std::mem::replace(slot, EszipV2SourceSlot::Taken) else { unreachable!() };
+      Poll::Ready(Some(bytes))
+    })
+    .await
+  }
+
+  pub(crate) async fn get_module_source_map<'a>(
+    &'a self,
+    specifier: &str,
+  ) -> Option<Arc<Vec<u8>>> {
+    poll_fn(|cx| {
+      let mut modules = self.0.lock().unwrap();
+      let module = modules.get_mut(specifier).unwrap();
+      let slot = match module {
+        EszipV2Module::Module { source_map, .. } => source_map,
+        EszipV2Module::Redirect { .. } => {
+          panic!("redirects are already resolved")
+        }
+      };
+      match slot {
+        EszipV2SourceSlot::Pending { wakers, .. } => {
+          wakers.push(cx.waker().clone());
+          Poll::Pending
+        }
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
+        EszipV2SourceSlot::Taken => Poll::Ready(None),
+      }
+    })
+    .await
+  }
+
+  pub(crate) async fn take_module_source_map<'a>(
+    &'a self,
+    specifier: &str,
+  ) -> Option<Arc<Vec<u8>>> {
+    let source = poll_fn(|cx| {
+      let mut modules = self.0.lock().unwrap();
+      let module = modules.get_mut(specifier).unwrap();
+      let slot = match module {
+        EszipV2Module::Module { source_map, .. } => source_map,
+        EszipV2Module::Redirect { .. } => {
+          panic!("redirects are already resolved")
+        }
+      };
+      match slot {
+        EszipV2SourceSlot::Pending { wakers, .. } => {
+          wakers.push(cx.waker().clone());
+          Poll::Pending
+        }
+        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
+        EszipV2SourceSlot::Taken => Poll::Ready(None),
+      }
+    })
+    .await;
+
+    // Drop the source map from memory.
+    let mut modules = self.0.lock().unwrap();
+    let module = modules.get_mut(specifier).unwrap();
+    match module {
+      EszipV2Module::Module { source_map, .. } => {
+        *source_map = EszipV2SourceSlot::Taken;
+      }
+      EszipV2Module::Redirect { .. } => {
+        panic!("redirects are already resolved")
+      }
+    };
+    source
+  }
 }
 
 /// Version 2 of the Eszip format. This format supports streaming sources and
 /// source maps.
 #[derive(Debug, Default)]
 pub struct EszipV2 {
-  modules: Arc<Mutex<LinkedHashMap<String, EszipV2Module>>>,
+  modules: EszipV2Modules,
+  npm_snapshot: Option<ValidSerializedNpmResolutionSnapshot>,
 }
 
 #[derive(Debug)]
@@ -73,6 +201,11 @@ impl EszipV2SourceSlot {
 }
 
 impl EszipV2 {
+  pub fn has_magic(buffer: &[u8]) -> bool {
+    buffer.len() >= 8
+      && (buffer[..8] == *ESZIP_V2_MAGIC || buffer[..8] == *ESZIP_V3_MAGIC)
+  }
+
   /// Parse a EszipV2 from an AsyncRead stream. This function returns once the
   /// header section of the eszip has been parsed. Once this function returns,
   /// the data section will not necessarially have been parsed yet. To parse
@@ -89,25 +222,18 @@ impl EszipV2 {
     let mut magic = [0u8; 8];
     reader.read_exact(&mut magic).await?;
 
-    if magic != *ESZIP_V2_MAGIC {
+    if !EszipV2::has_magic(&magic) {
       return Err(ParseError::InvalidV2);
     }
 
-    let header_len = read_u32(&mut reader).await? as usize;
-    let mut header_and_hash = vec![0u8; header_len + 32];
-    reader.read_exact(&mut header_and_hash).await?;
-
-    let header_bytes = &header_and_hash[..header_len];
-
-    let mut hasher = Sha256::new();
-    hasher.update(header_bytes);
-    let actual_hash = hasher.finalize();
-    let expected_hash = &header_and_hash[header_bytes.len()..];
-    if &*actual_hash != expected_hash {
+    let is_v3 = magic == *ESZIP_V3_MAGIC;
+    let header = HashedSection::read(&mut reader).await?;
+    if !header.hash_valid() {
       return Err(ParseError::InvalidV2HeaderHash);
     }
 
     let mut modules = LinkedHashMap::<String, EszipV2Module>::new();
+    let mut npm_specifiers = HashMap::new();
 
     let mut read = 0;
 
@@ -116,16 +242,16 @@ impl EszipV2 {
     // error.
     macro_rules! read {
       ($n:expr, $err:expr) => {{
-        if read + $n > header_len {
+        if read + $n > header.len() {
           return Err(ParseError::InvalidV2Header($err));
         }
         let start = read;
         read += $n;
-        &header_bytes[start..read]
+        &header.bytes()[start..read]
       }};
     }
 
-    while read < header_len {
+    while read < header.len() {
       let specifier_len =
         u32::from_be_bytes(read!(4, "specifier len").try_into().unwrap())
           as usize;
@@ -184,9 +310,21 @@ impl EszipV2 {
             .map_err(|_| ParseError::InvalidV2Specifier(read))?;
           modules.insert(specifier, EszipV2Module::Redirect { target });
         }
+        2 if is_v3 => {
+          // npm specifier
+          let pkg_id =
+            u32::from_be_bytes(read!(4, "npm package id").try_into().unwrap());
+          npm_specifiers.insert(specifier, EszipNpmPackageIndex(pkg_id));
+        }
         n => return Err(ParseError::InvalidV2EntryKind(n, read)),
       };
     }
+
+    let npm_snapshot = if is_v3 {
+      Some(read_npm_section(&mut reader, npm_specifiers).await?)
+    } else {
+      None
+    };
 
     let mut source_offsets = modules
       .iter()
@@ -321,7 +459,13 @@ impl EszipV2 {
       Ok(reader)
     };
 
-    Ok((EszipV2 { modules }, fut))
+    Ok((
+      EszipV2 {
+        modules: EszipV2Modules(modules),
+        npm_snapshot,
+      },
+      fut,
+    ))
   }
 
   /// Add an import map to the eszip archive. The import map will always be
@@ -338,7 +482,7 @@ impl EszipV2 {
   ) {
     debug_assert!(matches!(kind, ModuleKind::Json | ModuleKind::Jsonc));
 
-    let mut modules = self.modules.lock().unwrap();
+    let mut modules = self.modules.0.lock().unwrap();
 
     // If an entry with the specifier already exists, we just move that to the
     // top and return without inserting new source.
@@ -358,20 +502,45 @@ impl EszipV2 {
     modules.to_front(&specifier);
   }
 
+  /// Adds an npm resolution snapshot to the eszip.
+  pub fn add_npm_snapshot(
+    &mut self,
+    snapshot: ValidSerializedNpmResolutionSnapshot,
+  ) {
+    self.npm_snapshot = Some(snapshot);
+  }
+
+  /// Takes an npm resolution snapshot from the eszip.
+  pub fn take_npm_snapshot(
+    &mut self,
+  ) -> Option<ValidSerializedNpmResolutionSnapshot> {
+    self.npm_snapshot.take()
+  }
+
   /// Serialize the eszip archive into a byte buffer.
   pub fn into_bytes(self) -> Vec<u8> {
-    let mut header: Vec<u8> = ESZIP_V2_MAGIC.to_vec();
+    fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
+      let mut hasher = sha2::Sha256::new();
+      hasher.update(bytes);
+      hasher.finalize().into()
+    }
+
+    fn append_string(bytes: &mut Vec<u8>, string: &str) {
+      let len = string.len() as u32;
+      bytes.extend_from_slice(&len.to_be_bytes());
+      bytes.extend_from_slice(string.as_bytes());
+    }
+
+    let mut header: Vec<u8> = ESZIP_V3_MAGIC.to_vec();
     header.extend_from_slice(&[0u8; 4]); // add 4 bytes of space to put the header length in later
+    let mut npm_bytes: Vec<u8> = Vec::new();
     let mut sources: Vec<u8> = Vec::new();
     let mut source_maps: Vec<u8> = Vec::new();
 
-    let modules = self.modules.lock().unwrap();
+    let modules = self.modules.0.lock().unwrap();
 
     for (specifier, module) in modules.iter() {
-      let specifier_bytes = specifier.as_bytes();
-      let specifier_length = specifier_bytes.len() as u32;
-      header.extend_from_slice(&specifier_length.to_be_bytes());
-      header.extend_from_slice(specifier_bytes);
+      append_string(&mut header, specifier);
 
       match module {
         EszipV2Module::Module {
@@ -387,10 +556,7 @@ impl EszipV2 {
           if source_length > 0 {
             let source_offset = sources.len() as u32;
             sources.extend_from_slice(source_bytes);
-            let mut hasher = Sha256::new();
-            hasher.update(source_bytes);
-            let source_hash = hasher.finalize();
-            sources.extend_from_slice(&source_hash);
+            sources.extend_from_slice(&hash_bytes(source_bytes));
 
             header.extend_from_slice(&source_offset.to_be_bytes());
             header.extend_from_slice(&source_length.to_be_bytes());
@@ -405,10 +571,7 @@ impl EszipV2 {
           if source_map_length > 0 {
             let source_map_offset = source_maps.len() as u32;
             source_maps.extend_from_slice(source_map_bytes);
-            let mut hasher = Sha256::new();
-            hasher.update(source_map_bytes);
-            let source_map_hash = hasher.finalize();
-            source_maps.extend_from_slice(&source_map_hash);
+            source_maps.extend_from_slice(&hash_bytes(source_map_bytes));
 
             header.extend_from_slice(&source_map_offset.to_be_bytes());
             header.extend_from_slice(&source_map_length.to_be_bytes());
@@ -430,21 +593,54 @@ impl EszipV2 {
       }
     }
 
+    // add npm snapshot to header
+    if let Some(npm_snapshot) = self.npm_snapshot {
+      let npm_snapshot = npm_snapshot.as_serialized();
+      let ids_to_eszip_ids = npm_snapshot
+        .packages
+        .iter()
+        .enumerate()
+        .map(|(i, pkg)| (&pkg.id, i as u32))
+        .collect::<HashMap<_, _>>();
+
+      for (req, id) in &npm_snapshot.root_packages {
+        append_string(&mut header, &req.to_string());
+        header.push(HeaderFrameKind::NpmSpecifier as u8);
+        let id = ids_to_eszip_ids.get(&id).unwrap();
+        header.extend_from_slice(&id.to_be_bytes());
+      }
+
+      for pkg in &npm_snapshot.packages {
+        append_string(&mut npm_bytes, &pkg.id.as_serialized());
+        let deps_len = pkg.dependencies.len() as u32;
+        npm_bytes.extend_from_slice(&deps_len.to_be_bytes());
+        for (req, id) in &pkg.dependencies {
+          append_string(&mut npm_bytes, &req.to_string());
+          let id = ids_to_eszip_ids.get(&id).unwrap();
+          npm_bytes.extend_from_slice(&id.to_be_bytes());
+        }
+      }
+    }
+
     // populate header length
     let header_length =
-      (header.len() - ESZIP_V2_MAGIC.len() - size_of::<u32>()) as u32;
-    header[ESZIP_V2_MAGIC.len()..ESZIP_V2_MAGIC.len() + size_of::<u32>()]
+      (header.len() - ESZIP_V3_MAGIC.len() - size_of::<u32>()) as u32;
+    header[ESZIP_V3_MAGIC.len()..ESZIP_V3_MAGIC.len() + size_of::<u32>()]
       .copy_from_slice(&header_length.to_be_bytes());
 
     // add header hash
-    let header_bytes = &header[ESZIP_V2_MAGIC.len() + size_of::<u32>()..];
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(header_bytes);
-    let header_hash = hasher.finalize();
-    header.extend_from_slice(&header_hash);
+    let header_bytes = &header[ESZIP_V3_MAGIC.len() + size_of::<u32>()..];
+    header.extend_from_slice(&hash_bytes(header_bytes));
 
     let mut bytes = header;
 
+    // add npm snapshot
+    let npm_bytes_len = npm_bytes.len() as u32;
+    bytes.extend_from_slice(&npm_bytes_len.to_be_bytes());
+    bytes.extend_from_slice(&npm_bytes);
+    bytes.extend_from_slice(&hash_bytes(&npm_bytes));
+
+    // add sources
     let sources_len = sources.len() as u32;
     bytes.extend_from_slice(&sources_len.to_be_bytes());
     bytes.extend_from_slice(&sources);
@@ -592,7 +788,8 @@ impl EszipV2 {
     }
 
     Ok(Self {
-      modules: Arc::new(Mutex::new(modules)),
+      modules: EszipV2Modules(Arc::new(Mutex::new(modules))),
+      npm_snapshot: None,
     })
   }
 
@@ -636,7 +833,7 @@ impl EszipV2 {
   fn lookup(&self, specifier: &str) -> Option<Module> {
     let mut specifier = specifier;
     let mut visited = HashSet::new();
-    let modules = self.modules.lock().unwrap();
+    let modules = self.modules.0.lock().unwrap();
     loop {
       visited.insert(specifier);
       let module = modules.get(specifier)?;
@@ -645,9 +842,7 @@ impl EszipV2 {
           return Some(Module {
             specifier: specifier.to_string(),
             kind: *kind,
-            inner: ModuleInner::V2(EszipV2 {
-              modules: self.modules.clone(),
-            }),
+            inner: ModuleInner::V2(self.modules.clone()),
           });
         }
         EszipV2Module::Redirect { ref target } => {
@@ -660,124 +855,210 @@ impl EszipV2 {
     }
   }
 
-  pub(crate) async fn get_module_source<'a>(
-    &'a self,
-    specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
-    poll_fn(|cx| {
-      let mut modules = self.modules.lock().unwrap();
-      let module = modules.get_mut(specifier).unwrap();
-      let slot = match module {
-        EszipV2Module::Module { source, .. } => source,
-        EszipV2Module::Redirect { .. } => {
-          panic!("redirects are already resolved")
-        }
-      };
-      match slot {
-        EszipV2SourceSlot::Pending { wakers, .. } => {
-          wakers.push(cx.waker().clone());
-          Poll::Pending
-        }
-        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
-        EszipV2SourceSlot::Taken => Poll::Ready(None),
-      }
-    })
-    .await
+  pub fn specifiers(&self) -> Vec<String> {
+    let modules = self.modules.0.lock().unwrap();
+    modules.keys().cloned().collect()
   }
+}
 
-  pub(crate) async fn take_module_source<'a>(
-    &'a self,
-    specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
-    poll_fn(|cx| {
-      let mut modules = self.modules.lock().unwrap();
-      let module = modules.get_mut(specifier).unwrap();
-      let slot = match module {
-        EszipV2Module::Module { ref mut source, .. } => source,
-        EszipV2Module::Redirect { .. } => {
-          panic!("redirects are already resolved")
-        }
-      };
-      match slot {
-        EszipV2SourceSlot::Pending { wakers, .. } => {
-          wakers.push(cx.waker().clone());
-          return Poll::Pending;
-        }
-        EszipV2SourceSlot::Ready(_) => {},
-        EszipV2SourceSlot::Taken => return Poll::Ready(None),
-      };
-      let EszipV2SourceSlot::Ready(bytes) = std::mem::replace(slot, EszipV2SourceSlot::Taken) else { unreachable!() };
-      Poll::Ready(Some(bytes))
-    })
-    .await
+async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
+  reader: &mut futures::io::BufReader<R>,
+  npm_specifiers: HashMap<String, EszipNpmPackageIndex>,
+) -> Result<ValidSerializedNpmResolutionSnapshot, ParseError> {
+  let snapshot = HashedSection::read(reader).await?;
+  if !snapshot.hash_valid() {
+    return Err(ParseError::InvalidV3NpmSnapshotHash);
   }
-
-  pub(crate) async fn get_module_source_map<'a>(
-    &'a self,
-    specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
-    poll_fn(|cx| {
-      let mut modules = self.modules.lock().unwrap();
-      let module = modules.get_mut(specifier).unwrap();
-      let slot = match module {
-        EszipV2Module::Module { source_map, .. } => source_map,
-        EszipV2Module::Redirect { .. } => {
-          panic!("redirects are already resolved")
-        }
-      };
-      match slot {
-        EszipV2SourceSlot::Pending { wakers, .. } => {
-          wakers.push(cx.waker().clone());
-          Poll::Pending
-        }
-        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
-        EszipV2SourceSlot::Taken => Poll::Ready(None),
-      }
-    })
-    .await
+  let mut packages = Vec::new();
+  let original_bytes = snapshot.bytes();
+  let mut bytes = original_bytes;
+  while !bytes.is_empty() {
+    let result = EszipNpmModule::parse(bytes).map_err(|err| {
+      let offset = original_bytes.len() - bytes.len();
+      ParseError::InvalidV3NpmPackageOffset(offset, err)
+    })?;
+    bytes = result.0;
+    packages.push(result.1);
   }
-
-  pub(crate) async fn take_module_source_map<'a>(
-    &'a self,
-    specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
-    let source = poll_fn(|cx| {
-      let mut modules = self.modules.lock().unwrap();
-      let module = modules.get_mut(specifier).unwrap();
-      let slot = match module {
-        EszipV2Module::Module { source_map, .. } => source_map,
-        EszipV2Module::Redirect { .. } => {
-          panic!("redirects are already resolved")
+  let mut pkg_index_to_pkg_id = HashMap::with_capacity(packages.len());
+  for (i, pkg) in packages.iter().enumerate() {
+    let id = NpmPackageId::from_serialized(&pkg.name).map_err(|err| {
+      ParseError::InvalidV3NpmPackage(pkg.name.clone(), err.into())
+    })?;
+    pkg_index_to_pkg_id.insert(EszipNpmPackageIndex(i as u32), id);
+  }
+  let mut final_packages = Vec::with_capacity(packages.len());
+  for (i, pkg) in packages.into_iter().enumerate() {
+    let eszip_id = EszipNpmPackageIndex(i as u32);
+    let id = pkg_index_to_pkg_id.get(&eszip_id).unwrap();
+    let mut dependencies = HashMap::with_capacity(pkg.dependencies.len());
+    for (key, pkg_index) in pkg.dependencies {
+      let id = match pkg_index_to_pkg_id.get(&pkg_index) {
+        Some(id) => id,
+        None => {
+          return Err(ParseError::InvalidV3NpmPackage(
+            pkg.name,
+            anyhow::anyhow!("missing index '{}'", pkg_index.0),
+          ));
         }
       };
-      match slot {
-        EszipV2SourceSlot::Pending { wakers, .. } => {
-          wakers.push(cx.waker().clone());
-          Poll::Pending
-        }
-        EszipV2SourceSlot::Ready(bytes) => Poll::Ready(Some(bytes.clone())),
-        EszipV2SourceSlot::Taken => Poll::Ready(None),
-      }
-    })
-    .await;
-
-    // Drop the source map from memory.
-    let mut modules = self.modules.lock().unwrap();
-    let module = modules.get_mut(specifier).unwrap();
-    match module {
-      EszipV2Module::Module { source_map, .. } => {
-        *source_map = EszipV2SourceSlot::Taken;
-      }
-      EszipV2Module::Redirect { .. } => {
-        panic!("redirects are already resolved")
+      dependencies.insert(key, id.clone());
+    }
+    final_packages.push(SerializedNpmResolutionSnapshotPackage {
+      id: id.clone(),
+      cpu: Default::default(),
+      os: Default::default(),
+      dist: Default::default(),
+      dependencies,
+      optional_dependencies: Default::default(),
+    });
+  }
+  let mut root_packages = HashMap::with_capacity(npm_specifiers.len());
+  for (req, pkg_index) in npm_specifiers {
+    let id = match pkg_index_to_pkg_id.get(&pkg_index) {
+      Some(id) => id,
+      None => {
+        return Err(ParseError::InvalidV3NpmPackageReq(
+          req,
+          anyhow::anyhow!("missing index '{}'", pkg_index.0),
+        ));
       }
     };
-    source
+    let req = NpmPackageReq::from_str(&req)
+      .map_err(|err| ParseError::InvalidV3NpmPackageReq(req, err.into()))?;
+    root_packages.insert(req, id.clone());
+  }
+  Ok(
+    SerializedNpmResolutionSnapshot {
+      packages: final_packages,
+      root_packages,
+    }
+    // this is ok because we have already verified that all the
+    // identifiers found in the snapshot are valid via the
+    // eszip npm package id -> npm package id mapping
+    .into_valid_unsafe(),
+  )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct EszipNpmPackageIndex(u32);
+
+impl EszipNpmPackageIndex {
+  pub fn parse(input: &[u8]) -> std::io::Result<(&[u8], Self)> {
+    let (input, pkg_index) = parse_u32(input)?;
+    Ok((input, EszipNpmPackageIndex(pkg_index)))
+  }
+}
+
+struct EszipNpmModule {
+  name: String,
+  dependencies: HashMap<String, EszipNpmPackageIndex>,
+}
+
+impl EszipNpmModule {
+  pub fn parse(input: &[u8]) -> std::io::Result<(&[u8], EszipNpmModule)> {
+    let (input, name) = parse_string(input)?;
+    let (input, dep_size) = parse_u32(input)?;
+    let mut deps = HashMap::with_capacity(dep_size as usize);
+    let mut input = input;
+    for _ in 0..dep_size {
+      let parsed_dep = EszipNpmDependency::parse(input)?;
+      input = parsed_dep.0;
+      let dep = parsed_dep.1;
+      deps.insert(dep.0, dep.1);
+    }
+    Ok((
+      input,
+      EszipNpmModule {
+        name,
+        dependencies: deps,
+      },
+    ))
+  }
+}
+
+struct EszipNpmDependency(String, EszipNpmPackageIndex);
+
+impl EszipNpmDependency {
+  pub fn parse(input: &[u8]) -> std::io::Result<(&[u8], Self)> {
+    let (input, name) = parse_string(input)?;
+    let (input, pkg_index) = EszipNpmPackageIndex::parse(input)?;
+    Ok((input, EszipNpmDependency(name, pkg_index)))
+  }
+}
+
+fn parse_string(input: &[u8]) -> std::io::Result<(&[u8], String)> {
+  let (input, size) = parse_u32(input)?;
+  let (input, name) = move_bytes(input, size as usize)?;
+  let text = String::from_utf8(name.to_vec()).map_err(|_| {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid utf-8 data")
+  })?;
+  Ok((input, text))
+}
+
+fn parse_u32(input: &[u8]) -> std::io::Result<(&[u8], u32)> {
+  let (input, value_bytes) = move_bytes(input, 4)?;
+  let value = u32::from_be_bytes(value_bytes.try_into().unwrap());
+  Ok((input, value))
+}
+
+fn move_bytes(
+  bytes: &[u8],
+  len: usize,
+) -> Result<(&[u8], &[u8]), std::io::Error> {
+  if bytes.len() < len {
+    Err(std::io::Error::new(
+      std::io::ErrorKind::UnexpectedEof,
+      "unexpected end of bytes",
+    ))
+  } else {
+    Ok((&bytes[len..], &bytes[..len]))
+  }
+}
+
+struct HashedSection(Vec<u8>);
+
+impl HashedSection {
+  /// Reads a section that's defined as:
+  ///   Size (4) | Body (n) | Hash (32)
+  async fn read<R: futures::io::AsyncRead + Unpin>(
+    reader: &mut futures::io::BufReader<R>,
+  ) -> Result<HashedSection, ParseError> {
+    let len = read_u32(reader).await? as usize;
+    HashedSection::read_with_size(reader, len).await
   }
 
-  pub fn specifiers(&self) -> Vec<String> {
-    let modules = self.modules.lock().unwrap();
-    modules.keys().cloned().collect()
+  /// Reads a section that's defined as:
+  ///   Body (n) | Hash (32)
+  /// Where the `n` size is provided.
+  async fn read_with_size<R: futures::io::AsyncRead + Unpin>(
+    reader: &mut futures::io::BufReader<R>,
+    len: usize,
+  ) -> Result<HashedSection, ParseError> {
+    let mut body_and_hash = vec![0u8; len + 32];
+    reader.read_exact(&mut body_and_hash).await?;
+
+    Ok(HashedSection(body_and_hash))
+  }
+
+  fn bytes(&self) -> &[u8] {
+    &self.0[..self.len()]
+  }
+
+  fn len(&self) -> usize {
+    self.0.len() - 32
+  }
+
+  fn hash(&self) -> &[u8] {
+    &self.0[self.len()..]
+  }
+
+  fn hash_valid(&self) -> bool {
+    let mut hasher = Sha256::new();
+    hasher.update(self.bytes());
+    let actual_hash = hasher.finalize();
+    let expected_hash = self.hash();
+    &*actual_hash == expected_hash
   }
 }
 
@@ -791,6 +1072,7 @@ async fn read_u32<R: futures::io::AsyncRead + Unpin>(
 
 #[cfg(test)]
 mod tests {
+  use std::collections::HashMap;
   use std::io::Cursor;
   use std::path::Path;
   use std::sync::Arc;
@@ -801,6 +1083,10 @@ mod tests {
   use deno_graph::CapturingModuleAnalyzer;
   use deno_graph::ModuleGraph;
   use deno_graph::ModuleSpecifier;
+  use deno_npm::resolution::SerializedNpmResolutionSnapshot;
+  use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
+  use deno_npm::NpmPackageId;
+  use deno_semver::npm::NpmPackageReq;
   use futures::io::AllowStdIo;
   use futures::io::BufReader;
   use import_map::ImportMap;
@@ -1384,5 +1670,94 @@ mod tests {
 
     // JSONC can NOT be obtained as a module
     assert!(eszip.get_module("file:///deno.jsonc").is_none());
+  }
+
+  #[tokio::test]
+  async fn npm_packages() {
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+    graph
+      .build(
+        roots,
+        &mut loader,
+        BuildOptions {
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let original_snapshot = SerializedNpmResolutionSnapshot {
+      root_packages: root_pkgs(&[
+        ("package@^1.2", "package@1.2.2"),
+        ("package@^1", "package@1.2.2"),
+        ("d@5", "d@5.0.0"),
+      ]),
+      packages: Vec::from([
+        new_package("package@1.2.2", &[("a", "a@2.2.3"), ("b", "b@1.2.3")]),
+        new_package("a@2.2.3", &[]),
+        new_package("b@1.2.3", &[("someotherspecifier", "c@1.1.1")]),
+        new_package("c@1.1.1", &[]),
+        new_package("d@5.0.0", &[]),
+      ]),
+    }
+    .into_valid()
+    .unwrap();
+    let mut eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
+    eszip.add_npm_snapshot(original_snapshot.clone());
+    let taken_snapshot = eszip.take_npm_snapshot();
+    assert!(taken_snapshot.is_some());
+    assert!(eszip.take_npm_snapshot().is_none());
+    eszip.add_npm_snapshot(taken_snapshot.unwrap());
+    let cursor = Cursor::new(eszip.into_bytes());
+    let (mut eszip, _) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
+        .await
+        .unwrap();
+    let snapshot = eszip.take_npm_snapshot().unwrap();
+    assert_eq!(snapshot.as_serialized(), original_snapshot.as_serialized());
+  }
+
+  fn root_pkgs(pkgs: &[(&str, &str)]) -> HashMap<NpmPackageReq, NpmPackageId> {
+    pkgs
+      .iter()
+      .map(|(key, value)| {
+        (
+          NpmPackageReq::from_str(key).unwrap(),
+          NpmPackageId::from_serialized(value).unwrap(),
+        )
+      })
+      .collect()
+  }
+
+  fn new_package(
+    id: &str,
+    deps: &[(&str, &str)],
+  ) -> SerializedNpmResolutionSnapshotPackage {
+    SerializedNpmResolutionSnapshotPackage {
+      id: NpmPackageId::from_serialized(id).unwrap(),
+      dependencies: deps
+        .iter()
+        .map(|(key, value)| {
+          (
+            key.to_string(),
+            NpmPackageId::from_serialized(value).unwrap(),
+          )
+        })
+        .collect(),
+      cpu: Default::default(),
+      os: Default::default(),
+      dist: Default::default(),
+      optional_dependencies: Default::default(),
+    }
   }
 }
