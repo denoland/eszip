@@ -130,9 +130,8 @@ async function run(eszip: ESZIP, specifier: string) {
     await eszip.extract(tmpDir);
     const importMap = join(tmpDir, "source", "import_map.json");
     // Run
-    const p = Deno.run({
-      cmd: [
-        "deno",
+    const p = new Deno.Command("deno", {
+      args: [
         "run",
         "-A",
         "--no-check",
@@ -141,7 +140,7 @@ async function run(eszip: ESZIP, specifier: string) {
         specifier,
       ],
     });
-    await p.status();
+    await p.output();
   } finally {
     // Cleanup
     await Deno.remove(tmpDir, { recursive: true });
