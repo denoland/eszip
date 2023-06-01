@@ -30,7 +30,7 @@ use crate::ModuleInner;
 pub use crate::ModuleKind;
 
 const ESZIP_V2_MAGIC: &[u8; 8] = b"ESZIP_V2";
-const ESZIP_V3_MAGIC: &[u8; 8] = b"ESZIP_V3";
+const ESZIP_V2_1_MAGIC: &[u8; 8] = b"ESZIP2.1";
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
@@ -203,7 +203,7 @@ impl EszipV2SourceSlot {
 impl EszipV2 {
   pub fn has_magic(buffer: &[u8]) -> bool {
     buffer.len() >= 8
-      && (buffer[..8] == *ESZIP_V2_MAGIC || buffer[..8] == *ESZIP_V3_MAGIC)
+      && (buffer[..8] == *ESZIP_V2_MAGIC || buffer[..8] == *ESZIP_V2_1_MAGIC)
   }
 
   /// Parse a EszipV2 from an AsyncRead stream. This function returns once the
@@ -226,7 +226,7 @@ impl EszipV2 {
       return Err(ParseError::InvalidV2);
     }
 
-    let is_v3 = magic == *ESZIP_V3_MAGIC;
+    let is_v3 = magic == *ESZIP_V2_1_MAGIC;
     let header = HashedSection::read(&mut reader).await?;
     if !header.hash_valid() {
       return Err(ParseError::InvalidV2HeaderHash);
@@ -321,7 +321,7 @@ impl EszipV2 {
     }
 
     let npm_snapshot = if is_v3 {
-      Some(read_npm_section(&mut reader, npm_specifiers).await?)
+      read_npm_section(&mut reader, npm_specifiers).await?
     } else {
       None
     };
@@ -531,7 +531,7 @@ impl EszipV2 {
       bytes.extend_from_slice(string.as_bytes());
     }
 
-    let mut header: Vec<u8> = ESZIP_V3_MAGIC.to_vec();
+    let mut header: Vec<u8> = ESZIP_V2_1_MAGIC.to_vec();
     header.extend_from_slice(&[0u8; 4]); // add 4 bytes of space to put the header length in later
     let mut npm_bytes: Vec<u8> = Vec::new();
     let mut sources: Vec<u8> = Vec::new();
@@ -593,7 +593,7 @@ impl EszipV2 {
       }
     }
 
-    // add npm snapshot to header
+    // add npm snapshot entries to the header and fill the npm bytes
     if let Some(npm_snapshot) = self.npm_snapshot {
       let npm_snapshot = npm_snapshot.as_serialized();
       let ids_to_eszip_ids = npm_snapshot
@@ -624,12 +624,12 @@ impl EszipV2 {
 
     // populate header length
     let header_length =
-      (header.len() - ESZIP_V3_MAGIC.len() - size_of::<u32>()) as u32;
-    header[ESZIP_V3_MAGIC.len()..ESZIP_V3_MAGIC.len() + size_of::<u32>()]
+      (header.len() - ESZIP_V2_1_MAGIC.len() - size_of::<u32>()) as u32;
+    header[ESZIP_V2_1_MAGIC.len()..ESZIP_V2_1_MAGIC.len() + size_of::<u32>()]
       .copy_from_slice(&header_length.to_be_bytes());
 
     // add header hash
-    let header_bytes = &header[ESZIP_V3_MAGIC.len() + size_of::<u32>()..];
+    let header_bytes = &header[ESZIP_V2_1_MAGIC.len() + size_of::<u32>()..];
     header.extend_from_slice(&hash_bytes(header_bytes));
 
     let mut bytes = header;
@@ -771,6 +771,8 @@ impl EszipV2 {
           Ok(())
         }
         deno_graph::Module::External(_)
+        // we ignore any npm modules found in the graph and instead
+        // rely solely on the npm snapshot for this information
         | deno_graph::Module::Npm(_)
         | deno_graph::Module::Node(_) => Ok(()),
       }
@@ -864,18 +866,21 @@ impl EszipV2 {
 async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
   reader: &mut futures::io::BufReader<R>,
   npm_specifiers: HashMap<String, EszipNpmPackageIndex>,
-) -> Result<ValidSerializedNpmResolutionSnapshot, ParseError> {
+) -> Result<Option<ValidSerializedNpmResolutionSnapshot>, ParseError> {
   let snapshot = HashedSection::read(reader).await?;
   if !snapshot.hash_valid() {
-    return Err(ParseError::InvalidV3NpmSnapshotHash);
+    return Err(ParseError::InvalidV2NpmSnapshotHash);
+  }
+  let original_bytes = snapshot.bytes();
+  if original_bytes.is_empty() {
+    return Ok(None);
   }
   let mut packages = Vec::new();
-  let original_bytes = snapshot.bytes();
   let mut bytes = original_bytes;
   while !bytes.is_empty() {
     let result = EszipNpmModule::parse(bytes).map_err(|err| {
       let offset = original_bytes.len() - bytes.len();
-      ParseError::InvalidV3NpmPackageOffset(offset, err)
+      ParseError::InvalidV2NpmPackageOffset(offset, err)
     })?;
     bytes = result.0;
     packages.push(result.1);
@@ -883,7 +888,7 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
   let mut pkg_index_to_pkg_id = HashMap::with_capacity(packages.len());
   for (i, pkg) in packages.iter().enumerate() {
     let id = NpmPackageId::from_serialized(&pkg.name).map_err(|err| {
-      ParseError::InvalidV3NpmPackage(pkg.name.clone(), err.into())
+      ParseError::InvalidV2NpmPackage(pkg.name.clone(), err.into())
     })?;
     pkg_index_to_pkg_id.insert(EszipNpmPackageIndex(i as u32), id);
   }
@@ -896,7 +901,7 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
       let id = match pkg_index_to_pkg_id.get(&pkg_index) {
         Some(id) => id,
         None => {
-          return Err(ParseError::InvalidV3NpmPackage(
+          return Err(ParseError::InvalidV2NpmPackage(
             pkg.name,
             anyhow::anyhow!("missing index '{}'", pkg_index.0),
           ));
@@ -918,17 +923,17 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
     let id = match pkg_index_to_pkg_id.get(&pkg_index) {
       Some(id) => id,
       None => {
-        return Err(ParseError::InvalidV3NpmPackageReq(
+        return Err(ParseError::InvalidV2NpmPackageReq(
           req,
           anyhow::anyhow!("missing index '{}'", pkg_index.0),
         ));
       }
     };
     let req = NpmPackageReq::from_str(&req)
-      .map_err(|err| ParseError::InvalidV3NpmPackageReq(req, err.into()))?;
+      .map_err(|err| ParseError::InvalidV2NpmPackageReq(req, err.into()))?;
     root_packages.insert(req, id.clone());
   }
-  Ok(
+  Ok(Some(
     SerializedNpmResolutionSnapshot {
       packages: final_packages,
       root_packages,
@@ -937,7 +942,7 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
     // identifiers found in the snapshot are valid via the
     // eszip npm package id -> npm package id mapping
     .into_valid_unsafe(),
-  )
+  ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1719,12 +1724,71 @@ mod tests {
     assert!(eszip.take_npm_snapshot().is_none());
     eszip.add_npm_snapshot(taken_snapshot.unwrap());
     let cursor = Cursor::new(eszip.into_bytes());
-    let (mut eszip, _) =
+    let (mut eszip, fut) =
       super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
         .await
         .unwrap();
     let snapshot = eszip.take_npm_snapshot().unwrap();
     assert_eq!(snapshot.as_serialized(), original_snapshot.as_serialized());
+
+    // ensure the eszip still works otherwise
+    fut.await.unwrap();
+    let module = eszip.get_module("file:///main.ts").unwrap();
+    assert_eq!(module.specifier, "file:///main.ts");
+    let source = module.source().await.unwrap();
+    assert_matches_file!(source, "./testdata/emit/main.ts");
+    let source_map = module.source_map().await.unwrap();
+    assert_matches_file!(source_map, "./testdata/emit/main.ts.map");
+    assert_eq!(module.kind, ModuleKind::JavaScript);
+    let module = eszip.get_module("file:///a.ts").unwrap();
+    assert_eq!(module.specifier, "file:///b.ts");
+    let source = module.source().await.unwrap();
+    assert_matches_file!(source, "./testdata/emit/b.ts");
+    let source_map = module.source_map().await.unwrap();
+    assert_matches_file!(source_map, "./testdata/emit/b.ts.map");
+    assert_eq!(module.kind, ModuleKind::JavaScript);
+  }
+
+  #[tokio::test]
+  async fn npm_packages_loaded_file() {
+    let file =
+      std::fs::File::open("./src/testdata/npm_packages.eszip2_1").unwrap();
+    let (mut eszip, _) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
+    let npm_packages = eszip.take_npm_snapshot().unwrap();
+    let expected_snapshot = SerializedNpmResolutionSnapshot {
+      root_packages: root_pkgs(&[
+        ("package@^1.2", "package@1.2.2"),
+        ("package@^1", "package@1.2.2"),
+        ("d@5", "d@5.0.0"),
+      ]),
+      packages: Vec::from([
+        new_package("package@1.2.2", &[("a", "a@2.2.3"), ("b", "b@1.2.3")]),
+        new_package("a@2.2.3", &[("b", "b@1.2.3")]),
+        new_package(
+          "b@1.2.3",
+          &[("someotherspecifier", "c@1.1.1"), ("a", "a@2.2.3")],
+        ),
+        new_package("c@1.1.1", &[]),
+        new_package("d@5.0.0", &[]),
+      ]),
+    }
+    .into_valid()
+    .unwrap();
+    assert_eq!(
+      npm_packages.as_serialized(),
+      expected_snapshot.as_serialized()
+    );
+
+    let file =
+      std::fs::File::open("./src/testdata/no_npm_packages.eszip2_1").unwrap();
+    let (mut eszip, _) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
+    assert!(eszip.take_npm_snapshot().is_none());
   }
 
   fn root_pkgs(pkgs: &[(&str, &str)]) -> HashMap<NpmPackageReq, NpmPackageId> {
