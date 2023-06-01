@@ -911,8 +911,7 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
     }
     final_packages.push(SerializedNpmResolutionSnapshotPackage {
       id: id.clone(),
-      cpu: Default::default(),
-      os: Default::default(),
+      system: Default::default(),
       dist: Default::default(),
       dependencies,
       optional_dependencies: Default::default(),
@@ -1831,8 +1830,7 @@ mod tests {
           )
         })
         .collect(),
-      cpu: Default::default(),
-      os: Default::default(),
+      system: Default::default(),
       dist: Default::default(),
       optional_dependencies: Default::default(),
     }
