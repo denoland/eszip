@@ -1752,6 +1752,7 @@ mod tests {
 
   #[tokio::test]
   async fn npm_packages_loaded_file() {
+    // packages
     let file =
       std::fs::File::open("./src/testdata/npm_packages.eszip2_1").unwrap();
     let (mut eszip, _) =
@@ -1783,6 +1784,7 @@ mod tests {
       expected_snapshot.as_serialized()
     );
 
+    // no packages
     let file =
       std::fs::File::open("./src/testdata/no_npm_packages.eszip2_1").unwrap();
     let (mut eszip, _) =
@@ -1790,6 +1792,16 @@ mod tests {
         .await
         .unwrap();
     assert!(eszip.take_npm_snapshot().is_none());
+
+    // invalid file with one byte changed in the npm snapshot
+    let file =
+      std::fs::File::open("./src/testdata/npm_packages_invalid_1.eszip2_1")
+        .unwrap();
+    let err = super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+      .await
+      .err()
+      .unwrap();
+    assert_eq!(err.to_string(), "invalid eszip v2.1 npm snapshot hash");
   }
 
   fn root_pkgs(pkgs: &[(&str, &str)]) -> HashMap<NpmPackageReq, NpmPackageId> {
