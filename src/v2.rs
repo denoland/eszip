@@ -1707,7 +1707,8 @@ mod tests {
         new_package("a@2.2.3", &[]),
         new_package("b@1.2.3", &[("someotherspecifier", "c@1.1.1")]),
         new_package("c@1.1.1", &[]),
-        new_package("d@5.0.0", &[]),
+        new_package("d@5.0.0", &[("e", "e@6.0.0")]),
+        new_package("e@6.0.0", &[("d", "d@5.0.0")]),
       ]),
     }
     .into_valid()
