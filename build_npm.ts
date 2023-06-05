@@ -1,4 +1,4 @@
-import { build, emptyDir } from "https://deno.land/x/dnt@0.28.0/mod.ts";
+import { build, emptyDir } from "https://deno.land/x/dnt@0.37.0/mod.ts";
 
 await emptyDir("./npm");
 Deno.mkdirSync("npm/esm", { recursive: true });
@@ -29,6 +29,17 @@ await build({
     bugs: {
       url: "https://github.com/denoland/eszip/issues",
     },
+  },
+  compilerOptions: {
+    lib: ["dom", "es2021"],
+  },
+  filterDiagnostic(diagnostic) {
+    if (
+      diagnostic.file?.fileName.endsWith("wasmbuild@0.14.1/loader.ts")
+    ) {
+      return false;
+    }
+    return true;
   },
 });
 
