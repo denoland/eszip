@@ -652,8 +652,8 @@ impl EszipV2 {
     bytes
   }
 
-  /// Validates and turns a [deno_graph::ModuleGraph] into an [EszipV2]. All
-  /// modules from the graph will be transpiled and stored in the eszip archive.
+  /// Turn a [deno_graph::ModuleGraph] into an [EszipV2]. All modules from the
+  /// graph will be transpiled and stored in the eszip archive.
   ///
   /// The ordering of the modules in the graph is dependant on the module graph
   /// tree. The root module is added to the top of the archive, and the leaves
@@ -664,13 +664,6 @@ impl EszipV2 {
     parser: &CapturingModuleParser,
     mut emit_options: EmitOptions,
   ) -> Result<Self, anyhow::Error> {
-    graph.valid()?;
-
-    // ensure there are no errors in any module slots (ex. redirects)
-    if let Some(error) = graph.errors().next() {
-      return Err(error.clone().into());
-    }
-
     emit_options.inline_sources = true;
     emit_options.inline_source_map = false;
     emit_options.source_map = true;
@@ -1220,6 +1213,7 @@ mod tests {
         },
       )
       .await;
+    graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
