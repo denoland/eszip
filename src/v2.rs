@@ -1085,6 +1085,7 @@ mod tests {
   use deno_graph::source::LoadResponse;
   use deno_graph::BuildOptions;
   use deno_graph::CapturingModuleAnalyzer;
+  use deno_graph::GraphKind;
   use deno_graph::ModuleGraph;
   use deno_graph::ModuleSpecifier;
   use deno_npm::resolution::SerializedNpmResolutionSnapshot;
@@ -1201,7 +1202,7 @@ mod tests {
     }
 
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     graph
       .build(
         roots,
@@ -1228,7 +1229,7 @@ mod tests {
   async fn from_graph_redirect() {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     let mut loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
@@ -1269,7 +1270,7 @@ mod tests {
   async fn from_graph_json() {
     let roots = vec![ModuleSpecifier::parse("file:///json.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     let mut loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
@@ -1309,7 +1310,7 @@ mod tests {
   async fn from_graph_dynamic() {
     let roots = vec![ModuleSpecifier::parse("file:///dynamic.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     let mut loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
@@ -1348,7 +1349,7 @@ mod tests {
     let roots =
       vec![ModuleSpecifier::parse("file:///dynamic_data.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     let mut loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
@@ -1486,7 +1487,7 @@ mod tests {
     let import_map = import_map::parse_from_json(&specifier, &content).unwrap();
     let roots = vec![ModuleSpecifier::parse("file:///mapped.js").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     graph
       .build(
         roots,
@@ -1562,7 +1563,7 @@ mod tests {
       // This file imports `import_map.json` as a module.
       vec![ModuleSpecifier::parse("file:///import_import_map.js").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     graph
       .build(
         roots,
