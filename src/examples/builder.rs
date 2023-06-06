@@ -55,6 +55,8 @@ async fn main() {
     )
     .await;
 
+  graph.valid().unwrap();
+
   let mut eszip = eszip::EszipV2::from_graph(
     graph,
     &analyzer.as_capturing_parser(),

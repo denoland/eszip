@@ -296,6 +296,9 @@ pub async fn build_eszip(
       },
     )
     .await;
+  graph
+    .valid()
+    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let mut eszip = eszip::EszipV2::from_graph(
     graph,
     &analyzer.as_capturing_parser(),

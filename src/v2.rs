@@ -1243,6 +1243,7 @@ mod tests {
         },
       )
       .await;
+    graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
@@ -1283,6 +1284,7 @@ mod tests {
         },
       )
       .await;
+    graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
@@ -1322,6 +1324,7 @@ mod tests {
         },
       )
       .await;
+    graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
@@ -1360,6 +1363,7 @@ mod tests {
         },
       )
       .await;
+    graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
@@ -1495,6 +1499,7 @@ mod tests {
         },
       )
       .await;
+    graph.valid().unwrap();
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
@@ -1570,6 +1575,7 @@ mod tests {
         },
       )
       .await;
+    graph.valid().unwrap();
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
