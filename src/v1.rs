@@ -12,7 +12,7 @@ use crate::ModuleInner;
 use crate::ModuleKind;
 use crate::ParseError;
 
-pub const ESZIP_V1_GRAPH_VERSION: u32 = 1;
+const ESZIP_V1_GRAPH_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EszipV1 {
