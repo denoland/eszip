@@ -8,6 +8,7 @@ use deno_graph::GraphKind;
 use deno_graph::ModuleGraph;
 use deno_graph::ModuleSpecifier;
 use eszip::v2::Url;
+use eszip::ModuleKind;
 use futures::io::AsyncRead;
 use futures::io::BufReader;
 use import_map::ImportMap;
@@ -305,6 +306,7 @@ pub async fn build_eszip(
     maybe_import_map_data
   {
     eszip.add_import_map(
+      ModuleKind::Json,
       import_map_specifier.to_string(),
       Arc::new(import_map_content.as_bytes().to_vec()),
     )

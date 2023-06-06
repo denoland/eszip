@@ -65,11 +65,12 @@ async fn main() {
     maybe_import_map_data
   {
     eszip.add_import_map(
+      eszip::ModuleKind::Json,
       import_map_specifier.to_string(),
       Arc::new(import_map_content.as_bytes().to_vec()),
     )
   }
-  for specifier in &eszip.ordered_modules {
+  for specifier in eszip.specifiers() {
     println!("source: {specifier}")
   }
 

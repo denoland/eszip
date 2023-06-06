@@ -17,7 +17,7 @@ jobs:
         uses: dsherret/rust-toolchain-file@v1
 
       - name: Install Deno
-        uses: denoland/setup-deno@v1.0.0
+        uses: denoland/setup-deno@v1
         with:
           deno-version: 1.x
 

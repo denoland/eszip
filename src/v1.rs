@@ -12,7 +12,7 @@ use crate::ModuleInner;
 use crate::ModuleKind;
 use crate::ParseError;
 
-pub const ESZIP_V1_GRAPH_VERSION: u32 = 1;
+const ESZIP_V1_GRAPH_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EszipV1 {
@@ -68,6 +68,12 @@ impl EszipV1 {
         }
       }
     }
+  }
+
+  pub fn get_import_map(&self, _specifier: &str) -> Option<Module> {
+    // V1 never contains an import map in it. This method exists to make it
+    // consistent with V2's interface.
+    None
   }
 
   /// Get source code of the module.

@@ -1,6 +1,6 @@
 [package]
 name = "eszip"
-version = "0.40.0"
+version = "0.43.0"
 authors = ["the Deno authors"]
 edition = "2021"
 repository = "https://github.com/denoland/eszip"
@@ -30,9 +30,12 @@ path = "src/examples/viewer.rs"
 [dependencies]
 anyhow = "1"
 base64 = "0.21.0"
-deno_ast = { version = "0.25.0", features = ["transpiling"] }
-deno_graph = "0.47.0"
+deno_ast = { version = "0.27.0", features = ["transpiling"] }
+deno_graph = "0.49.0"
+deno_npm = "0.8.0"
+deno_semver = "0.2.2"
 futures = "0.3.26"
+hashlink = "0.8.2"
 serde = "1"
 serde_json = "1"
 sha2 = "0.10.1"
@@ -44,3 +47,4 @@ import_map = "0.15.0"
 pretty_assertions = "1"
 tokio = { version = "1", features = ["macros", "rt"] }
 reqwest = { version = "0.11", features = ["rustls-tls"] }
+jsonc-parser = { version = "0.21.1", features = ["serde"] }
