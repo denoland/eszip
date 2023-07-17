@@ -531,7 +531,15 @@ impl EszipV2 {
       bytes.extend_from_slice(string.as_bytes());
     }
 
-    let mut header: Vec<u8> = ESZIP_V2_1_MAGIC.to_vec();
+    // We serialize as ESZIP2.1 only if we have an npm snapshot. This is to
+    // maximize backwards compatibility of newly created archives with older
+    // deserializers.
+    let has_npm_snapshot = self.npm_snapshot.is_some();
+    let mut header = if has_npm_snapshot {
+      ESZIP_V2_1_MAGIC.to_vec()
+    } else {
+      ESZIP_V2_MAGIC.to_vec()
+    };
     header.extend_from_slice(&[0u8; 4]); // add 4 bytes of space to put the header length in later
     let mut npm_bytes: Vec<u8> = Vec::new();
     let mut sources: Vec<u8> = Vec::new();
@@ -634,11 +642,14 @@ impl EszipV2 {
 
     let mut bytes = header;
 
-    // add npm snapshot
-    let npm_bytes_len = npm_bytes.len() as u32;
-    bytes.extend_from_slice(&npm_bytes_len.to_be_bytes());
-    bytes.extend_from_slice(&npm_bytes);
-    bytes.extend_from_slice(&hash_bytes(&npm_bytes));
+    // add npm snapshot, if we are creating a v2.1 archive
+    assert_eq!(has_npm_snapshot, !npm_bytes.is_empty());
+    if !npm_bytes.is_empty() {
+      let npm_bytes_len = npm_bytes.len() as u32;
+      bytes.extend_from_slice(&npm_bytes_len.to_be_bytes());
+      bytes.extend_from_slice(&npm_bytes);
+      bytes.extend_from_slice(&hash_bytes(&npm_bytes));
+    }
 
     // add sources
     let sources_len = sources.len() as u32;
