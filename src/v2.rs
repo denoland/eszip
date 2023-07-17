@@ -603,7 +603,7 @@ impl EszipV2 {
 
     // add npm snapshot entries to the header and fill the npm bytes
     if let Some(npm_snapshot) = self.npm_snapshot {
-      let npm_snapshot = npm_snapshot.as_serialized();
+      let npm_snapshot = npm_snapshot.into_serialized();
       let ids_to_eszip_ids = npm_snapshot
         .packages
         .iter()
@@ -611,7 +611,10 @@ impl EszipV2 {
         .map(|(i, pkg)| (&pkg.id, i as u32))
         .collect::<HashMap<_, _>>();
 
-      for (req, id) in &npm_snapshot.root_packages {
+      let mut root_packages: Vec<_> =
+        npm_snapshot.root_packages.into_iter().collect();
+      root_packages.sort();
+      for (req, id) in root_packages {
         append_string(&mut header, &req.to_string());
         header.push(HeaderFrameKind::NpmSpecifier as u8);
         let id = ids_to_eszip_ids.get(&id).unwrap();
@@ -622,7 +625,13 @@ impl EszipV2 {
         append_string(&mut npm_bytes, &pkg.id.as_serialized());
         let deps_len = pkg.dependencies.len() as u32;
         npm_bytes.extend_from_slice(&deps_len.to_be_bytes());
-        for (req, id) in &pkg.dependencies {
+        let mut deps: Vec<_> = pkg
+          .dependencies
+          .iter()
+          .map(|(a, b)| (a.clone(), b.clone()))
+          .collect();
+        deps.sort();
+        for (req, id) in deps {
           append_string(&mut npm_bytes, &req.to_string());
           let id = ids_to_eszip_ids.get(&id).unwrap();
           npm_bytes.extend_from_slice(&id.to_be_bytes());
@@ -1454,7 +1463,9 @@ mod tests {
         .await
         .unwrap();
     fut.await.unwrap();
-    let cursor = Cursor::new(eszip.into_bytes());
+    let bytes = eszip.into_bytes();
+    insta::assert_debug_snapshot!(bytes);
+    let cursor = Cursor::new(bytes);
     let (eszip, fut) =
       super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
         .await
@@ -1735,7 +1746,9 @@ mod tests {
     assert!(taken_snapshot.is_some());
     assert!(eszip.take_npm_snapshot().is_none());
     eszip.add_npm_snapshot(taken_snapshot.unwrap());
-    let cursor = Cursor::new(eszip.into_bytes());
+    let bytes = eszip.into_bytes();
+    insta::assert_debug_snapshot!(bytes);
+    let cursor = Cursor::new(bytes);
     let (mut eszip, fut) =
       super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
         .await
