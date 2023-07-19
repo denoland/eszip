@@ -507,7 +507,9 @@ impl EszipV2 {
     &mut self,
     snapshot: ValidSerializedNpmResolutionSnapshot,
   ) {
-    self.npm_snapshot = Some(snapshot);
+    if !snapshot.as_serialized().packages.is_empty() {
+      self.npm_snapshot = Some(snapshot);
+    }
   }
 
   /// Takes an npm resolution snapshot from the eszip.
@@ -1826,6 +1828,48 @@ mod tests {
       .err()
       .unwrap();
     assert_eq!(err.to_string(), "invalid eszip v2.1 npm snapshot hash");
+  }
+
+  #[tokio::test]
+  async fn npm_empty_snapshot() {
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::default();
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+    graph
+      .build(
+        roots,
+        &mut loader,
+        BuildOptions {
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let original_snapshot = SerializedNpmResolutionSnapshot {
+      root_packages: root_pkgs(&[]),
+      packages: Vec::from([]),
+    }
+    .into_valid()
+    .unwrap();
+    let mut eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
+    eszip.add_npm_snapshot(original_snapshot.clone());
+    let bytes = eszip.into_bytes();
+    insta::assert_debug_snapshot!(bytes);
+    let cursor = Cursor::new(bytes);
+    let (mut eszip, _) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
+        .await
+        .unwrap();
+    assert!(eszip.take_npm_snapshot().is_none());
   }
 
   fn root_pkgs(pkgs: &[(&str, &str)]) -> HashMap<NpmPackageReq, NpmPackageId> {
