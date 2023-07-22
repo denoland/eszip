@@ -47,7 +47,7 @@ impl EszipV2Modules {
   pub(crate) async fn get_module_source<'a>(
     &'a self,
     specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  ) -> Option<Arc<[u8]>> {
     poll_fn(|cx| {
       let mut modules = self.0.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -72,7 +72,7 @@ impl EszipV2Modules {
   pub(crate) async fn take_module_source<'a>(
     &'a self,
     specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  ) -> Option<Arc<[u8]>> {
     poll_fn(|cx| {
       let mut modules = self.0.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -99,7 +99,7 @@ impl EszipV2Modules {
   pub(crate) async fn get_module_source_map<'a>(
     &'a self,
     specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  ) -> Option<Arc<[u8]>> {
     poll_fn(|cx| {
       let mut modules = self.0.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -124,7 +124,7 @@ impl EszipV2Modules {
   pub(crate) async fn take_module_source_map<'a>(
     &'a self,
     specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  ) -> Option<Arc<[u8]>> {
     let source = poll_fn(|cx| {
       let mut modules = self.0.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -187,7 +187,7 @@ pub enum EszipV2SourceSlot {
     length: usize,
     wakers: Vec<Waker>,
   },
-  Ready(Arc<Vec<u8>>),
+  Ready(Arc<[u8]>),
   Taken,
 }
 
@@ -278,7 +278,7 @@ impl EszipV2 {
             n => return Err(ParseError::InvalidV2ModuleKind(n, read)),
           };
           let source = if source_offset == 0 && source_len == 0 {
-            EszipV2SourceSlot::Ready(Arc::new(vec![]))
+            EszipV2SourceSlot::Ready(Arc::new([]))
           } else {
             EszipV2SourceSlot::Pending {
               offset: source_offset as usize,
@@ -287,7 +287,7 @@ impl EszipV2 {
             }
           };
           let source_map = if source_map_offset == 0 && source_map_len == 0 {
-            EszipV2SourceSlot::Ready(Arc::new(vec![]))
+            EszipV2SourceSlot::Ready(Arc::new([]))
           } else {
             EszipV2SourceSlot::Pending {
               offset: source_map_offset as usize,
@@ -392,7 +392,7 @@ impl EszipV2 {
             EszipV2Module::Module { ref mut source, .. } => {
               let slot = std::mem::replace(
                 source,
-                EszipV2SourceSlot::Ready(Arc::new(source_bytes)),
+                EszipV2SourceSlot::Ready(Arc::from(source_bytes)),
               );
 
               match slot {
@@ -440,7 +440,7 @@ impl EszipV2 {
             } => {
               let slot = std::mem::replace(
                 source_map,
-                EszipV2SourceSlot::Ready(Arc::new(source_map_bytes)),
+                EszipV2SourceSlot::Ready(Arc::from(source_map_bytes)),
               );
 
               match slot {
@@ -478,7 +478,7 @@ impl EszipV2 {
     &mut self,
     kind: ModuleKind,
     specifier: String,
-    source: Arc<Vec<u8>>,
+    source: Arc<[u8]>,
   ) {
     debug_assert!(matches!(kind, ModuleKind::Json | ModuleKind::Jsonc));
 
@@ -496,7 +496,7 @@ impl EszipV2 {
       EszipV2Module::Module {
         kind,
         source: EszipV2SourceSlot::Ready(source),
-        source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+        source_map: EszipV2SourceSlot::Ready(Arc::new([])),
       },
     );
     modules.to_front(&specifier);
@@ -723,9 +723,12 @@ impl EszipV2 {
 
       match module {
         deno_graph::Module::Esm(module) => {
-          let (source, source_map) = match module.media_type {
+          let source: Arc<[u8]>;
+          let source_map: Arc<[u8]>;
+          match module.media_type {
             deno_graph::MediaType::JavaScript | deno_graph::MediaType::Mjs => {
-              (module.source.as_bytes().to_owned(), vec![])
+              source = Arc::from(module.source.clone());
+              source_map = Arc::new( []);
             }
             deno_graph::MediaType::Jsx
             | deno_graph::MediaType::TypeScript
@@ -742,8 +745,8 @@ impl EszipV2 {
                 text,
                 source_map: maybe_source_map,
               } = parsed_source.transpile(emit_options)?;
-              let source_map = maybe_source_map.unwrap_or_default();
-              (text.into_bytes(), source_map.into_bytes())
+              source = Arc::from(text.into_bytes());
+              source_map = Arc::from(maybe_source_map.unwrap_or_default().into_bytes());
             }
             _ => {
               return Err(anyhow::anyhow!(
@@ -757,8 +760,8 @@ impl EszipV2 {
           let specifier = module.specifier.to_string();
           let eszip_module = EszipV2Module::Module {
             kind: ModuleKind::JavaScript,
-            source: EszipV2SourceSlot::Ready(Arc::new(source)),
-            source_map: EszipV2SourceSlot::Ready(Arc::new(source_map)),
+            source: EszipV2SourceSlot::Ready(source),
+            source_map: EszipV2SourceSlot::Ready(source_map),
           };
           modules.insert(specifier, eszip_module);
 
@@ -782,10 +785,8 @@ impl EszipV2 {
           let specifier = module.specifier.to_string();
           let eszip_module = EszipV2Module::Module {
             kind: ModuleKind::Json,
-            source: EszipV2SourceSlot::Ready(Arc::new(
-              module.source.as_bytes().to_owned(),
-            )),
-            source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+            source: EszipV2SourceSlot::Ready( module.source.clone().into()),
+            source_map: EszipV2SourceSlot::Ready(Arc::new([])),
           };
           modules.insert(specifier, eszip_module);
           Ok(())
@@ -1528,7 +1529,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    let import_map_bytes = Arc::from(content);
     eszip.add_import_map(
       ModuleKind::Json,
       specifier.to_string(),
@@ -1604,7 +1605,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    let import_map_bytes = Arc::from(content);
     eszip.add_import_map(
       ModuleKind::Json,
       specifier.to_string(),
@@ -1671,7 +1672,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    let import_map_bytes = Arc::from(content);
     eszip.add_import_map(
       ModuleKind::Jsonc,
       specifier.to_string(),
