@@ -160,6 +160,7 @@ pub enum ModuleKind {
   JavaScript = 0,
   Json = 1,
   Jsonc = 2,
+  OpaqueData = 3,
 }
 
 #[cfg(test)]

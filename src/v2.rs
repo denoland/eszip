@@ -275,6 +275,7 @@ impl EszipV2 {
             0 => ModuleKind::JavaScript,
             1 => ModuleKind::Json,
             2 => ModuleKind::Jsonc,
+            3 => ModuleKind::OpaqueData,
             n => return Err(ParseError::InvalidV2ModuleKind(n, read)),
           };
           let source = if source_offset == 0 && source_len == 0 {
@@ -500,6 +501,19 @@ impl EszipV2 {
       },
     );
     modules.to_front(&specifier);
+  }
+
+  /// Add an opaque data to the eszip.
+  pub fn add_opaque_data(&mut self, specifier: String, data: Arc<[u8]>) {
+    let mut modules = self.modules.0.lock().unwrap();
+    modules.insert(
+      specifier,
+      EszipV2Module::Module {
+        kind: ModuleKind::OpaqueData,
+        source: EszipV2SourceSlot::Ready(data),
+        source_map: EszipV2SourceSlot::Ready(Arc::new([])),
+      },
+    );
   }
 
   /// Adds an npm resolution snapshot to the eszip.
@@ -1871,6 +1885,26 @@ mod tests {
         .await
         .unwrap();
     assert!(eszip.take_npm_snapshot().is_none());
+  }
+
+  #[tokio::test]
+  async fn opaque_data() {
+    let mut eszip = super::EszipV2::default();
+    let opaque_data: Arc<[u8]> = Arc::new([1, 2, 3]);
+    eszip.add_opaque_data("+s/foobar".to_string(), opaque_data.clone());
+    let bytes = eszip.into_bytes();
+    insta::assert_debug_snapshot!(bytes);
+    let cursor = Cursor::new(bytes);
+    let (eszip, fut) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
+        .await
+        .unwrap();
+    fut.await.unwrap();
+    let opaque_data = eszip.get_module("+s/foobar").unwrap();
+    assert_eq!(opaque_data.specifier, "+s/foobar");
+    let source = opaque_data.source().await.unwrap();
+    assert_eq!(&*source, &[1, 2, 3]);
+    assert_eq!(opaque_data.kind, ModuleKind::OpaqueData);
   }
 
   fn root_pkgs(pkgs: &[(&str, &str)]) -> HashMap<NpmPackageReq, NpmPackageId> {
