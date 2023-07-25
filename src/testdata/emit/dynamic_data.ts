@@ -1,1 +1,1 @@
-const { Nani  } = await import("data:application/javascript,export const Nani = '何'");
+const { Nani } = await import("data:application/javascript,export const Nani = '何'");
