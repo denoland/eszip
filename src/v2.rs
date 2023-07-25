@@ -1331,13 +1331,13 @@ mod tests {
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
     let source = module.source().await.unwrap();
-    assert_matches_file!(source, "./testdata/emit/json.ts");
+    assert_matches_file!(source, "./testdata/source/json.ts");
     let _source_map = module.source_map().await.unwrap();
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json").unwrap();
     assert_eq!(module.specifier, "file:///data.json");
     let source = module.source().await.unwrap();
-    assert_matches_file!(source, "./testdata/emit/data.json");
+    assert_matches_file!(source, "./testdata/source/data.json");
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
     assert_eq!(module.kind, ModuleKind::Json);
@@ -1669,7 +1669,7 @@ mod tests {
     .unwrap();
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     graph
       .build(
         roots,
@@ -1720,7 +1720,7 @@ mod tests {
   async fn npm_packages() {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     let mut loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
@@ -1849,7 +1849,7 @@ mod tests {
   async fn npm_empty_snapshot() {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     let mut loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
