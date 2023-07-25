@@ -1,7 +1,7 @@
 // @generated file from wasmbuild -- do not edit
 // deno-lint-ignore-file
 // deno-fmt-ignore-file
-// source-hash: 7175f13c5f4d5c79e9a2043018db7cba116d9aa8
+// source-hash: 9bb2b9d229ad350690988a4727b58fa2ef07cfdf
 let wasm;
 
 const heap = new Array(128).fill(undefined);
@@ -420,18 +420,6 @@ const imports = {
       const ret = BigInt.asUintN(64, arg0);
       return addHeapObject(ret);
     },
-    __wbg_new_0394642eae39db16: function () {
-      const ret = new Array();
-      return addHeapObject(ret);
-    },
-    __wbindgen_string_new: function (arg0, arg1) {
-      const ret = getStringFromWasm0(arg0, arg1);
-      return addHeapObject(ret);
-    },
-    __wbg_push_109cfc26d02582dd: function (arg0, arg1) {
-      const ret = getObject(arg0).push(getObject(arg1));
-      return ret;
-    },
     __wbg_length_820c786973abdd8a: function (arg0) {
       const ret = getObject(arg0).length;
       return ret;
@@ -459,6 +447,18 @@ const imports = {
     __wbg_new_09938a7d020f049b: function (arg0) {
       const ret = new Uint8Array(getObject(arg0));
       return addHeapObject(ret);
+    },
+    __wbg_new_0394642eae39db16: function () {
+      const ret = new Array();
+      return addHeapObject(ret);
+    },
+    __wbindgen_string_new: function (arg0, arg1) {
+      const ret = getStringFromWasm0(arg0, arg1);
+      return addHeapObject(ret);
+    },
+    __wbg_push_109cfc26d02582dd: function (arg0, arg1) {
+      const ret = getObject(arg0).push(getObject(arg1));
+      return ret;
     },
     __wbg_String_88810dfeb4021902: function (arg0, arg1) {
       const ret = String(getObject(arg1));
@@ -692,7 +692,7 @@ const imports = {
       const ret = getObject(arg0).then(getObject(arg1), getObject(arg2));
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper7823: function (arg0, arg1, arg2) {
+    __wbindgen_closure_wrapper7827: function (arg0, arg1, arg2) {
       const ret = makeMutClosure(arg0, arg1, 285, __wbg_adapter_40);
       return addHeapObject(ret);
     },
