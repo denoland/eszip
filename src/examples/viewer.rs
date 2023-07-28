@@ -13,11 +13,16 @@ async fn main() {
   let fut = async move {
     let specifiers = eszip.specifiers();
     for specifier in specifiers {
-      let module = if specifier.ends_with(".json") || specifier.ends_with(".jsonc") {
-        eszip.get_import_map(&specifier).expect(&format!("specifier not found {specifier}"))
-      } else {
-        eszip.get_module(&specifier).expect(&format!("specifier not found {specifier}"))
-      };
+      let module =
+        if specifier.ends_with(".json") || specifier.ends_with(".jsonc") {
+          eszip
+            .get_import_map(&specifier)
+            .unwrap_or_else(|| panic!("specifier not found {specifier}"))
+        } else {
+          eszip
+            .get_module(&specifier)
+            .unwrap_or_else(|| panic!("specifier not found {specifier}"))
+        };
       if module.specifier == specifier {
         println!("Specifier: {specifier}",);
         println!("Kind: {kind:?}", kind = module.kind);

@@ -77,10 +77,7 @@ impl EszipV1 {
   }
 
   /// Get source code of the module.
-  pub(crate) fn get_module_source(
-    &self,
-    specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  pub(crate) fn get_module_source(&self, specifier: &str) -> Option<Arc<[u8]>> {
     let specifier = &Url::parse(specifier).ok()?;
     let modules = self.modules.lock().unwrap();
     let module = modules.get(specifier).unwrap();
@@ -88,13 +85,13 @@ impl EszipV1 {
       ModuleInfo::Redirect(_) => panic!("Redirects should be resolved"),
       ModuleInfo::Source(module) => {
         let source = module.transpiled.as_ref().unwrap_or(&module.source);
-        Some(Arc::new(source.clone().into_bytes()))
+        Some(source.clone().into())
       }
     }
   }
 
   /// Removes the module from the modules map and returns the source code.
-  pub(crate) fn take(&self, specifier: &str) -> Option<Arc<Vec<u8>>> {
+  pub(crate) fn take(&self, specifier: &str) -> Option<Arc<[u8]>> {
     let specifier = &Url::parse(specifier).ok()?;
     let mut modules = self.modules.lock().unwrap();
     // Note: we don't have a need to preserve the module in the map for v1, so we can
@@ -105,7 +102,7 @@ impl EszipV1 {
       ModuleInfo::Redirect(_) => panic!("Redirects should be resolved"),
       ModuleInfo::Source(module_source) => {
         let source = module_source.transpiled.unwrap_or(module_source.source);
-        Some(Arc::new(source.into_bytes()))
+        Some(source.into())
       }
     }
   }
@@ -119,8 +116,8 @@ pub enum ModuleInfo {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModuleSource {
-  pub source: String,
-  pub transpiled: Option<String>,
+  pub source: Arc<str>,
+  pub transpiled: Option<Arc<str>>,
   pub content_type: Option<String>,
   pub deps: Vec<Url>,
 }
@@ -145,7 +142,7 @@ mod tests {
       }
       crate::ModuleInner::V2(_) => unreachable!(),
     };
-    assert_eq!(*bytes, b"addEventListener(\"fetch\", (event)=>{\n    event.respondWith(new Response(\"Hello World\", {\n        headers: {\n            \"content-type\": \"text/plain\"\n        }\n    }));\n});\n//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIjxodHRwczovL2dpc3QuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2x1Y2FjYXNvbmF0by9mM2UyMTQwNTMyMjI1OWNhNGVkMTU1NzIyMzkwZmRhMi9yYXcvZTI1YWNiNDliNjgxZThlMWRhNWEyYTMzNzQ0YjdhMzZkNTM4NzEyZC9oZWxsby5qcz4iXSwic291cmNlc0NvbnRlbnQiOlsiYWRkRXZlbnRMaXN0ZW5lcihcImZldGNoXCIsIChldmVudCkgPT4ge1xuICBldmVudC5yZXNwb25kV2l0aChuZXcgUmVzcG9uc2UoXCJIZWxsbyBXb3JsZFwiLCB7XG4gICAgaGVhZGVyczogeyBcImNvbnRlbnQtdHlwZVwiOiBcInRleHQvcGxhaW5cIiB9LFxuICB9KSk7XG59KTsiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IkFBQUEsZ0JBQUEsRUFBQSxLQUFBLElBQUEsS0FBQTtBQUNBLFNBQUEsQ0FBQSxXQUFBLEtBQUEsUUFBQSxFQUFBLFdBQUE7QUFDQSxlQUFBO2FBQUEsWUFBQSxJQUFBLFVBQUEifQ==");
+    assert_eq!(&*bytes, b"addEventListener(\"fetch\", (event)=>{\n    event.respondWith(new Response(\"Hello World\", {\n        headers: {\n            \"content-type\": \"text/plain\"\n        }\n    }));\n});\n//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIjxodHRwczovL2dpc3QuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2x1Y2FjYXNvbmF0by9mM2UyMTQwNTMyMjI1OWNhNGVkMTU1NzIyMzkwZmRhMi9yYXcvZTI1YWNiNDliNjgxZThlMWRhNWEyYTMzNzQ0YjdhMzZkNTM4NzEyZC9oZWxsby5qcz4iXSwic291cmNlc0NvbnRlbnQiOlsiYWRkRXZlbnRMaXN0ZW5lcihcImZldGNoXCIsIChldmVudCkgPT4ge1xuICBldmVudC5yZXNwb25kV2l0aChuZXcgUmVzcG9uc2UoXCJIZWxsbyBXb3JsZFwiLCB7XG4gICAgaGVhZGVyczogeyBcImNvbnRlbnQtdHlwZVwiOiBcInRleHQvcGxhaW5cIiB9LFxuICB9KSk7XG59KTsiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IkFBQUEsZ0JBQUEsRUFBQSxLQUFBLElBQUEsS0FBQTtBQUNBLFNBQUEsQ0FBQSxXQUFBLEtBQUEsUUFBQSxFQUFBLFdBQUE7QUFDQSxlQUFBO2FBQUEsWUFBQSxJQUFBLFVBQUEifQ==");
   }
 
   #[tokio::test]

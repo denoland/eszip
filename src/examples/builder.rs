@@ -69,7 +69,7 @@ async fn main() {
     eszip.add_import_map(
       eszip::ModuleKind::Json,
       import_map_specifier.to_string(),
-      Arc::new(import_map_content.as_bytes().to_vec()),
+      Arc::from(import_map_content),
     )
   }
   for specifier in eszip.specifiers() {

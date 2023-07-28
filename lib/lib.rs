@@ -311,7 +311,7 @@ pub async fn build_eszip(
     eszip.add_import_map(
       ModuleKind::Json,
       import_map_specifier.to_string(),
-      Arc::new(import_map_content.as_bytes().to_vec()),
+      Arc::from(import_map_content),
     )
   }
   Ok(Uint8Array::from(eszip.into_bytes().as_slice()))

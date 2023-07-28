@@ -47,7 +47,7 @@ impl EszipV2Modules {
   pub(crate) async fn get_module_source<'a>(
     &'a self,
     specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  ) -> Option<Arc<[u8]>> {
     poll_fn(|cx| {
       let mut modules = self.0.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -72,7 +72,7 @@ impl EszipV2Modules {
   pub(crate) async fn take_module_source<'a>(
     &'a self,
     specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  ) -> Option<Arc<[u8]>> {
     poll_fn(|cx| {
       let mut modules = self.0.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -99,7 +99,7 @@ impl EszipV2Modules {
   pub(crate) async fn get_module_source_map<'a>(
     &'a self,
     specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  ) -> Option<Arc<[u8]>> {
     poll_fn(|cx| {
       let mut modules = self.0.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -124,7 +124,7 @@ impl EszipV2Modules {
   pub(crate) async fn take_module_source_map<'a>(
     &'a self,
     specifier: &str,
-  ) -> Option<Arc<Vec<u8>>> {
+  ) -> Option<Arc<[u8]>> {
     let source = poll_fn(|cx| {
       let mut modules = self.0.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
@@ -187,7 +187,7 @@ pub enum EszipV2SourceSlot {
     length: usize,
     wakers: Vec<Waker>,
   },
-  Ready(Arc<Vec<u8>>),
+  Ready(Arc<[u8]>),
   Taken,
 }
 
@@ -275,10 +275,11 @@ impl EszipV2 {
             0 => ModuleKind::JavaScript,
             1 => ModuleKind::Json,
             2 => ModuleKind::Jsonc,
+            3 => ModuleKind::OpaqueData,
             n => return Err(ParseError::InvalidV2ModuleKind(n, read)),
           };
           let source = if source_offset == 0 && source_len == 0 {
-            EszipV2SourceSlot::Ready(Arc::new(vec![]))
+            EszipV2SourceSlot::Ready(Arc::new([]))
           } else {
             EszipV2SourceSlot::Pending {
               offset: source_offset as usize,
@@ -287,7 +288,7 @@ impl EszipV2 {
             }
           };
           let source_map = if source_map_offset == 0 && source_map_len == 0 {
-            EszipV2SourceSlot::Ready(Arc::new(vec![]))
+            EszipV2SourceSlot::Ready(Arc::new([]))
           } else {
             EszipV2SourceSlot::Pending {
               offset: source_map_offset as usize,
@@ -392,7 +393,7 @@ impl EszipV2 {
             EszipV2Module::Module { ref mut source, .. } => {
               let slot = std::mem::replace(
                 source,
-                EszipV2SourceSlot::Ready(Arc::new(source_bytes)),
+                EszipV2SourceSlot::Ready(Arc::from(source_bytes)),
               );
 
               match slot {
@@ -440,7 +441,7 @@ impl EszipV2 {
             } => {
               let slot = std::mem::replace(
                 source_map,
-                EszipV2SourceSlot::Ready(Arc::new(source_map_bytes)),
+                EszipV2SourceSlot::Ready(Arc::from(source_map_bytes)),
               );
 
               match slot {
@@ -478,7 +479,7 @@ impl EszipV2 {
     &mut self,
     kind: ModuleKind,
     specifier: String,
-    source: Arc<Vec<u8>>,
+    source: Arc<[u8]>,
   ) {
     debug_assert!(matches!(kind, ModuleKind::Json | ModuleKind::Jsonc));
 
@@ -496,10 +497,23 @@ impl EszipV2 {
       EszipV2Module::Module {
         kind,
         source: EszipV2SourceSlot::Ready(source),
-        source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+        source_map: EszipV2SourceSlot::Ready(Arc::new([])),
       },
     );
     modules.to_front(&specifier);
+  }
+
+  /// Add an opaque data to the eszip.
+  pub fn add_opaque_data(&mut self, specifier: String, data: Arc<[u8]>) {
+    let mut modules = self.modules.0.lock().unwrap();
+    modules.insert(
+      specifier,
+      EszipV2Module::Module {
+        kind: ModuleKind::OpaqueData,
+        source: EszipV2SourceSlot::Ready(data),
+        source_map: EszipV2SourceSlot::Ready(Arc::new([])),
+      },
+    );
   }
 
   /// Adds an npm resolution snapshot to the eszip.
@@ -507,7 +521,9 @@ impl EszipV2 {
     &mut self,
     snapshot: ValidSerializedNpmResolutionSnapshot,
   ) {
-    self.npm_snapshot = Some(snapshot);
+    if !snapshot.as_serialized().packages.is_empty() {
+      self.npm_snapshot = Some(snapshot);
+    }
   }
 
   /// Takes an npm resolution snapshot from the eszip.
@@ -531,7 +547,15 @@ impl EszipV2 {
       bytes.extend_from_slice(string.as_bytes());
     }
 
-    let mut header: Vec<u8> = ESZIP_V2_1_MAGIC.to_vec();
+    // We serialize as ESZIP2.1 only if we have an npm snapshot. This is to
+    // maximize backwards compatibility of newly created archives with older
+    // deserializers.
+    let has_npm_snapshot = self.npm_snapshot.is_some();
+    let mut header = if has_npm_snapshot {
+      ESZIP_V2_1_MAGIC.to_vec()
+    } else {
+      ESZIP_V2_MAGIC.to_vec()
+    };
     header.extend_from_slice(&[0u8; 4]); // add 4 bytes of space to put the header length in later
     let mut npm_bytes: Vec<u8> = Vec::new();
     let mut sources: Vec<u8> = Vec::new();
@@ -595,7 +619,7 @@ impl EszipV2 {
 
     // add npm snapshot entries to the header and fill the npm bytes
     if let Some(npm_snapshot) = self.npm_snapshot {
-      let npm_snapshot = npm_snapshot.as_serialized();
+      let npm_snapshot = npm_snapshot.into_serialized();
       let ids_to_eszip_ids = npm_snapshot
         .packages
         .iter()
@@ -603,7 +627,10 @@ impl EszipV2 {
         .map(|(i, pkg)| (&pkg.id, i as u32))
         .collect::<HashMap<_, _>>();
 
-      for (req, id) in &npm_snapshot.root_packages {
+      let mut root_packages: Vec<_> =
+        npm_snapshot.root_packages.into_iter().collect();
+      root_packages.sort();
+      for (req, id) in root_packages {
         append_string(&mut header, &req.to_string());
         header.push(HeaderFrameKind::NpmSpecifier as u8);
         let id = ids_to_eszip_ids.get(&id).unwrap();
@@ -614,7 +641,13 @@ impl EszipV2 {
         append_string(&mut npm_bytes, &pkg.id.as_serialized());
         let deps_len = pkg.dependencies.len() as u32;
         npm_bytes.extend_from_slice(&deps_len.to_be_bytes());
-        for (req, id) in &pkg.dependencies {
+        let mut deps: Vec<_> = pkg
+          .dependencies
+          .iter()
+          .map(|(a, b)| (a.clone(), b.clone()))
+          .collect();
+        deps.sort();
+        for (req, id) in deps {
           append_string(&mut npm_bytes, &req.to_string());
           let id = ids_to_eszip_ids.get(&id).unwrap();
           npm_bytes.extend_from_slice(&id.to_be_bytes());
@@ -634,11 +667,14 @@ impl EszipV2 {
 
     let mut bytes = header;
 
-    // add npm snapshot
-    let npm_bytes_len = npm_bytes.len() as u32;
-    bytes.extend_from_slice(&npm_bytes_len.to_be_bytes());
-    bytes.extend_from_slice(&npm_bytes);
-    bytes.extend_from_slice(&hash_bytes(&npm_bytes));
+    // add npm snapshot, if we are creating a v2.1 archive
+    assert_eq!(has_npm_snapshot, !npm_bytes.is_empty());
+    if !npm_bytes.is_empty() {
+      let npm_bytes_len = npm_bytes.len() as u32;
+      bytes.extend_from_slice(&npm_bytes_len.to_be_bytes());
+      bytes.extend_from_slice(&npm_bytes);
+      bytes.extend_from_slice(&hash_bytes(&npm_bytes));
+    }
 
     // add sources
     let sources_len = sources.len() as u32;
@@ -703,9 +739,12 @@ impl EszipV2 {
 
       match module {
         deno_graph::Module::Esm(module) => {
-          let (source, source_map) = match module.media_type {
+          let source: Arc<[u8]>;
+          let source_map: Arc<[u8]>;
+          match module.media_type {
             deno_graph::MediaType::JavaScript | deno_graph::MediaType::Mjs => {
-              (module.source.as_bytes().to_owned(), vec![])
+              source = Arc::from(module.source.clone());
+              source_map = Arc::new( []);
             }
             deno_graph::MediaType::Jsx
             | deno_graph::MediaType::TypeScript
@@ -722,8 +761,8 @@ impl EszipV2 {
                 text,
                 source_map: maybe_source_map,
               } = parsed_source.transpile(emit_options)?;
-              let source_map = maybe_source_map.unwrap_or_default();
-              (text.into_bytes(), source_map.into_bytes())
+              source = Arc::from(text.into_bytes());
+              source_map = Arc::from(maybe_source_map.unwrap_or_default().into_bytes());
             }
             _ => {
               return Err(anyhow::anyhow!(
@@ -737,8 +776,8 @@ impl EszipV2 {
           let specifier = module.specifier.to_string();
           let eszip_module = EszipV2Module::Module {
             kind: ModuleKind::JavaScript,
-            source: EszipV2SourceSlot::Ready(Arc::new(source)),
-            source_map: EszipV2SourceSlot::Ready(Arc::new(source_map)),
+            source: EszipV2SourceSlot::Ready(source),
+            source_map: EszipV2SourceSlot::Ready(source_map),
           };
           modules.insert(specifier, eszip_module);
 
@@ -762,10 +801,8 @@ impl EszipV2 {
           let specifier = module.specifier.to_string();
           let eszip_module = EszipV2Module::Module {
             kind: ModuleKind::Json,
-            source: EszipV2SourceSlot::Ready(Arc::new(
-              module.source.as_bytes().to_owned(),
-            )),
-            source_map: EszipV2SourceSlot::Ready(Arc::new(vec![])),
+            source: EszipV2SourceSlot::Ready( module.source.clone().into()),
+            source_map: EszipV2SourceSlot::Ready(Arc::new([])),
           };
           modules.insert(specifier, eszip_module);
           Ok(())
@@ -1294,13 +1331,13 @@ mod tests {
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
     let source = module.source().await.unwrap();
-    assert_matches_file!(source, "./testdata/emit/json.ts");
+    assert_matches_file!(source, "./testdata/source/json.ts");
     let _source_map = module.source_map().await.unwrap();
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json").unwrap();
     assert_eq!(module.specifier, "file:///data.json");
     let source = module.source().await.unwrap();
-    assert_matches_file!(source, "./testdata/emit/data.json");
+    assert_matches_file!(source, "./testdata/source/data.json");
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
     assert_eq!(module.kind, ModuleKind::Json);
@@ -1443,7 +1480,9 @@ mod tests {
         .await
         .unwrap();
     fut.await.unwrap();
-    let cursor = Cursor::new(eszip.into_bytes());
+    let bytes = eszip.into_bytes();
+    insta::assert_debug_snapshot!(bytes);
+    let cursor = Cursor::new(bytes);
     let (eszip, fut) =
       super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
         .await
@@ -1506,7 +1545,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    let import_map_bytes = Arc::from(content);
     eszip.add_import_map(
       ModuleKind::Json,
       specifier.to_string(),
@@ -1582,7 +1621,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    let import_map_bytes = Arc::from(content);
     eszip.add_import_map(
       ModuleKind::Json,
       specifier.to_string(),
@@ -1630,7 +1669,7 @@ mod tests {
     .unwrap();
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     graph
       .build(
         roots,
@@ -1649,7 +1688,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::new(content.as_bytes().to_vec());
+    let import_map_bytes = Arc::from(content);
     eszip.add_import_map(
       ModuleKind::Jsonc,
       specifier.to_string(),
@@ -1681,7 +1720,7 @@ mod tests {
   async fn npm_packages() {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
-    let mut graph = ModuleGraph::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
     let mut loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
@@ -1724,7 +1763,9 @@ mod tests {
     assert!(taken_snapshot.is_some());
     assert!(eszip.take_npm_snapshot().is_none());
     eszip.add_npm_snapshot(taken_snapshot.unwrap());
-    let cursor = Cursor::new(eszip.into_bytes());
+    let bytes = eszip.into_bytes();
+    insta::assert_debug_snapshot!(bytes);
+    let cursor = Cursor::new(bytes);
     let (mut eszip, fut) =
       super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
         .await
@@ -1802,6 +1843,68 @@ mod tests {
       .err()
       .unwrap();
     assert_eq!(err.to_string(), "invalid eszip v2.1 npm snapshot hash");
+  }
+
+  #[tokio::test]
+  async fn npm_empty_snapshot() {
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+    graph
+      .build(
+        roots,
+        &mut loader,
+        BuildOptions {
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let original_snapshot = SerializedNpmResolutionSnapshot {
+      root_packages: root_pkgs(&[]),
+      packages: Vec::from([]),
+    }
+    .into_valid()
+    .unwrap();
+    let mut eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
+    eszip.add_npm_snapshot(original_snapshot.clone());
+    let bytes = eszip.into_bytes();
+    insta::assert_debug_snapshot!(bytes);
+    let cursor = Cursor::new(bytes);
+    let (mut eszip, _) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
+        .await
+        .unwrap();
+    assert!(eszip.take_npm_snapshot().is_none());
+  }
+
+  #[tokio::test]
+  async fn opaque_data() {
+    let mut eszip = super::EszipV2::default();
+    let opaque_data: Arc<[u8]> = Arc::new([1, 2, 3]);
+    eszip.add_opaque_data("+s/foobar".to_string(), opaque_data.clone());
+    let bytes = eszip.into_bytes();
+    insta::assert_debug_snapshot!(bytes);
+    let cursor = Cursor::new(bytes);
+    let (eszip, fut) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(cursor)))
+        .await
+        .unwrap();
+    fut.await.unwrap();
+    let opaque_data = eszip.get_module("+s/foobar").unwrap();
+    assert_eq!(opaque_data.specifier, "+s/foobar");
+    let source = opaque_data.source().await.unwrap();
+    assert_eq!(&*source, &[1, 2, 3]);
+    assert_eq!(opaque_data.kind, ModuleKind::OpaqueData);
   }
 
   fn root_pkgs(pkgs: &[(&str, &str)]) -> HashMap<NpmPackageReq, NpmPackageId> {

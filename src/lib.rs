@@ -103,7 +103,7 @@ pub enum ModuleInner {
 
 impl Module {
   /// Get source code of the module.
-  pub async fn source(&self) -> Option<Arc<Vec<u8>>> {
+  pub async fn source(&self) -> Option<Arc<[u8]>> {
     match &self.inner {
       ModuleInner::V1(eszip_v1) => eszip_v1.get_module_source(&self.specifier),
       ModuleInner::V2(eszip_v2) => {
@@ -116,7 +116,7 @@ impl Module {
   /// the subsequent calls to `take_source()` will return `None`.
   /// For V1, this will take the entire module and returns the source code. We don't need
   /// to preserve module metadata for V1.
-  pub async fn take_source(&self) -> Option<Arc<Vec<u8>>> {
+  pub async fn take_source(&self) -> Option<Arc<[u8]>> {
     match &self.inner {
       ModuleInner::V1(eszip_v1) => eszip_v1.take(&self.specifier),
       ModuleInner::V2(eszip_v2) => {
@@ -126,7 +126,7 @@ impl Module {
   }
 
   /// Get source map of the module.
-  pub async fn source_map(&self) -> Option<Arc<Vec<u8>>> {
+  pub async fn source_map(&self) -> Option<Arc<[u8]>> {
     match &self.inner {
       ModuleInner::V1(_) => None,
       ModuleInner::V2(eszip) => {
@@ -137,7 +137,7 @@ impl Module {
 
   /// Take source map of the module. This will remove the source map from memory and
   /// the subsequent calls to `take_source_map()` will return `None`.
-  pub async fn take_source_map(&self) -> Option<Arc<Vec<u8>>> {
+  pub async fn take_source_map(&self) -> Option<Arc<[u8]>> {
     match &self.inner {
       ModuleInner::V1(_) => None,
       ModuleInner::V2(eszip) => {
@@ -160,6 +160,7 @@ pub enum ModuleKind {
   JavaScript = 0,
   Json = 1,
   Jsonc = 2,
+  OpaqueData = 3,
 }
 
 #[cfg(test)]
