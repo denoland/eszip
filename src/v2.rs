@@ -894,9 +894,34 @@ impl EszipV2 {
     }
   }
 
+  /// Returns a list of all the module specifiers in this eszip archive.
   pub fn specifiers(&self) -> Vec<String> {
     let modules = self.modules.0.lock().unwrap();
     modules.keys().cloned().collect()
+  }
+}
+
+/// Get an iterator over all the modules (including an import map, if any) in
+/// this eszip archive.
+///
+/// Note that the iterator will iterate over the specifiers' "snapshot" of the
+/// archive. If a new module is added to the archive after the iterator is
+/// created via `into_iter()`, that module will not be iterated over.
+impl IntoIterator for EszipV2 {
+  type Item = (String, Module);
+  type IntoIter = std::vec::IntoIter<Self::Item>;
+
+  fn into_iter(self) -> Self::IntoIter {
+    let specifiers = self.specifiers();
+    let mut v = Vec::with_capacity(specifiers.len());
+    for specifier in specifiers {
+      let Some(module) = self.lookup(&specifier) else {
+        continue;
+      };
+      v.push((specifier, module));
+    }
+
+    v.into_iter()
   }
 }
 
