@@ -1742,6 +1742,96 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn eszipv2_iterator_yields_all_modules() {
+    let mut loader = FileLoader {
+      base_dir: "./src/testdata/deno_jsonc_as_import_map".to_string(),
+    };
+    let resp = deno_graph::source::Loader::load(
+      &mut loader,
+      &Url::parse("file:///deno.jsonc").unwrap(),
+      false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let (specifier, content) = match resp {
+      deno_graph::source::LoadResponse::Module {
+        specifier, content, ..
+      } => (specifier, content),
+      _ => unimplemented!(),
+    };
+    let import_map = import_map::parse_from_value(
+      &specifier,
+      jsonc_parser::parse_to_serde_value(&content, &Default::default())
+        .unwrap()
+        .unwrap(),
+    )
+    .unwrap();
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    graph
+      .build(
+        roots,
+        &mut loader,
+        BuildOptions {
+          resolver: Some(&ImportMapResolver(import_map.import_map)),
+          module_analyzer: Some(&analyzer),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let mut eszip = super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      EmitOptions::default(),
+    )
+    .unwrap();
+    let import_map_bytes = Arc::from(content);
+    eszip.add_import_map(
+      ModuleKind::Jsonc,
+      specifier.to_string(),
+      import_map_bytes,
+    );
+
+    struct Expected {
+      specifier: String,
+      source: &'static str,
+      kind: ModuleKind,
+    }
+
+    let expected = vec![
+      Expected {
+        specifier: "file:///deno.jsonc".to_string(),
+        source: include_str!("testdata/deno_jsonc_as_import_map/deno.jsonc"),
+        kind: ModuleKind::Jsonc,
+      },
+      Expected {
+        specifier: "file:///main.ts".to_string(),
+        source: include_str!("testdata/deno_jsonc_as_import_map/main.ts"),
+        kind: ModuleKind::JavaScript,
+      },
+      Expected {
+        specifier: "file:///a.ts".to_string(),
+        source: include_str!("testdata/deno_jsonc_as_import_map/a.ts"),
+        kind: ModuleKind::JavaScript,
+      },
+    ];
+
+    for (got, expected) in eszip.into_iter().zip(expected) {
+      let (got_specifier, got_module) = got;
+
+      assert_eq!(got_specifier, expected.specifier);
+      assert_eq!(got_module.kind, expected.kind);
+      assert_eq!(
+        String::from_utf8_lossy(&got_module.source().await.unwrap()),
+        expected.source
+      );
+    }
+  }
+
+  #[tokio::test]
   async fn npm_packages() {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
