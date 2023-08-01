@@ -11,9 +11,7 @@ async fn main() {
   let (eszip, loader) = eszip::EszipV2::parse(bufreader).await.unwrap();
 
   let fut = async move {
-    let specifiers = eszip.specifiers();
-    for specifier in specifiers {
-      let module = eszip.get_module(&specifier).unwrap();
+    for (specifier, module) in eszip {
       if module.specifier == specifier {
         println!("Specifier: {specifier}",);
         println!("Kind: {kind:?}", kind = module.kind);
