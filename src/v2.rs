@@ -16,7 +16,7 @@ use deno_npm::resolution::SerializedNpmResolutionSnapshot;
 use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
 use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
 use deno_npm::NpmPackageId;
-use deno_semver::npm::NpmPackageReq;
+use deno_semver::package::PackageReq;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
 use hashlink::linked_hash_map::LinkedHashMap;
@@ -990,7 +990,7 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
         ));
       }
     };
-    let req = NpmPackageReq::from_str(&req)
+    let req = PackageReq::from_str(&req)
       .map_err(|err| ParseError::InvalidV2NpmPackageReq(req, err.into()))?;
     root_packages.insert(req, id.clone());
   }
@@ -1153,7 +1153,7 @@ mod tests {
   use deno_npm::resolution::SerializedNpmResolutionSnapshot;
   use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
   use deno_npm::NpmPackageId;
-  use deno_semver::npm::NpmPackageReq;
+  use deno_semver::package::PackageReq;
   use futures::io::AllowStdIo;
   use futures::io::BufReader;
   use import_map::ImportMap;
@@ -2022,12 +2022,12 @@ mod tests {
     assert_eq!(opaque_data.kind, ModuleKind::OpaqueData);
   }
 
-  fn root_pkgs(pkgs: &[(&str, &str)]) -> HashMap<NpmPackageReq, NpmPackageId> {
+  fn root_pkgs(pkgs: &[(&str, &str)]) -> HashMap<PackageReq, NpmPackageId> {
     pkgs
       .iter()
       .map(|(key, value)| {
         (
-          NpmPackageReq::from_str(key).unwrap(),
+          PackageReq::from_str(key).unwrap(),
           NpmPackageId::from_serialized(value).unwrap(),
         )
       })
