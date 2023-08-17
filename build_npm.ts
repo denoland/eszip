@@ -35,7 +35,7 @@ await build({
   },
   filterDiagnostic(diagnostic) {
     if (
-      diagnostic.file?.fileName.endsWith("wasmbuild@0.14.1/loader.ts")
+      diagnostic.file?.fileName.endsWith("wasmbuild@0.15.0/loader.ts")
     ) {
       return false;
     }
