@@ -3,7 +3,7 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-22.04-xl
+    runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: full
       # https://github.com/rust-unofficial/patterns/blob/master/anti_patterns/deny-warnings.md
@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v2
         with:
-          node-version: '16.x'
+          node-version: '18.x'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Clippy

@@ -30,10 +30,10 @@ path = "src/examples/viewer.rs"
 [dependencies]
 anyhow = "1"
 base64 = "0.21.0"
-deno_ast = { version = "0.27.0", features = ["transpiling"] }
-deno_graph = "0.50.0"
-deno_npm = "0.11.0"
-deno_semver = "0.3.0"
+deno_ast = { version = "0.28.0", features = ["transpiling"] }
+deno_graph = "0.52.0"
+deno_npm = "0.12.0"
+deno_semver = "0.4.0"
 futures = "0.3.26"
 hashlink = "0.8.2"
 serde = "1"
@@ -47,5 +47,5 @@ import_map = "0.15.0"
 pretty_assertions = "1"
 tokio = { version = "1", features = ["macros", "rt"] }
 reqwest = { version = "0.11", features = ["rustls-tls"] }
-jsonc-parser = { version = "0.21.1", features = ["serde"] }
+jsonc-parser = { version = "0.22.1", features = ["serde"] }
 insta = "1.31.0"
