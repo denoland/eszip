@@ -13,6 +13,7 @@ use futures::io::AsyncRead;
 use futures::io::BufReader;
 use import_map::ImportMap;
 use js_sys::Promise;
+use js_sys::TypeError;
 use js_sys::Uint8Array;
 use std::cell::RefCell;
 use std::future::Future;
@@ -208,12 +209,18 @@ impl Parser {
     wasm_bindgen_futures::future_to_promise(async move {
       let p = parser.borrow();
       let (eszip, _) = p.as_ref().unwrap();
-      let module = eszip.get_module(&specifier).unwrap();
+      let module = eszip
+        .get_module(&specifier)
+        .or_else(|| eszip.get_import_map(&specifier))
+        .ok_or(TypeError::new(&format!("module '{}' not found", specifier)))?;
 
       // Drop the borrow for the loader
       // to mutably borrow.
       drop(p);
-      let source = module.source().await.expect("source already taken");
+      let source = module.source().await.ok_or(TypeError::new(&format!(
+        "source for '{}' already taken",
+        specifier
+      )))?;
       let source = std::str::from_utf8(&source).unwrap();
       Ok(source.to_string().into())
     })
@@ -227,7 +234,10 @@ impl Parser {
     wasm_bindgen_futures::future_to_promise(async move {
       let p = parser.borrow();
       let (eszip, _) = p.as_ref().unwrap();
-      let module = eszip.get_module(&specifier).unwrap();
+      let module = eszip
+        .get_module(&specifier)
+        .or_else(|| eszip.get_import_map(&specifier))
+        .ok_or(TypeError::new(&format!("module '{}' not found", specifier)))?;
 
       // Drop the borrow for the loader
       // to mutably borrow.
