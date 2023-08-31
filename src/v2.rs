@@ -1176,10 +1176,11 @@ mod tests {
   }
 
   impl deno_graph::source::Loader for FileLoader {
-    fn load(
+    fn load_with_cache_setting(
       &mut self,
       specifier: &ModuleSpecifier,
       _is_dynamic: bool,
+      _cache_setting: deno_graph::source::CacheSetting,
     ) -> deno_graph::source::LoadFuture {
       match specifier.scheme() {
         "file" => {
@@ -1234,6 +1235,7 @@ mod tests {
         &mut self,
         specifier: &ModuleSpecifier,
         is_dynamic: bool,
+        _cache_setting: deno_graph::source::LoaderCacheSetting,
       ) -> deno_graph::source::LoadFuture {
         if is_dynamic {
           unreachable!();

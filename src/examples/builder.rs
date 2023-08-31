@@ -105,6 +105,7 @@ impl deno_graph::source::Loader for Loader {
     &mut self,
     specifier: &deno_graph::ModuleSpecifier,
     _is_dynamic: bool,
+    _cache_setting: deno_graph::source::CacheSetting,
   ) -> deno_graph::source::LoadFuture {
     let specifier = specifier.clone();
 

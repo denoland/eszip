@@ -271,7 +271,7 @@ pub async fn build_eszip(
   let (maybe_import_map, maybe_import_map_data) =
     if let Some(import_map_url) = import_map_url {
       let resp =
-        deno_graph::source::Loader::load(&mut loader, &import_map_url, false)
+        deno_graph::source::Loader::load(&mut loader, &import_map_url, false, deno_graph::source::CacheSetting::Use)
           .await
           .map_err(|e| js_sys::Error::new(&e.to_string()))?
           .ok_or_else(|| {
@@ -340,15 +340,17 @@ impl Loader for GraphLoader {
     &mut self,
     specifier: &ModuleSpecifier,
     is_dynamic: bool,
+    cache_setting: deno_graph::source::CacheSetting
   ) -> LoadFuture {
     if specifier.scheme() == "data" {
       Box::pin(std::future::ready(load_data_url(specifier)))
     } else {
       let specifier = specifier.clone();
-      let result = self.0.call2(
+      let result = self.0.call3(
         &JsValue::null(),
         &JsValue::from(specifier.to_string()),
         &JsValue::from(is_dynamic),
+        &JsValue::from(cache_setting.as_js_str()),
       );
       Box::pin(async move {
         let response = match result {
