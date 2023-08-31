@@ -1236,7 +1236,7 @@ mod tests {
         &mut self,
         specifier: &ModuleSpecifier,
         is_dynamic: bool,
-        _cache_setting: deno_graph::source::LoaderCacheSetting,
+        _cache_setting: deno_graph::source::CacheSetting,
       ) -> deno_graph::source::LoadFuture {
         if is_dynamic {
           unreachable!();

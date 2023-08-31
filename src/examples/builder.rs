@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use deno_ast::EmitOptions;
+use deno_graph::source::CacheSetting;
 use deno_graph::BuildOptions;
 use deno_graph::CapturingModuleAnalyzer;
 use deno_graph::GraphKind;
@@ -21,11 +22,15 @@ async fn main() {
   let mut loader = Loader;
   let (maybe_import_map, maybe_import_map_data) =
     if let Some(import_map_url) = maybe_import_map {
-      let resp =
-        deno_graph::source::Loader::load(&mut loader, &import_map_url, false)
-          .await
-          .unwrap()
-          .unwrap();
+      let resp = deno_graph::source::Loader::load(
+        &mut loader,
+        &import_map_url,
+        false,
+        CacheSetting::Use,
+      )
+      .await
+      .unwrap()
+      .unwrap();
       match resp {
         deno_graph::source::LoadResponse::Module {
           specifier, content, ..
@@ -105,7 +110,7 @@ impl deno_graph::source::Loader for Loader {
     &mut self,
     specifier: &deno_graph::ModuleSpecifier,
     _is_dynamic: bool,
-    _cache_setting: deno_graph::source::CacheSetting,
+    _cache_setting: CacheSetting,
   ) -> deno_graph::source::LoadFuture {
     let specifier = specifier.clone();
 
