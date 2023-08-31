@@ -1359,7 +1359,7 @@ mod tests {
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
     let source = module.source().await.unwrap();
-    assert_matches_file!(source, "./testdata/source/json.ts");
+    assert_matches_file!(source, "./testdata/emit/json.ts");
     let _source_map = module.source_map().await.unwrap();
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json").unwrap();
@@ -1483,7 +1483,7 @@ mod tests {
       let module = eszip.get_module("file:///json.ts").unwrap();
       assert_eq!(module.specifier, "file:///json.ts");
       let source = module.source().await.unwrap();
-      assert_matches_file!(source, "./testdata/emit/json.ts");
+      assert_matches_file!(source, "./testdata/source/json.ts");
       let _source_map = module.source_map().await.unwrap();
       assert_eq!(module.kind, ModuleKind::JavaScript);
       let module = eszip.get_module("file:///data.json").unwrap();
