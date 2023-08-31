@@ -1144,6 +1144,7 @@ mod tests {
   use std::sync::Arc;
 
   use deno_ast::EmitOptions;
+  use deno_graph::source::CacheSetting;
   use deno_graph::source::LoadResponse;
   use deno_graph::BuildOptions;
   use deno_graph::CapturingModuleAnalyzer;
@@ -1180,6 +1181,7 @@ mod tests {
       &mut self,
       specifier: &ModuleSpecifier,
       _is_dynamic: bool,
+      _cache_setting: CacheSetting,
     ) -> deno_graph::source::LoadFuture {
       match specifier.scheme() {
         "file" => {
@@ -1234,6 +1236,7 @@ mod tests {
         &mut self,
         specifier: &ModuleSpecifier,
         is_dynamic: bool,
+        _cache_setting: deno_graph::source::CacheSetting,
       ) -> deno_graph::source::LoadFuture {
         if is_dynamic {
           unreachable!();
@@ -1356,7 +1359,7 @@ mod tests {
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
     let source = module.source().await.unwrap();
-    assert_matches_file!(source, "./testdata/source/json.ts");
+    assert_matches_file!(source, "./testdata/emit/json.ts");
     let _source_map = module.source_map().await.unwrap();
     assert_eq!(module.kind, ModuleKind::JavaScript);
     let module = eszip.get_module("file:///data.json").unwrap();
@@ -1480,7 +1483,7 @@ mod tests {
       let module = eszip.get_module("file:///json.ts").unwrap();
       assert_eq!(module.specifier, "file:///json.ts");
       let source = module.source().await.unwrap();
-      assert_matches_file!(source, "./testdata/emit/json.ts");
+      assert_matches_file!(source, "./testdata/source/json.ts");
       let _source_map = module.source_map().await.unwrap();
       assert_eq!(module.kind, ModuleKind::JavaScript);
       let module = eszip.get_module("file:///data.json").unwrap();
@@ -1538,6 +1541,7 @@ mod tests {
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
       false,
+      CacheSetting::Use,
     )
     .await
     .unwrap()
@@ -1612,6 +1616,7 @@ mod tests {
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
       false,
+      CacheSetting::Use,
     )
     .await
     .unwrap()
@@ -1675,6 +1680,7 @@ mod tests {
       &mut loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
       false,
+      CacheSetting::Use,
     )
     .await
     .unwrap()
@@ -1750,6 +1756,7 @@ mod tests {
       &mut loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
       false,
+      CacheSetting::Use,
     )
     .await
     .unwrap()

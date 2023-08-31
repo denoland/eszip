@@ -30,8 +30,8 @@ path = "src/examples/viewer.rs"
 [dependencies]
 anyhow = "1"
 base64 = "0.21.0"
-deno_ast = { version = "0.28.0", features = ["transpiling"] }
-deno_graph = "0.52.0"
+deno_ast = { version = "0.29.0", features = ["transpiling"] }
+deno_graph = "0.54.0"
 deno_npm = "0.13.0"
 deno_semver = "0.4.0"
 futures = "0.3.26"
