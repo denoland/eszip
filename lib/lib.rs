@@ -268,30 +268,33 @@ pub async fn build_eszip(
   let import_map_url: Option<Url> =
     serde_wasm_bindgen::from_value(import_map_url)
       .map_err(|e| js_sys::Error::new(&e.to_string()))?;
-  let (maybe_import_map, maybe_import_map_data) =
-    if let Some(import_map_url) = import_map_url {
-      let resp =
-        deno_graph::source::Loader::load(&mut loader, &import_map_url, false, deno_graph::source::CacheSetting::Use)
-          .await
-          .map_err(|e| js_sys::Error::new(&e.to_string()))?
-          .ok_or_else(|| {
-            js_sys::Error::new(&format!(
-              "import map not found at '{import_map_url}'"
-            ))
-          })?;
-      match resp {
-        deno_graph::source::LoadResponse::Module {
-          specifier, content, ..
-        } => {
-          let import_map =
-            import_map::parse_from_json(&specifier, &content).unwrap();
-          (Some(import_map.import_map), Some((specifier, content)))
-        }
-        _ => unimplemented!(),
+  let (maybe_import_map, maybe_import_map_data) = if let Some(import_map_url) =
+    import_map_url
+  {
+    let resp = deno_graph::source::Loader::load(
+      &mut loader,
+      &import_map_url,
+      false,
+      deno_graph::source::CacheSetting::Use,
+    )
+    .await
+    .map_err(|e| js_sys::Error::new(&e.to_string()))?
+    .ok_or_else(|| {
+      js_sys::Error::new(&format!("import map not found at '{import_map_url}'"))
+    })?;
+    match resp {
+      deno_graph::source::LoadResponse::Module {
+        specifier, content, ..
+      } => {
+        let import_map =
+          import_map::parse_from_json(&specifier, &content).unwrap();
+        (Some(import_map.import_map), Some((specifier, content)))
       }
-    } else {
-      (None, None)
-    };
+      _ => unimplemented!(),
+    }
+  } else {
+    (None, None)
+  };
   let resolver = GraphResolver(maybe_import_map);
   let analyzer = deno_graph::CapturingModuleAnalyzer::default();
   let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
@@ -340,7 +343,7 @@ impl Loader for GraphLoader {
     &mut self,
     specifier: &ModuleSpecifier,
     is_dynamic: bool,
-    cache_setting: deno_graph::source::CacheSetting
+    cache_setting: deno_graph::source::CacheSetting,
   ) -> LoadFuture {
     if specifier.scheme() == "data" {
       Box::pin(std::future::ready(load_data_url(specifier)))

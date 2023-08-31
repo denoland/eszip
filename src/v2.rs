@@ -1144,6 +1144,7 @@ mod tests {
   use std::sync::Arc;
 
   use deno_ast::EmitOptions;
+  use deno_graph::source::CacheSetting;
   use deno_graph::source::LoadResponse;
   use deno_graph::BuildOptions;
   use deno_graph::CapturingModuleAnalyzer;
@@ -1180,7 +1181,7 @@ mod tests {
       &mut self,
       specifier: &ModuleSpecifier,
       _is_dynamic: bool,
-      _cache_setting: deno_graph::source::CacheSetting,
+      _cache_setting: CacheSetting,
     ) -> deno_graph::source::LoadFuture {
       match specifier.scheme() {
         "file" => {
