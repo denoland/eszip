@@ -1176,7 +1176,7 @@ mod tests {
   }
 
   impl deno_graph::source::Loader for FileLoader {
-    fn load_with_cache_setting(
+    fn load(
       &mut self,
       specifier: &ModuleSpecifier,
       _is_dynamic: bool,
@@ -1540,6 +1540,7 @@ mod tests {
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
       false,
+      CacheSetting::Use,
     )
     .await
     .unwrap()
@@ -1614,6 +1615,7 @@ mod tests {
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
       false,
+      CacheSetting::Use,
     )
     .await
     .unwrap()
@@ -1677,6 +1679,7 @@ mod tests {
       &mut loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
       false,
+      CacheSetting::Use,
     )
     .await
     .unwrap()
@@ -1752,6 +1755,7 @@ mod tests {
       &mut loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
       false,
+      CacheSetting::Use,
     )
     .await
     .unwrap()
