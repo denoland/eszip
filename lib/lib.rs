@@ -2,6 +2,7 @@ use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::Loader;
+use deno_graph::source::ResolveError;
 use deno_graph::source::Resolver;
 use deno_graph::BuildOptions;
 use deno_graph::GraphKind;
@@ -385,9 +386,11 @@ impl Resolver for GraphResolver {
     &self,
     specifier: &str,
     referrer: &deno_graph::ModuleSpecifier,
-  ) -> Result<deno_graph::ModuleSpecifier, anyhow::Error> {
+  ) -> Result<deno_graph::ModuleSpecifier, ResolveError> {
     if let Some(import_map) = &self.0 {
-      Ok(import_map.resolve(specifier, referrer)?)
+      import_map
+        .resolve(specifier, referrer)
+        .map_err(|err| ResolveError::Other(err.into()))
     } else {
       Ok(deno_graph::resolve_import(specifier, referrer)?)
     }
