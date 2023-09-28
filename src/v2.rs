@@ -1146,6 +1146,7 @@ mod tests {
   use deno_ast::EmitOptions;
   use deno_graph::source::CacheSetting;
   use deno_graph::source::LoadResponse;
+  use deno_graph::source::ResolveError;
   use deno_graph::BuildOptions;
   use deno_graph::CapturingModuleAnalyzer;
   use deno_graph::GraphKind;
@@ -1220,8 +1221,11 @@ mod tests {
       &self,
       specifier: &str,
       referrer: &ModuleSpecifier,
-    ) -> Result<ModuleSpecifier, anyhow::Error> {
-      Ok(self.0.resolve(specifier, referrer)?)
+    ) -> Result<ModuleSpecifier, ResolveError> {
+      self
+        .0
+        .resolve(specifier, referrer)
+        .map_err(|err| ResolveError::Other(err.into()))
     }
   }
 

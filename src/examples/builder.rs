@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use deno_ast::EmitOptions;
 use deno_graph::source::CacheSetting;
+use deno_graph::source::ResolveError;
 use deno_graph::BuildOptions;
 use deno_graph::CapturingModuleAnalyzer;
 use deno_graph::GraphKind;
@@ -94,9 +95,11 @@ impl deno_graph::source::Resolver for Resolver {
     &self,
     specifier: &str,
     referrer: &deno_graph::ModuleSpecifier,
-  ) -> Result<deno_graph::ModuleSpecifier, anyhow::Error> {
+  ) -> Result<deno_graph::ModuleSpecifier, ResolveError> {
     if let Some(import_map) = &self.0 {
-      Ok(import_map.resolve(specifier, referrer)?)
+      import_map
+        .resolve(specifier, referrer)
+        .map_err(|e| ResolveError::Other(e.into()))
     } else {
       Ok(deno_graph::resolve_import(specifier, referrer)?)
     }
