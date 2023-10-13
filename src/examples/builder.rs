@@ -95,6 +95,7 @@ impl deno_graph::source::Resolver for Resolver {
     &self,
     specifier: &str,
     referrer: &deno_graph::ModuleSpecifier,
+    _mode: deno_graph::source::ResolutionMode,
   ) -> Result<deno_graph::ModuleSpecifier, ResolveError> {
     if let Some(import_map) = &self.0 {
       import_map
