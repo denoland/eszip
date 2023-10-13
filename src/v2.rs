@@ -1221,6 +1221,7 @@ mod tests {
       &self,
       specifier: &str,
       referrer: &ModuleSpecifier,
+      _mode: deno_graph::source::ResolutionMode,
     ) -> Result<ModuleSpecifier, ResolveError> {
       self
         .0
