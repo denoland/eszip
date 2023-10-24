@@ -1,7 +1,7 @@
 // @generated file from wasmbuild -- do not edit
 // deno-lint-ignore-file
 // deno-fmt-ignore-file
-// source-hash: b8cb891a355f111d0fdf3a85c68f49e427dedd86
+// source-hash: 42cde0d0cd8911472f447996379441f664c820a5
 let wasm;
 
 const heap = new Array(128).fill(undefined);
@@ -423,6 +423,18 @@ const imports = {
       const ret = new TypeError(getStringFromWasm0(arg0, arg1));
       return addHeapObject(ret);
     },
+    __wbg_new_898a68150f225f2e: function () {
+      const ret = new Array();
+      return addHeapObject(ret);
+    },
+    __wbindgen_string_new: function (arg0, arg1) {
+      const ret = getStringFromWasm0(arg0, arg1);
+      return addHeapObject(ret);
+    },
+    __wbg_push_ca1c26067ef907ac: function (arg0, arg1) {
+      const ret = getObject(arg0).push(getObject(arg1));
+      return ret;
+    },
     __wbg_length_fff51ee6522a1a18: function (arg0) {
       const ret = getObject(arg0).length;
       return ret;
@@ -450,18 +462,6 @@ const imports = {
     __wbg_new_8125e318e6245eed: function (arg0) {
       const ret = new Uint8Array(getObject(arg0));
       return addHeapObject(ret);
-    },
-    __wbg_new_898a68150f225f2e: function () {
-      const ret = new Array();
-      return addHeapObject(ret);
-    },
-    __wbindgen_string_new: function (arg0, arg1) {
-      const ret = getStringFromWasm0(arg0, arg1);
-      return addHeapObject(ret);
-    },
-    __wbg_push_ca1c26067ef907ac: function (arg0, arg1) {
-      const ret = getObject(arg0).push(getObject(arg1));
-      return ret;
     },
     __wbg_String_88810dfeb4021902: function (arg0, arg1) {
       const ret = String(getObject(arg1));
@@ -696,15 +696,15 @@ const imports = {
       const ret = getObject(arg0).then(getObject(arg1), getObject(arg2));
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper8938: function (arg0, arg1, arg2) {
+    __wbindgen_closure_wrapper8999: function (arg0, arg1, arg2) {
       const ret = makeMutClosure(arg0, arg1, 312, __wbg_adapter_40);
       return addHeapObject(ret);
     },
   },
 };
 
-import { Loader } from "https://deno.land/x/wasmbuild@0.15.0/loader.ts";
-import { cacheToLocalDir } from "https://deno.land/x/wasmbuild@0.15.0/cache.ts";
+import { Loader } from "https://deno.land/x/wasmbuild@0.15.1/loader.ts";
+import { cacheToLocalDir } from "https://deno.land/x/wasmbuild@0.15.1/cache.ts";
 
 const loader = new Loader({
   imports,
