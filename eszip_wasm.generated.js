@@ -1,7 +1,7 @@
 // @generated file from wasmbuild -- do not edit
 // deno-lint-ignore-file
 // deno-fmt-ignore-file
-// source-hash: 42cde0d0cd8911472f447996379441f664c820a5
+// source-hash: cc564c77a2c618ad9b5e9eef497467c27ab194b7
 let wasm;
 
 const heap = new Array(128).fill(undefined);
@@ -423,18 +423,6 @@ const imports = {
       const ret = new TypeError(getStringFromWasm0(arg0, arg1));
       return addHeapObject(ret);
     },
-    __wbg_new_898a68150f225f2e: function () {
-      const ret = new Array();
-      return addHeapObject(ret);
-    },
-    __wbindgen_string_new: function (arg0, arg1) {
-      const ret = getStringFromWasm0(arg0, arg1);
-      return addHeapObject(ret);
-    },
-    __wbg_push_ca1c26067ef907ac: function (arg0, arg1) {
-      const ret = getObject(arg0).push(getObject(arg1));
-      return ret;
-    },
     __wbg_length_fff51ee6522a1a18: function (arg0) {
       const ret = getObject(arg0).length;
       return ret;
@@ -463,6 +451,18 @@ const imports = {
       const ret = new Uint8Array(getObject(arg0));
       return addHeapObject(ret);
     },
+    __wbg_new_898a68150f225f2e: function () {
+      const ret = new Array();
+      return addHeapObject(ret);
+    },
+    __wbindgen_string_new: function (arg0, arg1) {
+      const ret = getStringFromWasm0(arg0, arg1);
+      return addHeapObject(ret);
+    },
+    __wbg_push_ca1c26067ef907ac: function (arg0, arg1) {
+      const ret = getObject(arg0).push(getObject(arg1));
+      return ret;
+    },
     __wbg_String_88810dfeb4021902: function (arg0, arg1) {
       const ret = String(getObject(arg1));
       const ptr1 = passStringToWasm0(
@@ -477,6 +477,9 @@ const imports = {
     __wbindgen_jsval_eq: function (arg0, arg1) {
       const ret = getObject(arg0) === getObject(arg1);
       return ret;
+    },
+    __wbindgen_object_drop_ref: function (arg0) {
+      takeObject(arg0);
     },
     __wbindgen_error_new: function (arg0, arg1) {
       const ret = new Error(getStringFromWasm0(arg0, arg1));
@@ -572,9 +575,6 @@ const imports = {
       } finally {
         wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
       }
-    },
-    __wbindgen_object_drop_ref: function (arg0) {
-      takeObject(arg0);
     },
     __wbindgen_is_function: function (arg0) {
       const ret = typeof (getObject(arg0)) === "function";
@@ -696,8 +696,8 @@ const imports = {
       const ret = getObject(arg0).then(getObject(arg1), getObject(arg2));
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper8999: function (arg0, arg1, arg2) {
-      const ret = makeMutClosure(arg0, arg1, 312, __wbg_adapter_40);
+    __wbindgen_closure_wrapper9053: function (arg0, arg1, arg2) {
+      const ret = makeMutClosure(arg0, arg1, 311, __wbg_adapter_40);
       return addHeapObject(ret);
     },
   },
