@@ -1,6 +1,6 @@
 [package]
 name = "eszip"
-version = "0.55.2"
+version = "0.55.3"
 authors = ["the Deno authors"]
 edition = "2021"
 repository = "https://github.com/denoland/eszip"
