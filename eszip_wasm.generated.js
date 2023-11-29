@@ -478,9 +478,6 @@ const imports = {
       const ret = getObject(arg0) === getObject(arg1);
       return ret;
     },
-    __wbindgen_object_drop_ref: function (arg0) {
-      takeObject(arg0);
-    },
     __wbindgen_error_new: function (arg0, arg1) {
       const ret = new Error(getStringFromWasm0(arg0, arg1));
       return addHeapObject(ret);
@@ -575,6 +572,9 @@ const imports = {
       } finally {
         wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
       }
+    },
+    __wbindgen_object_drop_ref: function (arg0) {
+      takeObject(arg0);
     },
     __wbindgen_is_function: function (arg0) {
       const ret = typeof (getObject(arg0)) === "function";
@@ -696,7 +696,7 @@ const imports = {
       const ret = getObject(arg0).then(getObject(arg1), getObject(arg2));
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper9021: function (arg0, arg1, arg2) {
+    __wbindgen_closure_wrapper9084: function (arg0, arg1, arg2) {
       const ret = makeMutClosure(arg0, arg1, 311, __wbg_adapter_40);
       return addHeapObject(ret);
     },
