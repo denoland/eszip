@@ -94,15 +94,18 @@ impl deno_graph::source::Resolver for Resolver {
   fn resolve(
     &self,
     specifier: &str,
-    referrer: &deno_graph::ModuleSpecifier,
+    referrer_range: &deno_graph::Range,
     _mode: deno_graph::source::ResolutionMode,
   ) -> Result<deno_graph::ModuleSpecifier, ResolveError> {
     if let Some(import_map) = &self.0 {
       import_map
-        .resolve(specifier, referrer)
+        .resolve(specifier, &referrer_range.specifier)
         .map_err(|e| ResolveError::Other(e.into()))
     } else {
-      Ok(deno_graph::resolve_import(specifier, referrer)?)
+      Ok(deno_graph::resolve_import(
+        specifier,
+        &referrer_range.specifier,
+      )?)
     }
   }
 }
