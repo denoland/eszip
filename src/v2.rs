@@ -1220,12 +1220,12 @@ mod tests {
     fn resolve(
       &self,
       specifier: &str,
-      referrer: &ModuleSpecifier,
+      referrer_range: &deno_graph::Range,
       _mode: deno_graph::source::ResolutionMode,
     ) -> Result<ModuleSpecifier, ResolveError> {
       self
         .0
-        .resolve(specifier, referrer)
+        .resolve(specifier, &referrer_range.specifier)
         .map_err(|err| ResolveError::Other(err.into()))
     }
   }
