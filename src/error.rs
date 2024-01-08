@@ -1,3 +1,5 @@
+// Copyright 2018-2024 the Deno authors. All rights reserved. MIT license.
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
