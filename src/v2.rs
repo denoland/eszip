@@ -12,6 +12,7 @@ use deno_ast::TranspiledSource;
 use deno_graph::CapturingModuleParser;
 use deno_graph::ModuleGraph;
 use deno_graph::ModuleParser;
+use deno_graph::ParseOptions;
 use deno_npm::resolution::SerializedNpmResolutionSnapshot;
 use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
 use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
@@ -752,11 +753,12 @@ impl EszipV2 {
             | deno_graph::MediaType::Tsx
             | deno_graph::MediaType::Dts
             | deno_graph::MediaType::Dmts => {
-              let parsed_source = parser.parse_module(
-                &module.specifier,
-                module.source.clone(),
-                module.media_type,
-              )?;
+              let parsed_source = parser.parse_module(ParseOptions {
+                specifier: &module.specifier,
+                source: module.source.clone(),
+                media_type: module.media_type,
+                scope_analysis: false,
+              })?;
               let TranspiledSource {
                 text,
                 source_map: maybe_source_map,
