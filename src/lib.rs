@@ -1,3 +1,5 @@
+// Copyright 2018-2024 the Deno authors. All rights reserved. MIT license.
+
 mod error;
 pub mod v1;
 pub mod v2;
