@@ -296,9 +296,9 @@ dependencies = [
 
 [[package]]
 name = "deno_graph"
-version = "0.63.0"
+version = "0.63.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9a7517284a929f0f2f4db8b241c840bccd4debd6635ea0bc7a906c0254a0231"
+checksum = "be751db3da720bcd35d42f9c0967a04cafd52d554d79262426d1c00179b0c085"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -309,7 +309,7 @@ dependencies = [
  "import_map 0.18.0",
  "indexmap 2.0.0",
  "log",
- "monch 0.4.3",
+ "monch",
  "once_cell",
  "parking_lot",
  "regex",
@@ -354,7 +354,7 @@ dependencies = [
  "deno_semver",
  "futures",
  "log",
- "monch 0.5.0",
+ "monch",
  "serde",
  "thiserror",
 ]
@@ -365,7 +365,7 @@ version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b49e14effd9df8ed261f7a1a34ac19bbaf0fa940c59bd19a6d8313cf41525e1c"
 dependencies = [
- "monch 0.5.0",
+ "monch",
  "once_cell",
  "serde",
  "thiserror",
@@ -997,12 +997,6 @@ dependencies = [
  "wasi",
  "windows-sys 0.48.0",
 ]
-
-[[package]]
-name = "monch"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4519a88847ba2d5ead3dc53f1060ec6a571de93f325d9c5c4968147382b1cbc3"
 
 [[package]]
 name = "monch"

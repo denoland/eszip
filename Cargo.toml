@@ -11,7 +11,7 @@ license = "MIT"
 members = ["lib"]
 
 [workspace.dependencies]
-deno_graph = "0.63.0"
+deno_graph = "0.63.4"
 
 [profile.release]
 codegen-units = 1
@@ -36,7 +36,7 @@ base64 = "0.21.0"
 deno_ast = { version = "1.0.1", features = ["transpiling"] }
 deno_graph = { workspace = true }
 deno_npm = "0.16.0"
-deno_semver = "0.5.0"
+deno_semver = "0.5.4"
 futures = "0.3.26"
 hashlink = "0.8.2"
 serde = "1"
