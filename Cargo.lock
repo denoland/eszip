@@ -309,7 +309,7 @@ dependencies = [
  "import_map 0.18.0",
  "indexmap 2.0.0",
  "log",
- "monch",
+ "monch 0.4.3",
  "once_cell",
  "parking_lot",
  "regex",
@@ -321,11 +321,11 @@ dependencies = [
 
 [[package]]
 name = "deno_lockfile"
-version = "0.17.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51f589768a9e492bef84acb0c5c203d766d49480a8e096aae3bca4b4c9554e90"
+checksum = "dfe06eda519ed05b69da567bcba1d728c482fd553ddaa2ffe008468158da6de0"
 dependencies = [
- "ring",
+ "ring 0.17.7",
  "serde",
  "serde_json",
  "thiserror",
@@ -344,9 +344,9 @@ dependencies = [
 
 [[package]]
 name = "deno_npm"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b266a37deae9bc36785d44e9cc1c52d504940b89e5fea63b65119bef44b128a3"
+checksum = "376262760b173ff01f8f5d05d58a64f6d863472396afb5582590fa0949342854"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -354,18 +354,18 @@ dependencies = [
  "deno_semver",
  "futures",
  "log",
- "monch",
+ "monch 0.5.0",
  "serde",
  "thiserror",
 ]
 
 [[package]]
 name = "deno_semver"
-version = "0.5.0"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "594fd570fecc994ef602b96214f9d6c8ae11e60e29e37e89ab90af7f6b7f9d00"
+checksum = "b49e14effd9df8ed261f7a1a34ac19bbaf0fa940c59bd19a6d8313cf41525e1c"
 dependencies = [
- "monch",
+ "monch 0.5.0",
  "once_cell",
  "serde",
  "thiserror",
@@ -638,6 +638,17 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "getrandom"
+version = "0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "190092ea657667030ac6a35e305e62fc4dd69fd98ac98631e5d3a2b1575a12b5"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "wasi",
 ]
 
 [[package]]
@@ -923,9 +934,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.147"
+version = "0.2.152"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
+checksum = "13e3bf6590cbc649f4d1a3eefc9d5d6eb746f5200ffb04e5e142700b8faa56e7"
 
 [[package]]
 name = "linked-hash-map"
@@ -992,6 +1003,12 @@ name = "monch"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4519a88847ba2d5ead3dc53f1060ec6a571de93f325d9c5c4968147382b1cbc3"
+
+[[package]]
+name = "monch"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b52c1b33ff98142aecea13138bd399b68aa7ab5d9546c300988c345004001eea"
 
 [[package]]
 name = "native-tls"
@@ -1364,10 +1381,24 @@ dependencies = [
  "cc",
  "libc",
  "once_cell",
- "spin",
- "untrusted",
+ "spin 0.5.2",
+ "untrusted 0.7.1",
  "web-sys",
  "winapi",
+]
+
+[[package]]
+name = "ring"
+version = "0.17.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "688c63d65483050968b2a8937f7995f443e27041a0f7700aa59b0822aedebb74"
+dependencies = [
+ "cc",
+ "getrandom",
+ "libc",
+ "spin 0.9.8",
+ "untrusted 0.9.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -1411,7 +1442,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d1feddffcfcc0b33f5c6ce9a29e341e4cd59c3f78e7ee45f4a40c038b1d6cbb"
 dependencies = [
  "log",
- "ring",
+ "ring 0.16.20",
  "rustls-webpki",
  "sct",
 ]
@@ -1431,8 +1462,8 @@ version = "0.101.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d93931baf2d282fff8d3a532bbfd7653f734643161b87e3e01e59a04439bf0d"
 dependencies = [
- "ring",
- "untrusted",
+ "ring 0.16.20",
+ "untrusted 0.7.1",
 ]
 
 [[package]]
@@ -1474,8 +1505,8 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d53dcdb7c9f8158937a7981b48accfd39a43af418591a5d008c7b22b5e1b7ca4"
 dependencies = [
- "ring",
- "untrusted",
+ "ring 0.16.20",
+ "untrusted 0.7.1",
 ]
 
 [[package]]
@@ -1672,6 +1703,12 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "spin"
+version = "0.9.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "stacker"
@@ -2261,6 +2298,12 @@ name = "untrusted"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
+
+[[package]]
+name = "untrusted"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "url"
