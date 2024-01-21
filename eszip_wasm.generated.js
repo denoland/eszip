@@ -1,7 +1,7 @@
 // @generated file from wasmbuild -- do not edit
 // deno-lint-ignore-file
 // deno-fmt-ignore-file
-// source-hash: 5cbd4aeef2dbca2677d9c2faee71c22b99e97ed8
+// source-hash: 46ecbd7d18bdf1ea4c966a0c9514e2175e0fad65
 let wasm;
 
 const heap = new Array(128).fill(undefined);
@@ -237,7 +237,7 @@ function makeMutClosure(arg0, arg1, dtor, f) {
   return real;
 }
 function __wbg_adapter_40(arg0, arg1, arg2) {
-  wasm.wasm_bindgen__convert__closures__invoke1_mut__h91735af6e275c7ce(
+  wasm.wasm_bindgen__convert__closures__invoke1_mut__h3984e7e868fa77f5(
     arg0,
     arg1,
     addHeapObject(arg2),
@@ -274,7 +274,7 @@ function handleError(f, args) {
   }
 }
 function __wbg_adapter_100(arg0, arg1, arg2, arg3) {
-  wasm.wasm_bindgen__convert__closures__invoke2_mut__hd032087bb158572e(
+  wasm.wasm_bindgen__convert__closures__invoke2_mut__h5730cf7776ef37a7(
     arg0,
     arg1,
     addHeapObject(arg2),
@@ -478,6 +478,9 @@ const imports = {
       const ret = getObject(arg0) === getObject(arg1);
       return ret;
     },
+    __wbindgen_object_drop_ref: function (arg0) {
+      takeObject(arg0);
+    },
     __wbindgen_error_new: function (arg0, arg1) {
       const ret = new Error(getStringFromWasm0(arg0, arg1));
       return addHeapObject(ret);
@@ -572,9 +575,6 @@ const imports = {
       } finally {
         wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
       }
-    },
-    __wbindgen_object_drop_ref: function (arg0) {
-      takeObject(arg0);
     },
     __wbindgen_is_function: function (arg0) {
       const ret = typeof (getObject(arg0)) === "function";
@@ -696,8 +696,8 @@ const imports = {
       const ret = getObject(arg0).then(getObject(arg1), getObject(arg2));
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper9551: function (arg0, arg1, arg2) {
-      const ret = makeMutClosure(arg0, arg1, 330, __wbg_adapter_40);
+    __wbindgen_closure_wrapper9554: function (arg0, arg1, arg2) {
+      const ret = makeMutClosure(arg0, arg1, 327, __wbg_adapter_40);
       return addHeapObject(ret);
     },
   },
