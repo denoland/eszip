@@ -16,7 +16,8 @@ anyhow = "1"
 console_error_panic_hook = "0.1.7"
 deno_graph = { workspace = true }
 eszip = { path = "../" }
-import_map = "0.15.0"
+getrandom = { version = "*", features = ["js"] }
+import_map = { workspace = true }
 js-sys = { version = "0.3.64" }
 futures = "0.3.19"
 wasm-bindgen = { version = "=0.2.87", features = ["serde-serialize"] }
