@@ -261,9 +261,9 @@ dependencies = [
 
 [[package]]
 name = "deno_ast"
-version = "1.0.1"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d87c67f73e749f78096f517cbb57967d98a8c713b39cf88b1f0b8750a84aa29"
+checksum = "d83d58de6f05f4eb41ec518c19067e3e40cd0edd3d366ad95c601bc6e71bdf49"
 dependencies = [
  "anyhow",
  "base64",
@@ -298,8 +298,7 @@ dependencies = [
 [[package]]
 name = "deno_graph"
 version = "0.63.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be751db3da720bcd35d42f9c0967a04cafd52d554d79262426d1c00179b0c085"
+source = "git+https://github.com/denoland/deno_graph.git?branch=main#497cb1121c8a08c288ff65b2c2a9752d1c5fe771"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1922,9 +1921,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_transforms_proposal"
-version = "0.169.14"
+version = "0.169.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86de99757fc31d8977f47c02a26e5c9a243cb63b03fe8aa8b36d79924b8fa29c"
+checksum = "ed89d6ff74f60de490fb56e1cc505b057905e36c13d405d7d61dd5c9f6ee8fc9"
 dependencies = [
  "either",
  "rustc-hash",
@@ -1942,9 +1941,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_transforms_react"
-version = "0.181.15"
+version = "0.181.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9918e22caf1ea4a71085f5d818d6c0bf5c19d669cfb9d38f9fdc3da0496abdc7"
+checksum = "e31a2f879fd21d18080b6c42e633e0ae8c6f3d54b83c1de876767d82b458c999"
 dependencies = [
  "base64",
  "dashmap",
@@ -1966,9 +1965,9 @@ dependencies = [
 
 [[package]]
 name = "swc_ecma_transforms_typescript"
-version = "0.186.14"
+version = "0.186.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1d1495c969ffdc224384f1fb73646b9c1b170779f20fdb984518deb054aa522"
+checksum = "3e4263372cc7cd1a3b4570ccf7438f3c1e1575f134fd05cdf074edb322480a5b"
 dependencies = [
  "ryu-js",
  "serde",
