@@ -11,7 +11,7 @@ license = "MIT"
 members = ["lib"]
 
 [workspace.dependencies]
-deno_graph = "0.63.4"
+deno_graph = "0.63.5"
 import_map = "0.18.2"
 
 [profile.release]
@@ -34,7 +34,7 @@ path = "src/examples/viewer.rs"
 [dependencies]
 anyhow = "1"
 base64 = "0.21.0"
-deno_ast = { version = "1.0.1", features = ["transpiling"] }
+deno_ast = { version = "0.32.0", features = ["transpiling"] }
 deno_graph = { workspace = true }
 deno_npm = "0.16.0"
 deno_semver = "0.5.4"
