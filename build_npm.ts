@@ -16,6 +16,7 @@ await build({
     deno: true,
     undici: true,
   },
+  scriptModule: false,
   package: {
     name: "@deno/eszip",
     version: Deno.args[0],
