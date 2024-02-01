@@ -90,10 +90,14 @@ impl EszipV2Modules {
           wakers.push(cx.waker().clone());
           return Poll::Pending;
         }
-        EszipV2SourceSlot::Ready(_) => {},
+        EszipV2SourceSlot::Ready(_) => {}
         EszipV2SourceSlot::Taken => return Poll::Ready(None),
       };
-      let EszipV2SourceSlot::Ready(bytes) = std::mem::replace(slot, EszipV2SourceSlot::Taken) else { unreachable!() };
+      let EszipV2SourceSlot::Ready(bytes) =
+        std::mem::replace(slot, EszipV2SourceSlot::Taken)
+      else {
+        unreachable!()
+      };
       Poll::Ready(Some(bytes))
     })
     .await
