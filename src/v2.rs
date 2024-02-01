@@ -1587,12 +1587,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::from(content);
-    eszip.add_import_map(
-      ModuleKind::Json,
-      specifier.to_string(),
-      import_map_bytes,
-    );
+    eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
 
     let module = eszip.get_module("file:///import_map.json").unwrap();
     assert_eq!(module.specifier, "file:///import_map.json");
@@ -1668,12 +1663,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::from(content);
-    eszip.add_import_map(
-      ModuleKind::Json,
-      specifier.to_string(),
-      import_map_bytes,
-    );
+    eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
 
     // Verify that the resulting eszip consists of two unique modules even
     // though `import_map.json` is referenced twice:
@@ -1739,12 +1729,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::from(content);
-    eszip.add_import_map(
-      ModuleKind::Jsonc,
-      specifier.to_string(),
-      import_map_bytes,
-    );
+    eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
 
     assert_eq!(
       eszip.specifiers(),
@@ -1818,12 +1803,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::from(content);
-    eszip.add_import_map(
-      ModuleKind::Jsonc,
-      specifier.to_string(),
-      import_map_bytes,
-    );
+    eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
 
     struct Expected {
       specifier: String,
