@@ -11,7 +11,7 @@ export interface LoadResponseModule {
    * have been normalized to be lower case values. */
   headers?: Record<string, string>;
   /** The string value of the loaded resources. */
-  content: string;
+  content: string | Uint8Array;
 }
 
 export interface LoadResponseExternalBuiltIn {

@@ -35,13 +35,13 @@ function inlineTsMod(specifier: string, content: string): LoadResponse {
 }
 
 function stage1Loader() {
-  return async (specifier: string): Promise<LoadResponse | undefined> => {
+  return (specifier: string): Promise<LoadResponse | undefined> => {
     if (specifier === STAGE1_SPECIFIER) {
       // Load stage 1 wrapper from net/disk or codegenerated in-memory
-      return inlineTsMod(specifier, stage1());
+      return Promise.resolve(inlineTsMod(specifier, stage1()));
     } else if (specifier === STAGE2_SPECIFIER) {
       // Dangling reference to stage2
-      return { kind: "external", specifier };
+      return Promise.resolve({ kind: "external", specifier });
     }
     // Falling back to the default loading logic.
     return load(specifier);
@@ -95,9 +95,9 @@ function stage2Loader(conf: Stage2Config) {
 
 function unifiedLoader(conf: Stage2Config) {
   const s2Loader = stage2Loader(conf);
-  return async (specifier: string): Promise<LoadResponse | undefined> => {
+  return (specifier: string): Promise<LoadResponse | undefined> => {
     if (specifier === STAGE1_SPECIFIER) {
-      return inlineTsMod(specifier, stage1());
+      return Promise.resolve(inlineTsMod(specifier, stage1()));
     }
     return s2Loader(specifier);
   };
