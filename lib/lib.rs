@@ -287,8 +287,11 @@ pub async fn build_eszip(
       deno_graph::source::LoadResponse::Module {
         specifier, content, ..
       } => {
-        let import_map =
-          import_map::parse_from_json(&specifier, &content).unwrap();
+        let import_map = import_map::parse_from_json(
+          &specifier,
+          &String::from_utf8(content.to_vec()).unwrap(),
+        )
+        .unwrap();
         (Some(import_map.import_map), Some((specifier, content)))
       }
       _ => unimplemented!(),

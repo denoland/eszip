@@ -4,6 +4,8 @@ import {
   Parser as InternalParser,
 } from "./eszip_wasm.generated.js";
 
+const encoder = new TextEncoder();
+
 export type { LoadResponse } from "./loader.ts";
 
 export const options: { wasmURL: URL | undefined } = { wasmURL: undefined };
@@ -28,8 +30,19 @@ export async function build(
   const { build } = await instantiate({ url: options.wasmURL });
   return build(
     roots,
-    (specifier: string) =>
-      loader(specifier).catch((err) => Promise.reject(String(err))),
+    (specifier: string) => {
+      return loader(specifier).then(result => {
+        if (result?.kind === "module") {
+          if (typeof result.content === "string") {
+            result.content = encoder.encode(result.content);
+          }
+          // need to convert to an array for serde_wasm_bindgen to work
+          // deno-lint-ignore no-explicit-any
+          (result as any).content = Array.from(result.content);
+        }
+        return result;
+      }).catch((err) => Promise.reject(String(err)));
+    },
     importMapUrl,
   );
 }

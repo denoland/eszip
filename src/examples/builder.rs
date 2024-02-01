@@ -38,6 +38,7 @@ async fn main() {
         deno_graph::source::LoadResponse::Module {
           specifier, content, ..
         } => {
+          let content = String::from_utf8(content.to_vec()).unwrap();
           let import_map =
             import_map::parse_from_json(&specifier, &content).unwrap();
           (Some(import_map.import_map), Some((specifier, content)))
@@ -77,7 +78,7 @@ async fn main() {
     eszip.add_import_map(
       eszip::ModuleKind::Json,
       import_map_specifier.to_string(),
-      Arc::from(import_map_content),
+      Arc::from(import_map_content.into_bytes()),
     )
   }
   for specifier in eszip.specifiers() {
@@ -128,7 +129,7 @@ impl deno_graph::source::Loader for Loader {
         "data" => deno_graph::source::load_data_url(&specifier),
         "file" => {
           let path = std::fs::canonicalize(specifier.to_file_path().unwrap())?;
-          let content = std::fs::read_to_string(&path)?;
+          let content = std::fs::read(&path)?;
           Ok(Some(deno_graph::source::LoadResponse::Module {
             specifier: Url::from_file_path(&path).unwrap(),
             maybe_headers: None,
@@ -153,11 +154,11 @@ impl deno_graph::source::Loader for Loader {
               headers.insert(key_str, values_str);
             }
             let url = resp.url().clone();
-            let content = resp.text().await?;
+            let content = resp.bytes().await?;
             Ok(Some(deno_graph::source::LoadResponse::Module {
               specifier: url,
               maybe_headers: Some(headers),
-              content: Arc::from(content),
+              content: Arc::from(content.as_ref()),
             }))
           }
         }
