@@ -92,6 +92,24 @@ impl Eszip {
   }
 }
 
+/// Get an iterator over all the modules (including an import map, if any) in
+/// this eszip archive.
+///
+/// Note that the iterator will iterate over the specifiers' "snapshot" of the
+/// archive. If a new module is added to the archive after the iterator is
+/// created via `into_iter()`, that module will not be iterated over.
+impl IntoIterator for Eszip {
+  type Item = (String, Module);
+  type IntoIter = std::vec::IntoIter<Self::Item>;
+
+  fn into_iter(self) -> Self::IntoIter {
+    match self {
+      Eszip::V1(eszip) => eszip.into_iter(),
+      Eszip::V2(eszip) => eszip.into_iter(),
+    }
+  }
+}
+
 pub struct Module {
   pub specifier: String,
   pub kind: ModuleKind,
