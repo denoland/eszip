@@ -28,15 +28,18 @@ pub enum Eszip {
 }
 
 /// This future needs to polled to parse the eszip file.
-type EszipParserFuture<R> =
-  Pin<Box<dyn Future<Output = Result<futures::io::BufReader<R>, ParseError>>>>;
+type EszipParserFuture<R> = Pin<
+  Box<
+    dyn Future<Output = Result<futures::io::BufReader<R>, ParseError>> + Send,
+  >,
+>;
 
 impl Eszip {
   /// Parse a byte stream into an Eszip. This function completes when the header
   /// is fully received. This does not mean that the entire file is fully
   /// received or parsed yet. To finish parsing, the future returned by this
   /// function in the second tuple slot needs to be polled.
-  pub async fn parse<R: futures::io::AsyncRead + Unpin + 'static>(
+  pub async fn parse<R: futures::io::AsyncRead + Unpin + Send + 'static>(
     reader: R,
   ) -> Result<(Eszip, EszipParserFuture<R>), ParseError> {
     let mut reader = futures::io::BufReader::new(reader);
