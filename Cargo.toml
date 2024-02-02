@@ -1,6 +1,6 @@
 [package]
 name = "eszip"
-version = "0.59.0"
+version = "0.60.0"
 authors = ["the Deno authors"]
 edition = "2021"
 repository = "https://github.com/denoland/eszip"
@@ -11,7 +11,7 @@ license = "MIT"
 members = ["lib"]
 
 [workspace.dependencies]
-deno_graph = "0.63.5"
+deno_graph = "0.64.1"
 import_map = "0.18.2"
 
 [profile.release]

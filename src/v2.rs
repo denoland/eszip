@@ -745,7 +745,7 @@ impl EszipV2 {
       }
 
       match module {
-        deno_graph::Module::Esm(module) => {
+        deno_graph::Module::Js(module) => {
           let source: Arc<[u8]>;
           let source_map: Arc<[u8]>;
           match module.media_type {
@@ -1200,7 +1200,7 @@ mod tests {
             let Ok(resolved) = path.canonicalize() else {
               return Ok(None);
             };
-            let source = std::fs::read_to_string(&resolved).unwrap();
+            let source = std::fs::read(&resolved).unwrap();
             let specifier =
               resolved.file_name().unwrap().to_string_lossy().to_string();
             let specifier =
@@ -1266,7 +1266,7 @@ mod tests {
         Box::pin(async move {
           let path = Path::new(&path);
           let resolved = path.canonicalize().unwrap();
-          let source = std::fs::read_to_string(&resolved).unwrap();
+          let source = std::fs::read(&resolved).unwrap();
           let specifier =
             resolved.file_name().unwrap().to_string_lossy().to_string();
           let specifier = Url::parse(&format!("file:///{specifier}")).unwrap();
@@ -1565,7 +1565,11 @@ mod tests {
       } => (specifier, content),
       _ => unimplemented!(),
     };
-    let import_map = import_map::parse_from_json(&specifier, &content).unwrap();
+    let import_map = import_map::parse_from_json(
+      &specifier,
+      &String::from_utf8(content.to_vec()).unwrap(),
+    )
+    .unwrap();
     let roots = vec![ModuleSpecifier::parse("file:///mapped.js").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
@@ -1587,12 +1591,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::from(content);
-    eszip.add_import_map(
-      ModuleKind::Json,
-      specifier.to_string(),
-      import_map_bytes,
-    );
+    eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
 
     let module = eszip.get_module("file:///import_map.json").unwrap();
     assert_eq!(module.specifier, "file:///import_map.json");
@@ -1640,7 +1639,11 @@ mod tests {
       } => (specifier, content),
       _ => unimplemented!(),
     };
-    let import_map = import_map::parse_from_json(&specifier, &content).unwrap();
+    let import_map = import_map::parse_from_json(
+      &specifier,
+      &String::from_utf8(content.to_vec()).unwrap(),
+    )
+    .unwrap();
     let roots =
       // This file imports `import_map.json` as a module.
       vec![ModuleSpecifier::parse("file:///import_import_map.js").unwrap()];
@@ -1664,12 +1667,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::from(content);
-    eszip.add_import_map(
-      ModuleKind::Json,
-      specifier.to_string(),
-      import_map_bytes,
-    );
+    eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
 
     // Verify that the resulting eszip consists of two unique modules even
     // though `import_map.json` is referenced twice:
@@ -1706,9 +1704,12 @@ mod tests {
     };
     let import_map = import_map::parse_from_value(
       &specifier,
-      jsonc_parser::parse_to_serde_value(&content, &Default::default())
-        .unwrap()
-        .unwrap(),
+      jsonc_parser::parse_to_serde_value(
+        &String::from_utf8(content.to_vec()).unwrap(),
+        &Default::default(),
+      )
+      .unwrap()
+      .unwrap(),
     )
     .unwrap();
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
@@ -1732,12 +1733,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::from(content);
-    eszip.add_import_map(
-      ModuleKind::Jsonc,
-      specifier.to_string(),
-      import_map_bytes,
-    );
+    eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
 
     assert_eq!(
       eszip.specifiers(),
@@ -1782,9 +1778,12 @@ mod tests {
     };
     let import_map = import_map::parse_from_value(
       &specifier,
-      jsonc_parser::parse_to_serde_value(&content, &Default::default())
-        .unwrap()
-        .unwrap(),
+      jsonc_parser::parse_to_serde_value(
+        &String::from_utf8(content.to_vec()).unwrap(),
+        &Default::default(),
+      )
+      .unwrap()
+      .unwrap(),
     )
     .unwrap();
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
@@ -1808,12 +1807,7 @@ mod tests {
       EmitOptions::default(),
     )
     .unwrap();
-    let import_map_bytes = Arc::from(content);
-    eszip.add_import_map(
-      ModuleKind::Jsonc,
-      specifier.to_string(),
-      import_map_bytes,
-    );
+    eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
 
     struct Expected {
       specifier: String,
