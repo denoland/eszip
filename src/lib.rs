@@ -32,7 +32,7 @@ type EszipParserOutput<R> = Result<futures::io::BufReader<R>, ParseError>;
 /// This future needs to polled to parse the eszip file.
 type EszipParserFuture<R> = BoxFuture<'static, EszipParserOutput<R>>;
 /// This future needs to polled to parse the eszip file.
-type EszipParserLoalFuture<R> = LocalBoxFuture<'static, EszipParserOutput<R>>;
+type EszipParserLocalFuture<R> = LocalBoxFuture<'static, EszipParserOutput<R>>;
 
 impl Eszip {
   /// Parse a byte stream into an Eszip. This function completes when the header
@@ -66,7 +66,7 @@ impl Eszip {
   /// returned future does not implement `Send` either.
   pub async fn parse_local<R: futures::io::AsyncRead + Unpin + 'static>(
     reader: R,
-  ) -> Result<(Eszip, EszipParserLoalFuture<R>), ParseError> {
+  ) -> Result<(Eszip, EszipParserLocalFuture<R>), ParseError> {
     let mut reader = futures::io::BufReader::new(reader);
     reader.fill_buf().await?;
     let buffer = reader.buffer();
