@@ -4,13 +4,13 @@ mod error;
 pub mod v1;
 pub mod v2;
 
-use std::pin::Pin;
 use std::sync::Arc;
 
 use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
+use futures::future::BoxFuture;
+use futures::future::LocalBoxFuture;
 use futures::io::AsyncBufReadExt;
 use futures::io::AsyncReadExt;
-use futures::Future;
 use serde::Deserialize;
 use serde::Serialize;
 use v2::EszipV2Modules;
@@ -27,12 +27,12 @@ pub enum Eszip {
   V2(EszipV2),
 }
 
+type EszipParserOutput<R> = Result<futures::io::BufReader<R>, ParseError>;
+
 /// This future needs to polled to parse the eszip file.
-type EszipParserFuture<R> = Pin<
-  Box<
-    dyn Future<Output = Result<futures::io::BufReader<R>, ParseError>> + Send,
-  >,
->;
+type EszipParserFuture<R> = BoxFuture<'static, EszipParserOutput<R>>;
+/// This future needs to polled to parse the eszip file.
+type EszipParserLoalFuture<R> = LocalBoxFuture<'static, EszipParserOutput<R>>;
 
 impl Eszip {
   /// Parse a byte stream into an Eszip. This function completes when the header
@@ -42,6 +42,31 @@ impl Eszip {
   pub async fn parse<R: futures::io::AsyncRead + Unpin + Send + 'static>(
     reader: R,
   ) -> Result<(Eszip, EszipParserFuture<R>), ParseError> {
+    let mut reader = futures::io::BufReader::new(reader);
+    reader.fill_buf().await?;
+    let buffer = reader.buffer();
+    if EszipV2::has_magic(buffer) {
+      let (eszip, fut) = EszipV2::parse(reader).await?;
+      Ok((Eszip::V2(eszip), Box::pin(fut)))
+    } else {
+      let mut buffer = Vec::new();
+      reader.read_to_end(&mut buffer).await?;
+      let eszip = EszipV1::parse(&buffer)?;
+      let fut = async move { Ok::<_, ParseError>(reader) };
+      Ok((Eszip::V1(eszip), Box::pin(fut)))
+    }
+  }
+
+  /// Parse a byte stream into an Eszip. This function completes when the header
+  /// is fully received. This does not mean that the entire file is fully
+  /// received or parsed yet. To finish parsing, the future returned by this
+  /// function in the second tuple slot needs to be polled.
+  ///
+  /// As opposed to [`Eszip::parse`], this method accepts `!Send` reader. The
+  /// returned future does not implement `Send` either.
+  pub async fn parse_local<R: futures::io::AsyncRead + Unpin + 'static>(
+    reader: R,
+  ) -> Result<(Eszip, EszipParserLoalFuture<R>), ParseError> {
     let mut reader = futures::io::BufReader::new(reader);
     reader.fill_buf().await?;
     let buffer = reader.buffer();
@@ -188,7 +213,7 @@ pub enum ModuleKind {
 
 #[cfg(test)]
 mod tests {
-  use crate::Eszip;
+  use super::*;
   use futures::io::AllowStdIo;
 
   #[tokio::test]
@@ -249,5 +274,81 @@ mod tests {
     assert!(!source_map.is_empty());
     // Source map shouldn't be available anymore.
     assert!(module.source_map().await.is_none());
+  }
+
+  #[tokio::test]
+  async fn test_eszip_v1_iterator() {
+    let file = std::fs::File::open("./src/testdata/basic.json").unwrap();
+    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
+    tokio::spawn(fut);
+    assert!(matches!(eszip, Eszip::V1(_)));
+
+    struct Expected {
+      specifier: String,
+      source: &'static str,
+      kind: ModuleKind,
+    }
+
+    let expected = vec![
+      Expected {
+        specifier: "https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js".to_string(),
+        source: "addEventListener(\"fetch\", (event)=>{\n    event.respondWith(new Response(\"Hello World\", {\n        headers: {\n            \"content-type\": \"text/plain\"\n        }\n    }));\n});\n//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIjxodHRwczovL2dpc3QuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2x1Y2FjYXNvbmF0by9mM2UyMTQwNTMyMjI1OWNhNGVkMTU1NzIyMzkwZmRhMi9yYXcvZTI1YWNiNDliNjgxZThlMWRhNWEyYTMzNzQ0YjdhMzZkNTM4NzEyZC9oZWxsby5qcz4iXSwic291cmNlc0NvbnRlbnQiOlsiYWRkRXZlbnRMaXN0ZW5lcihcImZldGNoXCIsIChldmVudCkgPT4ge1xuICBldmVudC5yZXNwb25kV2l0aChuZXcgUmVzcG9uc2UoXCJIZWxsbyBXb3JsZFwiLCB7XG4gICAgaGVhZGVyczogeyBcImNvbnRlbnQtdHlwZVwiOiBcInRleHQvcGxhaW5cIiB9LFxuICB9KSk7XG59KTsiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IkFBQUEsZ0JBQUEsRUFBQSxLQUFBLElBQUEsS0FBQTtBQUNBLFNBQUEsQ0FBQSxXQUFBLEtBQUEsUUFBQSxFQUFBLFdBQUE7QUFDQSxlQUFBO2FBQUEsWUFBQSxJQUFBLFVBQUEifQ==",
+        kind: ModuleKind::JavaScript,
+      },
+    ];
+
+    for (got, expected) in eszip.into_iter().zip(expected) {
+      let (got_specifier, got_module) = got;
+
+      assert_eq!(got_specifier, expected.specifier);
+      assert_eq!(got_module.kind, expected.kind);
+      assert_eq!(
+        String::from_utf8_lossy(&got_module.source().await.unwrap()),
+        expected.source
+      );
+    }
+  }
+
+  #[tokio::test]
+  async fn test_eszip_v2_iterator() {
+    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
+    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
+    tokio::spawn(fut);
+    assert!(matches!(eszip, Eszip::V2(_)));
+
+    struct Expected {
+      specifier: String,
+      source: &'static str,
+      kind: ModuleKind,
+    }
+
+    let expected = vec![
+      Expected {
+        specifier: "file:///main.ts".to_string(),
+        source: "export * as a from \"./a.ts\";\n",
+        kind: ModuleKind::JavaScript,
+      },
+      Expected {
+        specifier: "file:///b.ts".to_string(),
+        source: "export const b = \"b\";\n",
+        kind: ModuleKind::JavaScript,
+      },
+      Expected {
+        specifier: "file:///a.ts".to_string(),
+        source: "export const b = \"b\";\n",
+        kind: ModuleKind::JavaScript,
+      },
+    ];
+
+    for (got, expected) in eszip.into_iter().zip(expected) {
+      let (got_specifier, got_module) = got;
+
+      assert_eq!(got_specifier, expected.specifier);
+      assert_eq!(got_module.kind, expected.kind);
+      assert_eq!(
+        String::from_utf8_lossy(&got_module.source().await.unwrap()),
+        expected.source
+      );
+    }
   }
 }

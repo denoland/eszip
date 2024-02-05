@@ -217,12 +217,12 @@ impl EszipV2 {
   /// header section of the eszip has been parsed. Once this function returns,
   /// the data section will not necessarially have been parsed yet. To parse
   /// the data section, poll/await the future returned in the second tuple slot.
-  pub async fn parse<R: futures::io::AsyncRead + Unpin + Send>(
+  pub async fn parse<R: futures::io::AsyncRead + Unpin>(
     mut reader: futures::io::BufReader<R>,
   ) -> Result<
     (
       EszipV2,
-      impl Future<Output = Result<futures::io::BufReader<R>, ParseError>> + Send,
+      impl Future<Output = Result<futures::io::BufReader<R>, ParseError>>,
     ),
     ParseError,
   > {
