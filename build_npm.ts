@@ -32,9 +32,22 @@ await build({
     },
   },
   compilerOptions: {
-    lib: ["dom", "es2021"],
+    lib: ["DOM", "ES2021"],
+  },
+  postBuild() {
+    addWebCryptoGlobal("npm/esm/mod.js");
   },
 });
+
+function addWebCryptoGlobal(filePath: string) {
+  const fileText = Deno.readTextFileSync(filePath);
+  // https://docs.rs/getrandom/latest/getrandom/#nodejs-es-module-support
+  Deno.writeTextFileSync(
+    filePath,
+    `import { webcrypto } from 'node:crypto';\nif (!globalThis.crypto) {\n  globalThis.crypto = webcrypto;\n}\n` +
+      fileText,
+  );
+}
 
 Deno.copyFileSync("LICENSE", "npm/LICENSE");
 Deno.copyFileSync("README.md", "npm/README.md");

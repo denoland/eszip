@@ -31,7 +31,7 @@ export async function build(
   return build(
     roots,
     (specifier: string) => {
-      return loader(specifier).then(result => {
+      return loader(specifier).then((result) => {
         if (result?.kind === "module") {
           if (typeof result.content === "string") {
             result.content = encoder.encode(result.content);
