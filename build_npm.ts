@@ -36,7 +36,6 @@ await build({
   },
   postBuild() {
     addWebCryptoGlobal("npm/esm/mod.js");
-    addWebCryptoGlobal("npm/script/mod.js");
   },
 });
 
