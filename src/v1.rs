@@ -108,6 +108,34 @@ impl EszipV1 {
       }
     }
   }
+
+  fn specifiers(&self) -> Vec<Url> {
+    let modules = self.modules.lock().unwrap();
+    modules.keys().cloned().collect()
+  }
+}
+
+/// Get an iterator over all the modules in this eszip archive.
+///
+/// Note that the iterator will iterate over the specifiers' "snapshot" of the
+/// archive. If a new module is added to the archive after the iterator is
+/// created via `into_iter()`, that module will not be iterated over.
+impl IntoIterator for EszipV1 {
+  type Item = (String, Module);
+  type IntoIter = std::vec::IntoIter<Self::Item>;
+
+  fn into_iter(self) -> Self::IntoIter {
+    let specifiers = self.specifiers();
+    let mut v = Vec::with_capacity(specifiers.len());
+    for specifier in specifiers {
+      let Some(module) = self.get_module(specifier.as_str()) else {
+        continue;
+      };
+      v.push((specifier.to_string(), module));
+    }
+
+    v.into_iter()
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -126,7 +154,8 @@ pub struct ModuleSource {
 
 #[cfg(test)]
 mod tests {
-  use crate::EszipV1;
+  use super::*;
+  use pretty_assertions::assert_eq;
 
   #[test]
   fn file_format_parse() {
@@ -158,5 +187,63 @@ mod tests {
     let bytes = module.source().await.unwrap();
     let text = std::str::from_utf8(&bytes).unwrap();
     assert!(!text.contains("import type { ConnInfo }"));
+  }
+
+  #[tokio::test]
+  async fn eszipv1_iterator_yields_all_modules() {
+    let data = include_bytes!("./testdata/dotland.json");
+    let eszip = EszipV1::parse(data).unwrap();
+    assert_eq!(eszip.version, 1);
+
+    let expected_modules: HashSet<String> = [
+      "file:///src/util/registry_utils.ts".to_string(),
+      "file:///src/worker/handler.ts".to_string(),
+      "file:///src/worker/main.ts".to_string(),
+      "file:///src/worker/registry.ts".to_string(),
+      "file:///src/worker/registry_config.ts".to_string(),
+      "file:///src/worker/suggestions.ts".to_string(),
+      "file:///src/worker/vscode.ts".to_string(),
+      "https://cdn.esm.sh/v64/twas@2.1.2/deno/twas.js".to_string(),
+      "https://deno.land/std@0.108.0/async/deadline.ts".to_string(),
+      "https://deno.land/std@0.108.0/async/debounce.ts".to_string(),
+      "https://deno.land/std@0.108.0/async/deferred.ts".to_string(),
+      "https://deno.land/std@0.108.0/async/delay.ts".to_string(),
+      "https://deno.land/std@0.108.0/async/mod.ts".to_string(),
+      "https://deno.land/std@0.108.0/async/mux_async_iterator.ts".to_string(),
+      "https://deno.land/std@0.108.0/async/pool.ts".to_string(),
+      "https://deno.land/std@0.108.0/async/tee.ts".to_string(),
+      "https://deno.land/std@0.108.0/http/server.ts".to_string(),
+      "https://deno.land/std@0.120.0/async/deadline.ts".to_string(),
+      "https://deno.land/std@0.120.0/async/debounce.ts".to_string(),
+      "https://deno.land/std@0.120.0/async/deferred.ts".to_string(),
+      "https://deno.land/std@0.120.0/async/delay.ts".to_string(),
+      "https://deno.land/std@0.120.0/async/mod.ts".to_string(),
+      "https://deno.land/std@0.120.0/async/mux_async_iterator.ts".to_string(),
+      "https://deno.land/std@0.120.0/async/pool.ts".to_string(),
+      "https://deno.land/std@0.120.0/async/tee.ts".to_string(),
+      "https://deno.land/std@0.120.0/fmt/colors.ts".to_string(),
+      "https://deno.land/std@0.120.0/http/http_status.ts".to_string(),
+      "https://deno.land/x/fuse@v6.4.1/dist/fuse.esm.js".to_string(),
+      "https://deno.land/x/g_a@0.1.2/mod.ts".to_string(),
+      "https://deno.land/x/oak_commons@0.1.1/negotiation.ts".to_string(),
+      "https://deno.land/x/oak_commons@0.1.1/negotiation/common.ts".to_string(),
+      "https://deno.land/x/oak_commons@0.1.1/negotiation/encoding.ts"
+        .to_string(),
+      "https://deno.land/x/oak_commons@0.1.1/negotiation/language.ts"
+        .to_string(),
+      "https://deno.land/x/oak_commons@0.1.1/negotiation/mediaType.ts"
+        .to_string(),
+      "https://deno.land/x/path_to_regexp@v6.2.0/index.ts".to_string(),
+      "https://deno.land/x/pretty_bytes@v1.0.5/mod.ts".to_string(),
+      "https://esm.sh/twas@2.1.2".to_string(),
+    ]
+    .into_iter()
+    .collect();
+    let actual_modules = eszip
+      .into_iter()
+      .map(|(module_specifier, _)| module_specifier)
+      .collect();
+
+    assert_eq!(expected_modules, actual_modules);
   }
 }
