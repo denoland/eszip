@@ -1153,6 +1153,7 @@ mod tests {
 
   use deno_ast::EmitOptions;
   use deno_graph::source::CacheSetting;
+  use deno_graph::source::LoadOptions;
   use deno_graph::source::LoadResponse;
   use deno_graph::source::ResolveError;
   use deno_graph::BuildOptions;
@@ -1189,8 +1190,7 @@ mod tests {
     fn load(
       &mut self,
       specifier: &ModuleSpecifier,
-      _is_dynamic: bool,
-      _cache_setting: CacheSetting,
+      _options: LoadOptions,
     ) -> deno_graph::source::LoadFuture {
       match specifier.scheme() {
         "file" => {
@@ -1248,10 +1248,9 @@ mod tests {
       fn load(
         &mut self,
         specifier: &ModuleSpecifier,
-        is_dynamic: bool,
-        _cache_setting: deno_graph::source::CacheSetting,
+        options: LoadOptions,
       ) -> deno_graph::source::LoadFuture {
-        if is_dynamic {
+        if options.is_dynamic {
           unreachable!();
         }
         let scheme = specifier.scheme();
@@ -1553,8 +1552,11 @@ mod tests {
     let resp = deno_graph::source::Loader::load(
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
-      false,
-      CacheSetting::Use,
+      LoadOptions {
+        is_dynamic: false,
+        cache_setting: CacheSetting::Use,
+        maybe_checksum: None,
+      },
     )
     .await
     .unwrap()
@@ -1627,8 +1629,11 @@ mod tests {
     let resp = deno_graph::source::Loader::load(
       &mut loader,
       &Url::parse("file:///import_map.json").unwrap(),
-      false,
-      CacheSetting::Use,
+      LoadOptions {
+        is_dynamic: false,
+        cache_setting: CacheSetting::Use,
+        maybe_checksum: None,
+      },
     )
     .await
     .unwrap()
@@ -1690,8 +1695,11 @@ mod tests {
     let resp = deno_graph::source::Loader::load(
       &mut loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
-      false,
-      CacheSetting::Use,
+      LoadOptions {
+        is_dynamic: false,
+        cache_setting: CacheSetting::Use,
+        maybe_checksum: None,
+      },
     )
     .await
     .unwrap()
@@ -1764,8 +1772,11 @@ mod tests {
     let resp = deno_graph::source::Loader::load(
       &mut loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
-      false,
-      CacheSetting::Use,
+      LoadOptions {
+        is_dynamic: false,
+        cache_setting: CacheSetting::Use,
+        maybe_checksum: None,
+      },
     )
     .await
     .unwrap()

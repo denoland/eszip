@@ -1,6 +1,7 @@
 use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
+use deno_graph::source::LoadOptions;
 use deno_graph::source::Loader;
 use deno_graph::source::ResolveError;
 use deno_graph::source::Resolver;
@@ -16,6 +17,7 @@ use import_map::ImportMap;
 use js_sys::Promise;
 use js_sys::TypeError;
 use js_sys::Uint8Array;
+use serde::Serialize;
 use std::cell::RefCell;
 use std::future::Future;
 use std::io::Error;
@@ -275,8 +277,11 @@ pub async fn build_eszip(
     let resp = deno_graph::source::Loader::load(
       &mut loader,
       &import_map_url,
-      false,
-      deno_graph::source::CacheSetting::Use,
+      deno_graph::source::LoadOptions {
+        is_dynamic: false,
+        cache_setting: deno_graph::source::CacheSetting::Use,
+        maybe_checksum: None,
+      },
     )
     .await
     .map_err(|e| js_sys::Error::new(&e.to_string()))?
@@ -346,18 +351,29 @@ impl Loader for GraphLoader {
   fn load(
     &mut self,
     specifier: &ModuleSpecifier,
-    is_dynamic: bool,
-    cache_setting: deno_graph::source::CacheSetting,
+    options: LoadOptions,
   ) -> LoadFuture {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct JsLoadOptions {
+      pub is_dynamic: bool,
+      pub cache_setting: &'static str,
+      pub checksum: Option<String>,
+    }
+
     if specifier.scheme() == "data" {
       Box::pin(std::future::ready(load_data_url(specifier)))
     } else {
       let specifier = specifier.clone();
-      let result = self.0.call3(
+      let result = self.0.call2(
         &JsValue::null(),
         &JsValue::from(specifier.to_string()),
-        &JsValue::from(is_dynamic),
-        &JsValue::from(cache_setting.as_js_str()),
+        &serde_wasm_bindgen::to_value(&JsLoadOptions {
+          is_dynamic: options.is_dynamic,
+          cache_setting: options.cache_setting.as_js_str(),
+          checksum: options.maybe_checksum.map(|c| c.into_string()),
+        })
+        .unwrap(),
       );
       Box::pin(async move {
         let response = match result {
