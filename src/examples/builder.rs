@@ -28,8 +28,11 @@ async fn main() {
       let resp = deno_graph::source::Loader::load(
         &mut loader,
         &import_map_url,
-        false,
-        CacheSetting::Use,
+        deno_graph::source::LoadOptions {
+          is_dynamic: false,
+          cache_setting: CacheSetting::Use,
+          maybe_checksum: None,
+        },
       )
       .await
       .unwrap()
@@ -119,8 +122,7 @@ impl deno_graph::source::Loader for Loader {
   fn load(
     &mut self,
     specifier: &deno_graph::ModuleSpecifier,
-    _is_dynamic: bool,
-    _cache_setting: CacheSetting,
+    _options: deno_graph::source::LoadOptions,
   ) -> deno_graph::source::LoadFuture {
     let specifier = specifier.clone();
 

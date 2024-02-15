@@ -1,8 +1,9 @@
-import { load, LoadResponse } from "./loader.ts";
+import { load, Loader } from "./loader.ts";
 import {
   instantiate,
   Parser as InternalParser,
 } from "./eszip_wasm.generated.js";
+import { CacheSetting } from "https://deno.land/x/deno_cache@0.7.1/mod.ts";
 
 const encoder = new TextEncoder();
 
@@ -24,14 +25,23 @@ export class Parser extends InternalParser {
 
 export async function build(
   roots: string[],
-  loader: (url: string) => Promise<LoadResponse | undefined> = load,
+  loader: Loader["load"] = load,
   importMapUrl?: string,
 ): Promise<Uint8Array> {
   const { build } = await instantiate({ url: options.wasmURL });
   return build(
     roots,
-    (specifier: string) => {
-      return loader(specifier).then((result) => {
+    (specifier: string, options: {
+      isDynamic: boolean;
+      cacheSetting: CacheSetting;
+      checksum: string | undefined;
+    }) => {
+      return loader(
+        specifier,
+        options.isDynamic,
+        options.cacheSetting,
+        options.checksum,
+      ).then((result) => {
         if (result?.kind === "module") {
           if (typeof result.content === "string") {
             result.content = encoder.encode(result.content);
