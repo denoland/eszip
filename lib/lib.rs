@@ -1,3 +1,8 @@
+// Copyright 2018-2024 the Deno authors. All rights reserved. MIT license.
+
+#![deny(clippy::print_stderr)]
+#![deny(clippy::print_stdout)]
+
 use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
