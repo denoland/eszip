@@ -301,7 +301,7 @@ pub async fn build_eszip(
           &specifier,
           &String::from_utf8(content.to_vec()).unwrap(),
           import_map::ImportMapOptions {
-            address: None,
+            address_hook: None,
             // always do this for simplicity
             expand_imports: true,
           },

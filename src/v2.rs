@@ -1711,7 +1711,7 @@ mod tests {
       _ => unimplemented!(),
     };
     let import_map = import_map::parse_from_value(
-      &specifier,
+      specifier,
       jsonc_parser::parse_to_serde_value(
         &String::from_utf8(content.to_vec()).unwrap(),
         &Default::default(),
@@ -1788,7 +1788,7 @@ mod tests {
       _ => unimplemented!(),
     };
     let import_map = import_map::parse_from_value(
-      &specifier,
+      specifier,
       jsonc_parser::parse_to_serde_value(
         &String::from_utf8(content.to_vec()).unwrap(),
         &Default::default(),
