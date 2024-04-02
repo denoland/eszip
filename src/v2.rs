@@ -10,6 +10,7 @@ use std::task::Poll;
 use std::task::Waker;
 
 use deno_ast::EmitOptions;
+use deno_ast::SourceMapOption;
 use deno_ast::TranspiledSource;
 use deno_graph::CapturingModuleParser;
 use deno_graph::ModuleGraph;
@@ -708,8 +709,9 @@ impl EszipV2 {
     mut emit_options: EmitOptions,
   ) -> Result<Self, anyhow::Error> {
     emit_options.inline_sources = true;
-    emit_options.inline_source_map = false;
-    emit_options.source_map = true;
+    if emit_options.source_map == SourceMapOption::Inline {
+      emit_options.source_map = SourceMapOption::Separate;
+    }
 
     let mut modules = LinkedHashMap::new();
 
@@ -1285,7 +1287,7 @@ mod tests {
         roots,
         &mut ExternalLoader,
         BuildOptions {
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1315,7 +1317,7 @@ mod tests {
         roots,
         &mut loader,
         BuildOptions {
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1356,7 +1358,7 @@ mod tests {
         roots,
         &mut loader,
         BuildOptions {
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1396,7 +1398,7 @@ mod tests {
         roots,
         &mut loader,
         BuildOptions {
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1435,7 +1437,7 @@ mod tests {
         roots,
         &mut loader,
         BuildOptions {
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1581,7 +1583,7 @@ mod tests {
         &mut loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1660,7 +1662,7 @@ mod tests {
         &mut loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1729,7 +1731,7 @@ mod tests {
         &mut loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1806,7 +1808,7 @@ mod tests {
         &mut loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1869,7 +1871,7 @@ mod tests {
         roots,
         &mut loader,
         BuildOptions {
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )
@@ -1998,7 +2000,7 @@ mod tests {
         roots,
         &mut loader,
         BuildOptions {
-          module_analyzer: Some(&analyzer),
+          module_analyzer: &analyzer,
           ..Default::default()
         },
       )

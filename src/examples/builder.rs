@@ -61,7 +61,7 @@ async fn main() {
       &mut loader,
       BuildOptions {
         resolver: Some(&Resolver(maybe_import_map)),
-        module_analyzer: Some(&analyzer),
+        module_analyzer: &analyzer,
         ..Default::default()
       },
     )
