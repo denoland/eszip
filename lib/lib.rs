@@ -8,6 +8,7 @@ use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::LoadOptions;
 use deno_graph::source::Loader;
+use deno_graph::source::NullFileSystem;
 use deno_graph::source::ResolveError;
 use deno_graph::source::Resolver;
 use deno_graph::BuildOptions;
@@ -323,8 +324,15 @@ pub async fn build_eszip(
       &mut loader,
       BuildOptions {
         resolver: Some(&resolver),
-        module_analyzer: Some(&analyzer),
-        ..Default::default()
+        module_analyzer: &analyzer,
+        is_dynamic: false,
+        imports: Vec::new(),
+        executor: Default::default(),
+        file_system: Default::default(),
+        jsr_url_provider: Default::default(),
+        npm_resolver: None,
+        reporter: None,
+        workspace_members: &[],
       },
     )
     .await;
