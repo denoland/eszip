@@ -2,7 +2,7 @@
 // @ts-nocheck: generated
 // deno-lint-ignore-file
 // deno-fmt-ignore-file
-// source-hash: 14c834f1c28502da7b7594c7faa9cea41be9e4c0
+// source-hash: db975a2884259850f10541788f9e44a6e0ffb691
 let wasm;
 
 const heap = new Array(128).fill(undefined);
@@ -783,8 +783,8 @@ const imports = {
       const ret = getObject(arg0).queueMicrotask;
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper9855: function (arg0, arg1, arg2) {
-      const ret = makeMutClosure(arg0, arg1, 262, __wbg_adapter_46);
+    __wbindgen_closure_wrapper9900: function (arg0, arg1, arg2) {
+      const ret = makeMutClosure(arg0, arg1, 274, __wbg_adapter_46);
       return addHeapObject(ret);
     },
   },
