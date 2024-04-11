@@ -10,8 +10,9 @@ use std::task::Poll;
 use std::task::Waker;
 
 use deno_ast::EmitOptions;
+use deno_ast::EmittedSource;
 use deno_ast::SourceMapOption;
-use deno_ast::TranspiledSource;
+use deno_ast::TranspileOptions;
 use deno_graph::CapturingModuleParser;
 use deno_graph::ModuleGraph;
 use deno_graph::ModuleParser;
@@ -706,6 +707,7 @@ impl EszipV2 {
   pub fn from_graph(
     graph: ModuleGraph,
     parser: &CapturingModuleParser,
+    transpile_options: TranspileOptions,
     mut emit_options: EmitOptions,
   ) -> Result<Self, anyhow::Error> {
     emit_options.inline_sources = true;
@@ -718,6 +720,7 @@ impl EszipV2 {
     fn visit_module(
       graph: &ModuleGraph,
       parser: &CapturingModuleParser,
+      transpile_options: &TranspileOptions,
       emit_options: &EmitOptions,
       modules: &mut LinkedHashMap<String, EszipV2Module>,
       specifier: &Url,
@@ -767,10 +770,10 @@ impl EszipV2 {
                 media_type: module.media_type,
                 scope_analysis: false,
               })?;
-              let TranspiledSource {
+              let EmittedSource {
                 text,
                 source_map: maybe_source_map,
-              } = parsed_source.transpile(emit_options)?;
+              } = parsed_source.transpile(transpile_options, emit_options)?;
               source = Arc::from(text.into_bytes());
               source_map = Arc::from(maybe_source_map.unwrap_or_default().into_bytes());
             }
@@ -797,6 +800,7 @@ impl EszipV2 {
               visit_module(
                 graph,
                 parser,
+                transpile_options,
                 emit_options,
                 modules,
                 specifier,
@@ -826,7 +830,15 @@ impl EszipV2 {
     }
 
     for root in &graph.roots {
-      visit_module(&graph, parser, &emit_options, &mut modules, root, false)?;
+      visit_module(
+        &graph,
+        parser,
+        &transpile_options,
+        &emit_options,
+        &mut modules,
+        root,
+        false,
+      )?;
     }
 
     for (specifier, target) in &graph.redirects {
@@ -1154,6 +1166,7 @@ mod tests {
   use std::sync::Arc;
 
   use deno_ast::EmitOptions;
+  use deno_ast::TranspileOptions;
   use deno_graph::source::CacheSetting;
   use deno_graph::source::LoadOptions;
   use deno_graph::source::LoadResponse;
@@ -1296,6 +1309,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1326,6 +1340,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1367,6 +1382,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1407,6 +1423,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1446,6 +1463,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1592,6 +1610,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1671,6 +1690,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1740,6 +1760,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1817,6 +1838,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1897,6 +1919,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -2015,6 +2038,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
