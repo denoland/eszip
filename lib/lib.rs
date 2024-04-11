@@ -343,6 +343,7 @@ pub async fn build_eszip(
     graph,
     &analyzer.as_capturing_parser(),
     Default::default(),
+    Default::default(),
   )
   .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   if let Some((import_map_specifier, import_map_content)) =

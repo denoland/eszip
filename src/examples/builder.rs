@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use deno_ast::EmitOptions;
+use deno_ast::TranspileOptions;
 use deno_graph::source::CacheSetting;
 use deno_graph::source::ResolveError;
 use deno_graph::BuildOptions;
@@ -72,6 +73,7 @@ async fn main() {
   let mut eszip = eszip::EszipV2::from_graph(
     graph,
     &analyzer.as_capturing_parser(),
+    TranspileOptions::default(),
     EmitOptions::default(),
   )
   .unwrap();
