@@ -773,7 +773,7 @@ impl EszipV2 {
               let EmittedSource {
                 text,
                 source_map: maybe_source_map,
-              } = parsed_source.transpile(transpile_options, emit_options)?;
+              } = parsed_source.transpile(transpile_options, emit_options)?.into_source();
               source = Arc::from(text.into_bytes());
               source_map = Arc::from(maybe_source_map.unwrap_or_default().into_bytes());
             }
