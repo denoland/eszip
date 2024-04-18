@@ -23,11 +23,11 @@ async fn main() {
   let out = args.get(2).unwrap();
   let maybe_import_map = args.get(3).map(|url| Url::parse(url).unwrap());
 
-  let mut loader = Loader;
+  let loader = Loader;
   let (maybe_import_map, maybe_import_map_data) =
     if let Some(import_map_url) = maybe_import_map {
       let resp = deno_graph::source::Loader::load(
-        &mut loader,
+        &loader,
         &import_map_url,
         deno_graph::source::LoadOptions {
           is_dynamic: false,
@@ -59,7 +59,7 @@ async fn main() {
   graph
     .build(
       vec![url],
-      &mut loader,
+      &loader,
       BuildOptions {
         resolver: Some(&Resolver(maybe_import_map)),
         module_analyzer: &analyzer,
@@ -122,7 +122,7 @@ struct Loader;
 
 impl deno_graph::source::Loader for Loader {
   fn load(
-    &mut self,
+    &self,
     specifier: &deno_graph::ModuleSpecifier,
     _options: deno_graph::source::LoadOptions,
   ) -> deno_graph::source::LoadFuture {

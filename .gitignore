@@ -4,5 +4,6 @@ es.zip
 /npm
 deno.lock
 js/eszip_wasm_bg.wasm
+js/eszip_wasm.generated.d.ts
 js/eszip_wasm.generated.js
 js/LICENSE

@@ -18,11 +18,11 @@ deno_graph = { workspace = true, features = ["wasm_executor"] }
 eszip = { path = "../" }
 getrandom = { version = "*", features = ["js"] }
 import_map = { workspace = true }
-js-sys = { version = "0.3.64" }
+js-sys = { version = "0.3.69" }
 futures = "0.3.19"
-wasm-bindgen = { version = "=0.2.90" }
-wasm-bindgen-futures = { version = "=0.4.40" }
+wasm-bindgen = { version = "=0.2.92" }
+wasm-bindgen-futures = { version = "=0.4.42" }
 serde = { workspace = true }
 serde-wasm-bindgen = "0.5.0"
-web-sys = { version = "=0.3.67", features = ["ReadableStreamByobReader"] }
+web-sys = { version = "=0.3.69", features = ["ReadableStreamByobReader"] }
 

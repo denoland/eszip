@@ -3,7 +3,7 @@ import {
   assert,
   assertEquals,
   assertRejects,
-} from "https://deno.land/std@0.123.0/testing/asserts.ts";
+} from "jsr:@std/assert@0.223";
 
 Deno.test("roundtrip build + parse", async () => {
   const eszip = await build([
@@ -75,7 +75,7 @@ Deno.test("loader errors", async () => {
         ["https://deno.land/std@0.123.0/fs/mod.ts"],
         (specifier: string) => Promise.reject(new Error("oops")),
       ),
-    undefined,
+    Error,
     "oops",
   );
 });
