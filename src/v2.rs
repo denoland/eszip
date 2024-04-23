@@ -999,6 +999,7 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
       dist: Default::default(),
       dependencies,
       optional_dependencies: Default::default(),
+      bin: None,
     });
   }
   let mut root_packages = HashMap::with_capacity(npm_specifiers.len());
@@ -2103,6 +2104,7 @@ mod tests {
       system: Default::default(),
       dist: Default::default(),
       optional_dependencies: Default::default(),
+      bin: None,
     }
   }
 }
