@@ -36,6 +36,10 @@ path = "src/examples/viewer.rs"
 name = "source_hash_function"
 harness = false
 
+[[example]]
+name = "eszip_decoder"
+path = "src/examples/decoder.rs"
+
 [dependencies]
 anyhow = "1"
 base64 = "0.21.0"
