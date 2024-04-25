@@ -1000,6 +1000,7 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
       dependencies,
       optional_dependencies: Default::default(),
       bin: None,
+      scripts: Default::default(),
     });
   }
   let mut root_packages = HashMap::with_capacity(npm_specifiers.len());

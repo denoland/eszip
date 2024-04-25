@@ -54,3 +54,6 @@ tokio = { version = "1", features = ["macros", "rt"] }
 reqwest = { version = "0.11.23", features = ["rustls-tls"] }
 jsonc-parser = { version = "0.23.0", features = ["serde"] }
 insta = "1.34.0"
+
+[patch.crates-io]
+deno_npm = { path = "../deno_npm" }
