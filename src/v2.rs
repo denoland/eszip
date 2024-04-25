@@ -2106,6 +2106,7 @@ mod tests {
       dist: Default::default(),
       optional_dependencies: Default::default(),
       bin: None,
+      scripts: Default::default(),
     }
   }
 }
