@@ -494,7 +494,7 @@ dependencies = [
 
 [[package]]
 name = "eszip"
-version = "0.68.3"
+version = "0.68.4"
 dependencies = [
  "anyhow",
  "base64",
