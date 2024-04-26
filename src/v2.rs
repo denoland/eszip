@@ -765,7 +765,7 @@ impl EszipV2 {
             let source_map_offset = source_maps.len() as u32;
             source_maps.extend_from_slice(source_map_bytes);
             source_maps
-              .extend_from_slice(&source_hash_function.hash(&source_map_bytes));
+              .extend_from_slice(&source_hash_function.hash(source_map_bytes));
 
             modules_header.extend_from_slice(&source_map_offset.to_be_bytes());
             modules_header.extend_from_slice(&source_map_length.to_be_bytes());
@@ -2284,7 +2284,7 @@ mod tests {
     .concat();
     let bytes = main_eszip().await.into_bytes();
     let existing_options_size = std::mem::size_of::<u32>()
-      + 1 * 4
+      + std::mem::size_of::<u8>() * 4
       + <sha2::Sha256 as sha2::Digest>::output_size();
     let options_start = super::ESZIP_V2_2_MAGIC.len();
     let new_bytes = [
@@ -2319,7 +2319,7 @@ mod tests {
     .concat();
     let bytes = main_eszip().await.into_bytes();
     let existing_options_size = std::mem::size_of::<u32>()
-      + 1 * 4
+      + std::mem::size_of::<u8>() * 4
       + <sha2::Sha256 as sha2::Digest>::output_size();
     let options_start = super::ESZIP_V2_2_MAGIC.len();
     let new_bytes = [
@@ -2352,7 +2352,7 @@ mod tests {
     .concat();
     let bytes = main_eszip().await.into_bytes();
     let existing_options_size = std::mem::size_of::<u32>()
-      + 1 * 4
+      + std::mem::size_of::<u8>() * 4
       + <sha2::Sha256 as sha2::Digest>::output_size();
     let options_start = super::ESZIP_V2_2_MAGIC.len();
     let new_bytes = [
