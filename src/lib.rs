@@ -43,9 +43,9 @@ impl Eszip {
     reader: R,
   ) -> Result<(Eszip, EszipParserFuture<R>), ParseError> {
     let mut reader = futures::io::BufReader::new(reader);
-    reader.fill_buf().await?;
-    let buffer = reader.buffer();
-    if EszipV2::has_magic(buffer) {
+    let mut magic = [0; 8];
+    reader.read_exact(&mut magic).await?;
+    if EszipV2::has_magic(&magic) {
       let (eszip, fut) = EszipV2::parse(reader).await?;
       Ok((Eszip::V2(eszip), Box::pin(fut)))
     } else {
