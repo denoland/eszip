@@ -46,7 +46,7 @@ impl Eszip {
     let mut magic = [0; 8];
     reader.read_exact(&mut magic).await?;
     if EszipV2::has_magic(&magic) {
-      let (eszip, fut) = EszipV2::parse(reader).await?;
+      let (eszip, fut) = EszipV2::parse_with_magic(&magic, reader).await?;
       Ok((Eszip::V2(eszip), Box::pin(fut)))
     } else {
       let mut buffer = Vec::new();
