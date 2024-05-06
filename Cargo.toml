@@ -36,10 +36,6 @@ path = "src/examples/viewer.rs"
 name = "eszip_decoder"
 path = "src/examples/decoder.rs"
 
-[[example]]
-name = "eszip_decoder"
-path = "src/examples/decoder.rs"
-
 [dependencies]
 anyhow = "1"
 base64 = "0.21.0"
