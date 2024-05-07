@@ -5,16 +5,16 @@ use deno_graph::{
   BuildOptions, CapturingModuleAnalyzer, GraphKind, ModuleGraph,
   ModuleSpecifier,
 };
-use eszip::{v2::HashFunction, EszipV2};
+use eszip::{v2::Checksum, EszipV2};
 use futures::io::{AllowStdIo, BufReader};
 
 fn into_bytes_sha256(mut eszip: EszipV2) -> Vec<u8> {
-  eszip.set_source_hash_function(HashFunction::Sha256);
+  eszip.set_checksum(Checksum::Sha256);
   eszip.into_bytes()
 }
 
 fn into_bytes_crc32(mut eszip: EszipV2) -> Vec<u8> {
-  eszip.set_source_hash_function(HashFunction::Crc32);
+  eszip.set_checksum(Checksum::Crc32);
   eszip.into_bytes()
 }
 
@@ -84,7 +84,7 @@ fn bench_parse(c: &mut Criterion) {
       .build()
       .unwrap();
     let mut eszip = rt.block_on(build_eszip(mb));
-    eszip.set_source_hash_function(HashFunction::Sha256);
+    eszip.set_checksum(Checksum::Sha256);
     let bytes = eszip.into_bytes();
     group.bench_with_input(
       BenchmarkId::new("SHA256", format!("{mb}MB")),
@@ -92,7 +92,7 @@ fn bench_parse(c: &mut Criterion) {
       |b, bytes| b.to_async(&rt).iter(|| parse_sha256(bytes)),
     );
     let mut eszip = rt.block_on(build_eszip(mb));
-    eszip.set_source_hash_function(HashFunction::Crc32);
+    eszip.set_checksum(Checksum::Crc32);
     let bytes = eszip.into_bytes();
     group.bench_with_input(
       BenchmarkId::new("CRC32", format!("{mb}MB")),
