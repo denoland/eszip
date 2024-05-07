@@ -51,6 +51,7 @@ sha2 = "0.10.1"
 thiserror = "1.0.30"
 url = "2.2.2"
 crc32fast = "1"
+xxhash-rust = {version = "0.8", features = ["xxh3"]}
 
 [dev-dependencies]
 import_map = { workspace = true }

@@ -29,6 +29,7 @@ use hashlink::linked_hash_map::LinkedHashMap;
 use sha2::Digest;
 use sha2::Sha256;
 pub use url::Url;
+use xxhash_rust::xxh3::xxh3_64;
 
 use crate::error::ParseError;
 use crate::Module;
@@ -255,7 +256,7 @@ impl Checksum {
       Self::NoChecksum => Vec::new(),
       Self::Sha256 => Sha256::digest(bytes).as_slice().to_vec(),
       Self::Crc32 => crc32fast::hash(bytes).to_be_bytes().into(),
-      Self::XxHash => todo!(),
+      Self::XxHash => xxh3_64(bytes).to_be_bytes().into(),
     }
   }
 }
@@ -1380,6 +1381,7 @@ mod tests {
   use import_map::ImportMap;
   use pretty_assertions::assert_eq;
   use url::Url;
+  use xxhash_rust::xxh3::xxh3_64;
 
   use super::Checksum;
   use super::EszipV2;
@@ -2319,6 +2321,30 @@ mod tests {
       .unwrap();
     fut.await.unwrap();
     assert_eq!(parsed_eszip.options.checksum, Some(super::Checksum::Crc32));
+    assert!(parsed_eszip.is_checksumed());
+  }
+
+  #[tokio::test]
+  async fn v2_2_set_xxhash_checksum() {
+    let mut eszip = main_eszip().await;
+    eszip.set_checksum(super::Checksum::XxHash);
+    let main_source = eszip
+      .get_module("file:///main.ts")
+      .unwrap()
+      .source()
+      .await
+      .unwrap();
+    let bytes = eszip.into_bytes();
+    let main_xxhash = xxh3_64(&main_source).to_be_bytes();
+    let xxhash_in_bytes = bytes
+      .windows(main_xxhash.len())
+      .any(|window| window == main_xxhash);
+    assert!(xxhash_in_bytes);
+    let (parsed_eszip, fut) = EszipV2::parse(BufReader::new(bytes.as_slice()))
+      .await
+      .unwrap();
+    fut.await.unwrap();
+    assert_eq!(parsed_eszip.options.checksum, Some(super::Checksum::XxHash));
     assert!(parsed_eszip.is_checksumed());
   }
 
