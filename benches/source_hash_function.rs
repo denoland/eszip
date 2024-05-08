@@ -18,15 +18,12 @@ fn into_bytes_crc32(mut eszip: EszipV2) -> Vec<u8> {
   eszip.into_bytes()
 }
 
-async fn parse_sha256(bytes: &[u8]) -> EszipV2 {
-  let (eszip, fut) = EszipV2::parse(BufReader::new(AllowStdIo::new(bytes)))
-    .await
-    .unwrap();
-  fut.await.unwrap();
-  eszip
+fn into_bytes_xxhash(mut eszip: EszipV2) -> Vec<u8> {
+  eszip.set_checksum(Checksum::XxHash);
+  eszip.into_bytes()
 }
 
-async fn parse_crc32(bytes: &[u8]) -> EszipV2 {
+async fn parse(bytes: &[u8]) -> EszipV2 {
   let (eszip, fut) = EszipV2::parse(BufReader::new(AllowStdIo::new(bytes)))
     .await
     .unwrap();
@@ -71,6 +68,22 @@ fn bench_into_bytes(c: &mut Criterion) {
         )
       },
     );
+    group.bench_with_input(
+      BenchmarkId::new("XXHASH", format!("{mb}MB")),
+      &mb,
+      |b, mb| {
+        b.iter_batched(
+          || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+              .build()
+              .unwrap();
+            rt.block_on(build_eszip(*mb))
+          },
+          into_bytes_xxhash,
+          criterion::BatchSize::SmallInput,
+        )
+      },
+    );
   }
   group.finish();
 }
@@ -89,7 +102,7 @@ fn bench_parse(c: &mut Criterion) {
     group.bench_with_input(
       BenchmarkId::new("SHA256", format!("{mb}MB")),
       &bytes,
-      |b, bytes| b.to_async(&rt).iter(|| parse_sha256(bytes)),
+      |b, bytes| b.to_async(&rt).iter(|| parse(bytes)),
     );
     let mut eszip = rt.block_on(build_eszip(mb));
     eszip.set_checksum(Checksum::Crc32);
@@ -97,7 +110,15 @@ fn bench_parse(c: &mut Criterion) {
     group.bench_with_input(
       BenchmarkId::new("CRC32", format!("{mb}MB")),
       &bytes,
-      |b, bytes| b.to_async(&rt).iter(|| parse_crc32(bytes)),
+      |b, bytes| b.to_async(&rt).iter(|| parse(bytes)),
+    );
+    let mut eszip = rt.block_on(build_eszip(mb));
+    eszip.set_checksum(Checksum::XxHash);
+    let bytes = eszip.into_bytes();
+    group.bench_with_input(
+      BenchmarkId::new("XXHASH", format!("{mb}MB")),
+      &bytes,
+      |b, bytes| b.to_async(&rt).iter(|| parse(bytes)),
     );
   }
   group.finish();
