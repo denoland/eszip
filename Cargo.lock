@@ -642,6 +642,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "tokio",
+ "twox-hash",
  "url",
  "xxhash-rust",
 ]

@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
 use std::hash::Hash;
+#[cfg(feature = "xxhash")]
+use std::hash::Hasher;
 use std::mem::size_of;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -26,10 +28,13 @@ use deno_semver::package::PackageReq;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
 use hashlink::linked_hash_map::LinkedHashMap;
-use sha2::Digest;
-use sha2::Sha256;
+#[cfg(feature = "xxhash")]
+use twox_hash::XxHash64;
 pub use url::Url;
+#[cfg(feature = "xxhash3")]
 use xxhash_rust::xxh3::xxh3_64;
+#[cfg(feature = "sha256")]
+use {sha2::Digest, sha2::Sha256};
 
 use crate::error::ParseError;
 use crate::Module;
@@ -191,13 +196,18 @@ struct Options {
 
 impl Options {
   fn default_for_version(magic: &[u8; 8]) -> Self {
-    let mut defaults = Self {
+    let defaults = Self {
       checksum: Some(Checksum::NoChecksum),
       checksum_size: Default::default(),
     };
+    #[cfg(feature = "sha256")]
+    let mut defaults = defaults;
     if let ESZIP_V2_MAGIC | ESZIP_V2_1_MAGIC = magic {
       // versions prior to v2.2 default to checksuming with SHA256
-      defaults.checksum = Some(Checksum::Sha256);
+      #[cfg(feature = "sha256")]
+      {
+        defaults.checksum = Some(Checksum::Sha256);
+      }
     }
     defaults
   }
@@ -226,37 +236,72 @@ impl Options {
 #[repr(u8)]
 pub enum Checksum {
   NoChecksum = 0,
+  #[cfg(feature = "sha256")]
   Sha256 = 1,
+  #[cfg(feature = "crc32")]
   Crc32 = 2,
+  #[cfg(feature = "xxhash")]
   XxHash = 3,
+  #[cfg(feature = "xxhash3")]
+  XxHash3 = 4,
 }
 
 impl Checksum {
   const fn digest_size(self) -> u8 {
     match self {
       Self::NoChecksum => 0,
+      #[cfg(feature = "sha256")]
       Self::Sha256 => 32,
+      #[cfg(feature = "crc32")]
       Self::Crc32 => 4,
+      #[cfg(feature = "xxhash")]
       Self::XxHash => 8,
+      #[cfg(feature = "xxhash3")]
+      Self::XxHash3 => 8,
     }
   }
 
   fn from_u8(discriminant: u8) -> Option<Self> {
     Some(match discriminant {
       0 => Self::NoChecksum,
+      #[cfg(feature = "sha256")]
       1 => Self::Sha256,
+      #[cfg(feature = "crc32")]
       2 => Self::Crc32,
+      #[cfg(feature = "xxhash")]
       3 => Self::XxHash,
+      #[cfg(feature = "xxhash3")]
+      4 => Self::XxHash3,
       _ => return None,
     })
   }
-
-  fn hash(self, bytes: &[u8]) -> Vec<u8> {
+  fn hash(
+    self,
+    #[cfg_attr(
+      not(any(
+        feature = "sha256",
+        feature = "crc32",
+        feature = "xxhash",
+        feature = "xxhash3"
+      )),
+      allow(unused)
+    )]
+    bytes: &[u8],
+  ) -> Vec<u8> {
     match self {
       Self::NoChecksum => Vec::new(),
+      #[cfg(feature = "sha256")]
       Self::Sha256 => Sha256::digest(bytes).as_slice().to_vec(),
+      #[cfg(feature = "crc32")]
       Self::Crc32 => crc32fast::hash(bytes).to_be_bytes().into(),
-      Self::XxHash => xxh3_64(bytes).to_be_bytes().into(),
+      #[cfg(feature = "xxhash")]
+      Self::XxHash => {
+        let mut hasher = XxHash64::default();
+        hasher.write(bytes);
+        hasher.finish().to_be_bytes().into()
+      }
+      #[cfg(feature = "xxhash3")]
+      Self::XxHash3 => xxh3_64(bytes).to_be_bytes().into(),
     }
   }
 }
@@ -1381,12 +1426,12 @@ mod tests {
   use import_map::ImportMap;
   use pretty_assertions::assert_eq;
   use url::Url;
+  #[cfg(feature = "xxhash3")]
   use xxhash_rust::xxh3::xxh3_64;
 
   use super::Checksum;
   use super::EszipV2;
   use super::ESZIP_V2_2_MAGIC;
-  use crate::error::ParseError;
   use crate::ModuleKind;
 
   struct FileLoader {
@@ -1674,6 +1719,7 @@ mod tests {
     assert_matches_file!(source, "./testdata/emit/dynamic_data.ts");
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn file_format_parse_redirect() {
     let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
@@ -1704,6 +1750,7 @@ mod tests {
     tokio::try_join!(fut, test).unwrap();
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn file_format_parse_json() {
     let file = std::fs::File::open("./src/testdata/json.eszip2").unwrap();
@@ -1733,6 +1780,7 @@ mod tests {
     tokio::try_join!(fut, test).unwrap();
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn file_format_roundtrippable() {
     let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
@@ -2157,6 +2205,7 @@ mod tests {
     assert_eq!(module.kind, ModuleKind::JavaScript);
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn npm_packages_loaded_file() {
     // packages
@@ -2287,6 +2336,7 @@ mod tests {
     assert!(!eszip.should_be_checksumed());
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn v2_1_and_older_default_to_sha256_checksum() {
     let file = std::fs::File::open("./src/testdata/json.eszip2").unwrap();
@@ -2300,6 +2350,7 @@ mod tests {
     assert!(eszip.is_checksumed());
   }
 
+  #[cfg(feature = "crc32")]
   #[tokio::test]
   async fn v2_2_set_crc32_checksum() {
     let mut eszip = main_eszip().await;
@@ -2324,10 +2375,11 @@ mod tests {
     assert!(parsed_eszip.is_checksumed());
   }
 
+  #[cfg(feature = "xxhash")]
   #[tokio::test]
   async fn v2_2_set_xxhash_checksum() {
     let mut eszip = main_eszip().await;
-    eszip.set_checksum(super::Checksum::XxHash);
+    eszip.set_checksum(super::Checksum::XxHash3);
     let main_source = eszip
       .get_module("file:///main.ts")
       .unwrap()
@@ -2344,7 +2396,10 @@ mod tests {
       .await
       .unwrap();
     fut.await.unwrap();
-    assert_eq!(parsed_eszip.options.checksum, Some(super::Checksum::XxHash));
+    assert_eq!(
+      parsed_eszip.options.checksum,
+      Some(super::Checksum::XxHash3)
+    );
     assert!(parsed_eszip.is_checksumed());
   }
 
@@ -2372,6 +2427,7 @@ mod tests {
     assert!(!new_eszip.should_be_checksumed());
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   #[should_panic]
   async fn v2_2_unknown_checksum_function_degrades_to_no_checksum() {
@@ -2411,6 +2467,7 @@ mod tests {
     new_eszip.into_bytes();
   }
 
+  #[cfg(feature = "crc32")]
   #[tokio::test]
   async fn wrong_checksum() {
     let mut eszip = main_eszip().await;
@@ -2439,7 +2496,10 @@ mod tests {
       .unwrap();
     let result = fut.await;
     assert!(result.is_err());
-    assert!(matches!(result, Err(ParseError::InvalidV2SourceHash(_))));
+    assert!(matches!(
+      result,
+      Err(crate::error::ParseError::InvalidV2SourceHash(_))
+    ));
   }
 
   #[tokio::test]

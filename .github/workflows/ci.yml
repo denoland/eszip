@@ -27,7 +27,10 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Clippy
-        run: cargo clippy --all-targets --locked
+        run: |
+          cargo clippy --all-targets --locked --no-default-features
+          cargo clippy --all-targets --locked
+          cargo clippy --all-targets --locked --all-features
 
       - name: Build
         run: deno task build && deno task node

@@ -36,6 +36,13 @@ path = "src/examples/viewer.rs"
 name = "source_hash_function"
 harness = false
 
+[features]
+crc32 = ["dep:crc32fast"]
+xxhash = ["dep:twox-hash"]
+xxhash3 = ["dep:xxhash-rust"]
+sha256 = ["dep:sha2"]
+default = ["sha256"]  # backwards compatibility
+
 [dependencies]
 anyhow = "1"
 base64 = "0.21.0"
@@ -47,11 +54,12 @@ futures = "0.3.26"
 hashlink = "0.8.2"
 serde = { workspace = true }
 serde_json = "1"
-sha2 = "0.10.1"
+sha2 = {version = "0.10.1", optional = true}
 thiserror = "1.0.30"
 url = "2.2.2"
-crc32fast = "1"
-xxhash-rust = {version = "0.8", features = ["xxh3"]}
+crc32fast = {version = "1", optional = true}
+xxhash-rust = { version = "0.8", optional = true, features = ["xxh3"] }
+twox-hash = { version = "1.6", optional = true, default-features = false }
 
 [dev-dependencies]
 import_map = { workspace = true }

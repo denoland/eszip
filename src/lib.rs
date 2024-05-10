@@ -225,6 +225,7 @@ mod tests {
     eszip.get_module("https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js").unwrap();
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn parse_v2() {
     let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
@@ -252,6 +253,7 @@ mod tests {
     assert!(eszip.get_module(specifier).is_none());
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn take_source_v2() {
     let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
@@ -309,6 +311,7 @@ mod tests {
     }
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn test_eszip_v2_iterator() {
     let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
