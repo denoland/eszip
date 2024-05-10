@@ -1,6 +1,6 @@
 [package]
 name = "eszip"
-version = "0.68.1"
+version = "0.68.4"
 authors = ["the Deno authors"]
 edition = "2021"
 repository = "https://github.com/denoland/eszip"
@@ -11,7 +11,7 @@ license = "MIT"
 members = ["lib"]
 
 [workspace.dependencies]
-deno_graph = "0.73.1"
+deno_graph = "0.74.0"
 import_map = "0.19.1"
 serde = "1"
 
@@ -47,9 +47,9 @@ default = ["sha256"]
 [dependencies]
 anyhow = "1"
 base64 = "0.21.0"
-deno_ast = { version = "0.37.1", features = ["transpiling"] }
+deno_ast = { version = "0.38.0", features = ["transpiling"] }
 deno_graph = { workspace = true }
-deno_npm = "0.18.0"
+deno_npm = "0.20.0"
 deno_semver = "0.5.4"
 futures = "0.3.26"
 hashlink = "0.8.2"
