@@ -41,7 +41,8 @@ crc32 = ["dep:crc32fast"]
 xxhash = ["dep:twox-hash"]
 xxhash3 = ["dep:xxhash-rust"]
 sha256 = ["dep:sha2"]
-default = ["sha256"]  # backwards compatibility
+# backwards compatibility. Disabling sha256 will break compatibility with eszips older than v2.2
+default = ["sha256"]  
 
 [dependencies]
 anyhow = "1"
