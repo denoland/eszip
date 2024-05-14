@@ -379,7 +379,7 @@ impl EszipV2 {
   }
 
   pub(super) async fn parse_with_magic<R: futures::io::AsyncRead + Unpin>(
-    magic: &[u8],
+    magic: &[u8; 8],
     mut reader: futures::io::BufReader<R>,
   ) -> Result<
     (
@@ -388,10 +388,10 @@ impl EszipV2 {
     ),
     ParseError,
   > {
-    let supports_npm = magic != *ESZIP_V2_MAGIC;
-    let supports_options = magic == *ESZIP_V2_2_MAGIC;
+    let supports_npm = magic != ESZIP_V2_MAGIC;
+    let supports_options = magic == ESZIP_V2_2_MAGIC;
 
-    let mut options = Options::default_for_version(&magic);
+    let mut options = Options::default_for_version(magic);
 
     if supports_options {
       let mut pre_options = options;
