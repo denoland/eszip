@@ -235,6 +235,19 @@ impl EszipV2 {
       return Err(ParseError::InvalidV2);
     }
 
+    Self::parse_with_magic(&magic, reader).await
+  }
+
+  pub(super) async fn parse_with_magic<R: futures::io::AsyncRead + Unpin>(
+    magic: &[u8],
+    mut reader: futures::io::BufReader<R>,
+  ) -> Result<
+    (
+      EszipV2,
+      impl Future<Output = Result<futures::io::BufReader<R>, ParseError>>,
+    ),
+    ParseError,
+  > {
     let is_v3 = magic == *ESZIP_V2_1_MAGIC;
     let header = HashedSection::read(&mut reader).await?;
     if !header.hash_valid() {
