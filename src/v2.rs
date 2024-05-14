@@ -375,6 +375,19 @@ impl EszipV2 {
       return Err(ParseError::InvalidV2);
     }
 
+    Self::parse_with_magic(&magic, reader).await
+  }
+
+  pub(super) async fn parse_with_magic<R: futures::io::AsyncRead + Unpin>(
+    magic: &[u8],
+    mut reader: futures::io::BufReader<R>,
+  ) -> Result<
+    (
+      EszipV2,
+      impl Future<Output = Result<futures::io::BufReader<R>, ParseError>>,
+    ),
+    ParseError,
+  > {
     let supports_npm = magic != *ESZIP_V2_MAGIC;
     let supports_options = magic == *ESZIP_V2_2_MAGIC;
 

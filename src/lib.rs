@@ -43,14 +43,15 @@ impl Eszip {
     reader: R,
   ) -> Result<(Eszip, EszipParserFuture<R>), ParseError> {
     let mut reader = futures::io::BufReader::new(reader);
-    reader.fill_buf().await?;
-    let buffer = reader.buffer();
-    if EszipV2::has_magic(buffer) {
-      let (eszip, fut) = EszipV2::parse(reader).await?;
+    let mut magic = [0; 8];
+    reader.read_exact(&mut magic).await?;
+    if EszipV2::has_magic(&magic) {
+      let (eszip, fut) = EszipV2::parse_with_magic(&magic, reader).await?;
       Ok((Eszip::V2(eszip), Box::pin(fut)))
     } else {
       let mut buffer = Vec::new();
-      reader.read_to_end(&mut buffer).await?;
+      let mut reader_w_magic = magic.chain(&mut reader);
+      reader_w_magic.read_to_end(&mut buffer).await?;
       let eszip = EszipV1::parse(&buffer)?;
       let fut = async move { Ok::<_, ParseError>(reader) };
       Ok((Eszip::V1(eszip), Box::pin(fut)))
@@ -215,6 +216,9 @@ pub enum ModuleKind {
 mod tests {
   use super::*;
   use futures::io::AllowStdIo;
+  use futures::stream;
+  use futures::StreamExt;
+  use futures::TryStreamExt;
 
   #[tokio::test]
   async fn parse_v1() {
@@ -353,5 +357,21 @@ mod tests {
         expected.source
       );
     }
+  }
+
+  #[tokio::test]
+  async fn parse_small_chunks_reader() {
+    let bytes = std::fs::read("./src/testdata/redirect.eszip2")
+      .unwrap()
+      .chunks(2)
+      .map(|chunk| chunk.to_vec())
+      .collect::<Vec<_>>();
+    let reader = stream::iter(bytes)
+      .map(std::io::Result::Ok)
+      .into_async_read();
+
+    let (eszip, fut) = Eszip::parse(reader).await.unwrap();
+    fut.await.unwrap();
+    assert!(matches!(eszip, Eszip::V2(_)));
   }
 }
