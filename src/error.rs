@@ -32,6 +32,10 @@ pub enum ParseError {
   InvalidV2NpmPackage(String, anyhow::Error),
   #[error("invalid eszip v2.1 npm req '{0}'. {1:#}")]
   InvalidV2NpmPackageReq(String, anyhow::Error),
+  #[error("invalid eszip v2.2 options header")]
+  InvalidV22OptionsHeader(String),
+  #[error("invalid eszip v2.2 options header hash")]
+  InvalidV22OptionsHeaderHash,
 
   #[error(transparent)]
   Io(#[from] std::io::Error),
