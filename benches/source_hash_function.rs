@@ -14,18 +14,6 @@ fn into_bytes_sha256(mut eszip: EszipV2) -> Vec<u8> {
   eszip.into_bytes()
 }
 
-#[cfg(feature = "crc32")]
-fn into_bytes_crc32(mut eszip: EszipV2) -> Vec<u8> {
-  eszip.set_checksum(Checksum::Crc32);
-  eszip.into_bytes()
-}
-
-#[cfg(feature = "xxhash")]
-fn into_bytes_xxhash(mut eszip: EszipV2) -> Vec<u8> {
-  eszip.set_checksum(Checksum::XxHash);
-  eszip.into_bytes()
-}
-
 #[cfg(feature = "xxhash3")]
 fn into_bytes_xxhash3(mut eszip: EszipV2) -> Vec<u8> {
   eszip.set_checksum(Checksum::XxHash3);
@@ -63,40 +51,6 @@ fn bench_into_bytes(c: &mut Criterion) {
             rt.block_on(build_eszip(*mb))
           },
           into_bytes_sha256,
-          criterion::BatchSize::SmallInput,
-        )
-      },
-    );
-    #[cfg(feature = "crc32")]
-    group.bench_with_input(
-      BenchmarkId::new("CRC32", format!("{mb}MB")),
-      &mb,
-      |b, mb| {
-        b.iter_batched(
-          || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-              .build()
-              .unwrap();
-            rt.block_on(build_eszip(*mb))
-          },
-          into_bytes_crc32,
-          criterion::BatchSize::SmallInput,
-        )
-      },
-    );
-    #[cfg(feature = "xxhash")]
-    group.bench_with_input(
-      BenchmarkId::new("XXHASH", format!("{mb}MB")),
-      &mb,
-      |b, mb| {
-        b.iter_batched(
-          || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-              .build()
-              .unwrap();
-            rt.block_on(build_eszip(*mb))
-          },
-          into_bytes_xxhash,
           criterion::BatchSize::SmallInput,
         )
       },
@@ -154,28 +108,6 @@ fn bench_parse(c: &mut Criterion) {
       let bytes = eszip.into_bytes();
       group.bench_with_input(
         BenchmarkId::new("SHA256", format!("{mb}MB")),
-        &bytes,
-        |b, bytes| b.to_async(&rt).iter(|| parse(bytes)),
-      );
-    }
-    #[cfg(feature = "crc32")]
-    {
-      let mut eszip = rt.block_on(build_eszip(mb));
-      eszip.set_checksum(Checksum::Crc32);
-      let bytes = eszip.into_bytes();
-      group.bench_with_input(
-        BenchmarkId::new("CRC32", format!("{mb}MB")),
-        &bytes,
-        |b, bytes| b.to_async(&rt).iter(|| parse(bytes)),
-      );
-    }
-    #[cfg(feature = "xxhash")]
-    {
-      let mut eszip = rt.block_on(build_eszip(mb));
-      eszip.set_checksum(Checksum::XxHash);
-      let bytes = eszip.into_bytes();
-      group.bench_with_input(
-        BenchmarkId::new("XXHASH", format!("{mb}MB")),
         &bytes,
         |b, bytes| b.to_async(&rt).iter(|| parse(bytes)),
       );

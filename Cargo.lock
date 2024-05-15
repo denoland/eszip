@@ -307,15 +307,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crc32fast"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3855a8a784b474f333699ef2bbca9db2c4a1f6d9088a90a2d25b1eb53111eaa"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "criterion"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -646,7 +637,6 @@ version = "0.68.5"
 dependencies = [
  "anyhow",
  "base64",
- "crc32fast",
  "criterion",
  "deno_ast",
  "deno_graph",
@@ -664,7 +654,6 @@ dependencies = [
  "sha2",
  "thiserror",
  "tokio",
- "twox-hash",
  "url",
  "xxhash-rust",
 ]

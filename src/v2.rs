@@ -4,8 +4,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
 use std::hash::Hash;
-#[cfg(feature = "xxhash")]
-use std::hash::Hasher;
 use std::mem::size_of;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -28,13 +26,7 @@ use deno_semver::package::PackageReq;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
 use hashlink::linked_hash_map::LinkedHashMap;
-#[cfg(feature = "xxhash")]
-use twox_hash::XxHash64;
 pub use url::Url;
-#[cfg(feature = "xxhash3")]
-use xxhash_rust::xxh3::xxh3_64;
-#[cfg(feature = "sha256")]
-use {sha2::Digest, sha2::Sha256};
 
 use crate::error::ParseError;
 use crate::Module;
@@ -238,12 +230,8 @@ pub enum Checksum {
   NoChecksum = 0,
   #[cfg(feature = "sha256")]
   Sha256 = 1,
-  #[cfg(feature = "crc32")]
-  Crc32 = 2,
-  #[cfg(feature = "xxhash")]
-  XxHash = 3,
   #[cfg(feature = "xxhash3")]
-  XxHash3 = 4,
+  XxHash3 = 2,
 }
 
 impl Checksum {
@@ -252,10 +240,6 @@ impl Checksum {
       Self::NoChecksum => 0,
       #[cfg(feature = "sha256")]
       Self::Sha256 => 32,
-      #[cfg(feature = "crc32")]
-      Self::Crc32 => 4,
-      #[cfg(feature = "xxhash")]
-      Self::XxHash => 8,
       #[cfg(feature = "xxhash3")]
       Self::XxHash3 => 8,
     }
@@ -266,24 +250,15 @@ impl Checksum {
       0 => Self::NoChecksum,
       #[cfg(feature = "sha256")]
       1 => Self::Sha256,
-      #[cfg(feature = "crc32")]
-      2 => Self::Crc32,
-      #[cfg(feature = "xxhash")]
-      3 => Self::XxHash,
       #[cfg(feature = "xxhash3")]
-      4 => Self::XxHash3,
+      2 => Self::XxHash3,
       _ => return None,
     })
   }
   fn hash(
     self,
     #[cfg_attr(
-      not(any(
-        feature = "sha256",
-        feature = "crc32",
-        feature = "xxhash",
-        feature = "xxhash3"
-      )),
+      not(any(feature = "sha256", feature = "xxhash3")),
       allow(unused)
     )]
     bytes: &[u8],
@@ -291,17 +266,11 @@ impl Checksum {
     match self {
       Self::NoChecksum => Vec::new(),
       #[cfg(feature = "sha256")]
-      Self::Sha256 => Sha256::digest(bytes).as_slice().to_vec(),
-      #[cfg(feature = "crc32")]
-      Self::Crc32 => crc32fast::hash(bytes).to_be_bytes().into(),
-      #[cfg(feature = "xxhash")]
-      Self::XxHash => {
-        let mut hasher = XxHash64::default();
-        hasher.write(bytes);
-        hasher.finish().to_be_bytes().into()
-      }
+      Self::Sha256 => <sha2::Sha256 as sha2::Digest>::digest(bytes)
+        .as_slice()
+        .to_vec(),
       #[cfg(feature = "xxhash3")]
-      Self::XxHash3 => xxh3_64(bytes).to_be_bytes().into(),
+      Self::XxHash3 => xxhash_rust::xxh3::xxh3_64(bytes).to_be_bytes().into(),
     }
   }
 }
@@ -1440,8 +1409,6 @@ mod tests {
   use import_map::ImportMap;
   use pretty_assertions::assert_eq;
   use url::Url;
-  #[cfg(feature = "xxhash3")]
-  use xxhash_rust::xxh3::xxh3_64;
 
   use super::Checksum;
   use super::EszipV2;
@@ -2364,34 +2331,9 @@ mod tests {
     assert!(eszip.is_checksumed());
   }
 
-  #[cfg(feature = "crc32")]
+  #[cfg(feature = "xxhash3")]
   #[tokio::test]
-  async fn v2_2_set_crc32_checksum() {
-    let mut eszip = main_eszip().await;
-    eszip.set_checksum(super::Checksum::Crc32);
-    let main_source = eszip
-      .get_module("file:///main.ts")
-      .unwrap()
-      .source()
-      .await
-      .unwrap();
-    let bytes = eszip.into_bytes();
-    let main_crc32 = crc32fast::hash(&main_source).to_be_bytes();
-    let crc32_in_bytes = bytes
-      .windows(main_crc32.len())
-      .any(|window| window == main_crc32);
-    assert!(crc32_in_bytes);
-    let (parsed_eszip, fut) = EszipV2::parse(BufReader::new(bytes.as_slice()))
-      .await
-      .unwrap();
-    fut.await.unwrap();
-    assert_eq!(parsed_eszip.options.checksum, Some(super::Checksum::Crc32));
-    assert!(parsed_eszip.is_checksumed());
-  }
-
-  #[cfg(feature = "xxhash")]
-  #[tokio::test]
-  async fn v2_2_set_xxhash_checksum() {
+  async fn v2_2_set_xxhash3_checksum() {
     let mut eszip = main_eszip().await;
     eszip.set_checksum(super::Checksum::XxHash3);
     let main_source = eszip
@@ -2401,7 +2343,7 @@ mod tests {
       .await
       .unwrap();
     let bytes = eszip.into_bytes();
-    let main_xxhash = xxh3_64(&main_source).to_be_bytes();
+    let main_xxhash = xxhash_rust::xxh3::xxh3_64(&main_source).to_be_bytes();
     let xxhash_in_bytes = bytes
       .windows(main_xxhash.len())
       .any(|window| window == main_xxhash);
@@ -2481,11 +2423,11 @@ mod tests {
     new_eszip.into_bytes();
   }
 
-  #[cfg(feature = "crc32")]
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn wrong_checksum() {
     let mut eszip = main_eszip().await;
-    eszip.set_checksum(Checksum::Crc32);
+    eszip.set_checksum(Checksum::Sha256);
     let main_source = eszip
       .get_module("file:///main.ts")
       .unwrap()
@@ -2493,16 +2435,16 @@ mod tests {
       .await
       .unwrap();
     let bytes = eszip.into_bytes();
-    let mut main_crc32 = crc32fast::hash(&main_source).to_be_bytes();
-    let crc32_in_bytes_start = bytes
-      .windows(main_crc32.len())
-      .position(|window| window == main_crc32)
+    let mut main_sha256 = <sha2::Sha256 as sha2::Digest>::digest(&main_source);
+    let sha256_in_bytes_start = bytes
+      .windows(main_sha256.len())
+      .position(|window| window == &*main_sha256)
       .unwrap();
-    main_crc32.reverse();
+    main_sha256.reverse();
     let bytes = [
-      &bytes[..crc32_in_bytes_start],
-      main_crc32.as_slice(),
-      &bytes[crc32_in_bytes_start + main_crc32.len()..],
+      &bytes[..sha256_in_bytes_start],
+      main_sha256.as_slice(),
+      &bytes[sha256_in_bytes_start + main_sha256.len()..],
     ]
     .concat();
     let (_eszip, fut) = EszipV2::parse(BufReader::new(bytes.as_slice()))
