@@ -788,7 +788,7 @@ const imports = {
       const ret = getObject(arg0).queueMicrotask;
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper9969: function (arg0, arg1, arg2) {
+    __wbindgen_closure_wrapper9975: function (arg0, arg1, arg2) {
       const ret = makeMutClosure(arg0, arg1, 273, __wbg_adapter_46);
       return addHeapObject(ret);
     },
