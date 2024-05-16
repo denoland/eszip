@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
+use std::hash::Hash;
 use std::mem::size_of;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -10,8 +11,9 @@ use std::task::Poll;
 use std::task::Waker;
 
 use deno_ast::EmitOptions;
+use deno_ast::EmittedSource;
 use deno_ast::SourceMapOption;
-use deno_ast::TranspiledSource;
+use deno_ast::TranspileOptions;
 use deno_graph::CapturingModuleParser;
 use deno_graph::ModuleGraph;
 use deno_graph::ModuleParser;
@@ -24,8 +26,6 @@ use deno_semver::package::PackageReq;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
 use hashlink::linked_hash_map::LinkedHashMap;
-use sha2::Digest;
-use sha2::Sha256;
 pub use url::Url;
 
 use crate::error::ParseError;
@@ -35,6 +35,8 @@ pub use crate::ModuleKind;
 
 const ESZIP_V2_MAGIC: &[u8; 8] = b"ESZIP_V2";
 const ESZIP_V2_1_MAGIC: &[u8; 8] = b"ESZIP2.1";
+const ESZIP_V2_2_MAGIC: &[u8; 8] = b"ESZIP2.2";
+const LATEST_VERSION: &[u8; 8] = ESZIP_V2_2_MAGIC;
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
@@ -168,12 +170,118 @@ impl EszipV2Modules {
   }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Options {
+  /// Hash Function used to checksum the contents of the eszip when encoding/decoding
+  ///
+  /// If the eszip does not include the option, it defaults to `[Checksum::NoChecksum]` in >=v2.2
+  /// and `[Checksum::Sha256]` in older versions.  It is `None` when the eszip header includes a
+  /// checksum that this version of the library does not know.
+  checksum: Option<Checksum>,
+
+  /// Size in Bytes of the hash function digest.
+  ///
+  /// Defaults to the known length of the configured hash function. Useful in order to ensure forwards compatibility,
+  /// otherwise the parser does not know how many bytes to read.
+  checksum_size: Option<u8>,
+}
+
+impl Options {
+  fn default_for_version(magic: &[u8; 8]) -> Self {
+    let defaults = Self {
+      checksum: Some(Checksum::NoChecksum),
+      checksum_size: Default::default(),
+    };
+    #[cfg(feature = "sha256")]
+    let mut defaults = defaults;
+    if let ESZIP_V2_MAGIC | ESZIP_V2_1_MAGIC = magic {
+      // versions prior to v2.2 default to checksuming with SHA256
+      #[cfg(feature = "sha256")]
+      {
+        defaults.checksum = Some(Checksum::Sha256);
+      }
+    }
+    defaults
+  }
+}
+
+impl Default for Options {
+  fn default() -> Self {
+    Self::default_for_version(LATEST_VERSION)
+  }
+}
+
+impl Options {
+  /// Get the size in Bytes of the source hashes
+  ///
+  /// If the eszip has an explicit digest size, returns that. Otherwise, returns
+  /// the default digest size of the [`Self::checksum`]. If the eszip
+  /// does not have either, returns `None`.
+  fn checksum_size(self) -> Option<u8> {
+    self
+      .checksum_size
+      .or_else(|| Some(self.checksum?.digest_size()))
+  }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Checksum {
+  NoChecksum = 0,
+  #[cfg(feature = "sha256")]
+  Sha256 = 1,
+  #[cfg(feature = "xxhash3")]
+  XxHash3 = 2,
+}
+
+impl Checksum {
+  const fn digest_size(self) -> u8 {
+    match self {
+      Self::NoChecksum => 0,
+      #[cfg(feature = "sha256")]
+      Self::Sha256 => 32,
+      #[cfg(feature = "xxhash3")]
+      Self::XxHash3 => 8,
+    }
+  }
+
+  fn from_u8(discriminant: u8) -> Option<Self> {
+    Some(match discriminant {
+      0 => Self::NoChecksum,
+      #[cfg(feature = "sha256")]
+      1 => Self::Sha256,
+      #[cfg(feature = "xxhash3")]
+      2 => Self::XxHash3,
+      _ => return None,
+    })
+  }
+  fn hash(
+    self,
+    #[cfg_attr(
+      not(any(feature = "sha256", feature = "xxhash3")),
+      allow(unused)
+    )]
+    bytes: &[u8],
+  ) -> Vec<u8> {
+    match self {
+      Self::NoChecksum => Vec::new(),
+      #[cfg(feature = "sha256")]
+      Self::Sha256 => <sha2::Sha256 as sha2::Digest>::digest(bytes)
+        .as_slice()
+        .to_vec(),
+      #[cfg(feature = "xxhash3")]
+      Self::XxHash3 => xxhash_rust::xxh3::xxh3_64(bytes).to_be_bytes().into(),
+    }
+  }
+}
+
 /// Version 2 of the Eszip format. This format supports streaming sources and
 /// source maps.
 #[derive(Debug, Default)]
 pub struct EszipV2 {
   modules: EszipV2Modules,
   npm_snapshot: Option<ValidSerializedNpmResolutionSnapshot>,
+  options: Options,
 }
 
 #[derive(Debug)]
@@ -211,7 +319,9 @@ impl EszipV2SourceSlot {
 impl EszipV2 {
   pub fn has_magic(buffer: &[u8]) -> bool {
     buffer.len() >= 8
-      && (buffer[..8] == *ESZIP_V2_MAGIC || buffer[..8] == *ESZIP_V2_1_MAGIC)
+      && (buffer[..8] == *ESZIP_V2_MAGIC
+        || buffer[..8] == *ESZIP_V2_1_MAGIC
+        || buffer[..8] == *ESZIP_V2_2_MAGIC)
   }
 
   /// Parse a EszipV2 from an AsyncRead stream. This function returns once the
@@ -234,9 +344,71 @@ impl EszipV2 {
       return Err(ParseError::InvalidV2);
     }
 
-    let is_v3 = magic == *ESZIP_V2_1_MAGIC;
-    let header = HashedSection::read(&mut reader).await?;
-    if !header.hash_valid() {
+    Self::parse_with_magic(&magic, reader).await
+  }
+
+  pub(super) async fn parse_with_magic<R: futures::io::AsyncRead + Unpin>(
+    magic: &[u8; 8],
+    mut reader: futures::io::BufReader<R>,
+  ) -> Result<
+    (
+      EszipV2,
+      impl Future<Output = Result<futures::io::BufReader<R>, ParseError>>,
+    ),
+    ParseError,
+  > {
+    let supports_npm = magic != ESZIP_V2_MAGIC;
+    let supports_options = magic == ESZIP_V2_2_MAGIC;
+
+    let mut options = Options::default_for_version(magic);
+
+    if supports_options {
+      let mut pre_options = options;
+      // First read options without checksum, then reread and validate if necessary
+      pre_options.checksum = Some(Checksum::NoChecksum);
+      pre_options.checksum_size = None;
+      let options_header = Section::read(&mut reader, pre_options).await?;
+      if options_header.content_len() % 2 != 0 {
+        return Err(ParseError::InvalidV22OptionsHeader(String::from(
+          "options are expected to be byte tuples",
+        )));
+      }
+
+      for option in options_header.content().chunks(2) {
+        let (option, value) = (option[0], option[1]);
+        match option {
+          0 => {
+            options.checksum = Checksum::from_u8(value);
+          }
+          1 => {
+            options.checksum_size = Some(value);
+          }
+          _ => {} // Ignore unknown options for forward compatibility
+        }
+      }
+      if options.checksum_size().is_none() {
+        return Err(ParseError::InvalidV22OptionsHeader(String::from(
+          "checksum size must be known",
+        )));
+      }
+
+      if let Some(1..) = options.checksum_size() {
+        // If the eszip has some checksum configured, the options header is also checksumed. Reread
+        // it again with the checksum and validate it
+        let options_header_with_checksum = Section::read_with_size(
+          options_header.content().chain(&mut reader),
+          options,
+          options_header.content_len(),
+        )
+        .await?;
+        if !options_header_with_checksum.is_checksum_valid() {
+          return Err(ParseError::InvalidV22OptionsHeaderHash);
+        }
+      }
+    }
+
+    let modules_header = Section::read(&mut reader, options).await?;
+    if !modules_header.is_checksum_valid() {
       return Err(ParseError::InvalidV2HeaderHash);
     }
 
@@ -250,16 +422,16 @@ impl EszipV2 {
     // error.
     macro_rules! read {
       ($n:expr, $err:expr) => {{
-        if read + $n > header.len() {
+        if read + $n > modules_header.content_len() {
           return Err(ParseError::InvalidV2Header($err));
         }
         let start = read;
         read += $n;
-        &header.bytes()[start..read]
+        &modules_header.content()[start..read]
       }};
     }
 
-    while read < header.len() {
+    while read < modules_header.content_len() {
       let specifier_len =
         u32::from_be_bytes(read!(4, "specifier len").try_into().unwrap())
           as usize;
@@ -319,7 +491,7 @@ impl EszipV2 {
             .map_err(|_| ParseError::InvalidV2Specifier(read))?;
           modules.insert(specifier, EszipV2Module::Redirect { target });
         }
-        2 if is_v3 => {
+        2 if supports_npm => {
           // npm specifier
           let pkg_id =
             u32::from_be_bytes(read!(4, "npm package id").try_into().unwrap());
@@ -329,8 +501,8 @@ impl EszipV2 {
       };
     }
 
-    let npm_snapshot = if is_v3 {
-      read_npm_section(&mut reader, npm_specifiers).await?
+    let npm_snapshot = if supports_npm {
+      read_npm_section(&mut reader, options, npm_specifiers).await?
     } else {
       None
     };
@@ -379,20 +551,13 @@ impl EszipV2 {
           .remove(&read)
           .ok_or(ParseError::InvalidV2SourceOffset(read))?;
 
-        let mut source_bytes = vec![0u8; length];
-        reader.read_exact(&mut source_bytes).await?;
+        let source_bytes =
+          Section::read_with_size(&mut reader, options, length).await?;
 
-        let expected_hash = &mut [0u8; 32];
-        reader.read_exact(expected_hash).await?;
-
-        let mut hasher = Sha256::new();
-        hasher.update(&source_bytes);
-        let actual_hash = hasher.finalize();
-        if &*actual_hash != expected_hash {
+        if !source_bytes.is_checksum_valid() {
           return Err(ParseError::InvalidV2SourceHash(specifier));
         }
-
-        read += length + 32;
+        read += source_bytes.total_len();
 
         let wakers = {
           let mut modules = modules.lock().unwrap();
@@ -401,7 +566,9 @@ impl EszipV2 {
             EszipV2Module::Module { ref mut source, .. } => {
               let slot = std::mem::replace(
                 source,
-                EszipV2SourceSlot::Ready(Arc::from(source_bytes)),
+                EszipV2SourceSlot::Ready(Arc::from(
+                  source_bytes.into_content(),
+                )),
               );
 
               match slot {
@@ -425,20 +592,12 @@ impl EszipV2 {
           .remove(&read)
           .ok_or(ParseError::InvalidV2SourceOffset(read))?;
 
-        let mut source_map_bytes = vec![0u8; length];
-        reader.read_exact(&mut source_map_bytes).await?;
-
-        let expected_hash = &mut [0u8; 32];
-        reader.read_exact(expected_hash).await?;
-
-        let mut hasher = Sha256::new();
-        hasher.update(&source_map_bytes);
-        let actual_hash = hasher.finalize();
-        if &*actual_hash != expected_hash {
+        let source_map_bytes =
+          Section::read_with_size(&mut reader, options, length).await?;
+        if !source_map_bytes.is_checksum_valid() {
           return Err(ParseError::InvalidV2SourceHash(specifier));
         }
-
-        read += length + 32;
+        read += source_map_bytes.total_len();
 
         let wakers = {
           let mut modules = modules.lock().unwrap();
@@ -449,7 +608,9 @@ impl EszipV2 {
             } => {
               let slot = std::mem::replace(
                 source_map,
-                EszipV2SourceSlot::Ready(Arc::from(source_map_bytes)),
+                EszipV2SourceSlot::Ready(Arc::from(
+                  source_map_bytes.into_content(),
+                )),
               );
 
               match slot {
@@ -472,6 +633,7 @@ impl EszipV2 {
       EszipV2 {
         modules: EszipV2Modules(modules),
         npm_snapshot,
+        options,
       },
       fut,
     ))
@@ -541,30 +703,75 @@ impl EszipV2 {
     self.npm_snapshot.take()
   }
 
+  /// Configure the hash function with which to checksum the source of the modules
+  ///
+  /// Defaults to `[Checksum::NoChecksum]`.
+  pub fn set_checksum(&mut self, checksum: Checksum) {
+    self.options.checksum = Some(checksum);
+  }
+
+  /// Check if the eszip contents have been (or can be) checksumed
+  ///
+  /// Returns false if the parsed eszip is not configured with checksum or if it is configured with
+  /// a checksum function that the current version of the library does not know (see
+  /// [`Self::should_be_checksumed()`]). In that case, the parsing has continued without checksuming
+  /// the module's source, therefore proceed with caution.
+  pub fn is_checksumed(&self) -> bool {
+    self.should_be_checksumed() && self.options.checksum.is_some()
+  }
+
+  /// Check if the eszip contents are expected to be checksumed
+  ///
+  /// Returns false if the eszip is not configured with checksum. if a parsed eszip is configured
+  /// with a checksum function that the current version of the library does not know, this method
+  /// returns true, and [`Self::is_checksumed()`] returns false. In that case, the parsing has
+  /// continued without checksuming the module's source, therefore proceed with caution.
+  pub fn should_be_checksumed(&self) -> bool {
+    self.options.checksum != Some(Checksum::NoChecksum)
+  }
+
   /// Serialize the eszip archive into a byte buffer.
   pub fn into_bytes(self) -> Vec<u8> {
-    fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
-      let mut hasher = sha2::Sha256::new();
-      hasher.update(bytes);
-      hasher.finalize().into()
-    }
-
     fn append_string(bytes: &mut Vec<u8>, string: &str) {
       let len = string.len() as u32;
       bytes.extend_from_slice(&len.to_be_bytes());
       bytes.extend_from_slice(string.as_bytes());
     }
 
-    // We serialize as ESZIP2.1 only if we have an npm snapshot. This is to
-    // maximize backwards compatibility of newly created archives with older
-    // deserializers.
-    let has_npm_snapshot = self.npm_snapshot.is_some();
-    let mut header = if has_npm_snapshot {
-      ESZIP_V2_1_MAGIC.to_vec()
-    } else {
-      ESZIP_V2_MAGIC.to_vec()
-    };
-    header.extend_from_slice(&[0u8; 4]); // add 4 bytes of space to put the header length in later
+    let (checksum, checksum_size) = self
+      .options
+      .checksum
+      .zip(self.options.checksum_size())
+      .expect("checksum function should be known");
+
+    debug_assert_eq!(
+      checksum_size,
+      checksum.digest_size(),
+      "customizing the checksum size should not be posible"
+    );
+
+    let mut options_header = LATEST_VERSION.to_vec();
+
+    let options_header_length_pos = options_header.len();
+    const OPTIONS_HEADER_LENGTH_SIZE: usize = size_of::<u32>();
+    options_header.extend_from_slice(&[0; OPTIONS_HEADER_LENGTH_SIZE]); // Reserve for length
+
+    let options_header_start = options_header.len();
+    options_header.extend_from_slice(&[0, checksum as u8]);
+    options_header.extend_from_slice(&[1, checksum_size]);
+
+    let options_header_length =
+      (options_header.len() - options_header_start) as u32;
+    options_header[options_header_length_pos..options_header_start]
+      .copy_from_slice(&options_header_length.to_be_bytes());
+    let options_header_hash =
+      checksum.hash(&options_header[options_header_start..]);
+    options_header.extend_from_slice(&options_header_hash);
+
+    let mut modules_header = options_header;
+    let modules_header_length_pos = modules_header.len();
+    modules_header.extend_from_slice(&[0u8; 4]); // add 4 bytes of space to put the header length in later
+    let modules_header_start = modules_header.len();
     let mut npm_bytes: Vec<u8> = Vec::new();
     let mut sources: Vec<u8> = Vec::new();
     let mut source_maps: Vec<u8> = Vec::new();
@@ -572,7 +779,7 @@ impl EszipV2 {
     let modules = self.modules.0.lock().unwrap();
 
     for (specifier, module) in modules.iter() {
-      append_string(&mut header, specifier);
+      append_string(&mut modules_header, specifier);
 
       match module {
         EszipV2Module::Module {
@@ -580,7 +787,7 @@ impl EszipV2 {
           source,
           source_map,
         } => {
-          header.push(HeaderFrameKind::Module as u8);
+          modules_header.push(HeaderFrameKind::Module as u8);
 
           // add the source to the `sources` bytes
           let source_bytes = source.bytes();
@@ -588,13 +795,13 @@ impl EszipV2 {
           if source_length > 0 {
             let source_offset = sources.len() as u32;
             sources.extend_from_slice(source_bytes);
-            sources.extend_from_slice(&hash_bytes(source_bytes));
+            sources.extend_from_slice(&checksum.hash(source_bytes));
 
-            header.extend_from_slice(&source_offset.to_be_bytes());
-            header.extend_from_slice(&source_length.to_be_bytes());
+            modules_header.extend_from_slice(&source_offset.to_be_bytes());
+            modules_header.extend_from_slice(&source_length.to_be_bytes());
           } else {
-            header.extend_from_slice(&0u32.to_be_bytes());
-            header.extend_from_slice(&0u32.to_be_bytes());
+            modules_header.extend_from_slice(&0u32.to_be_bytes());
+            modules_header.extend_from_slice(&0u32.to_be_bytes());
           }
 
           // add the source map to the `source_maps` bytes
@@ -603,24 +810,24 @@ impl EszipV2 {
           if source_map_length > 0 {
             let source_map_offset = source_maps.len() as u32;
             source_maps.extend_from_slice(source_map_bytes);
-            source_maps.extend_from_slice(&hash_bytes(source_map_bytes));
+            source_maps.extend_from_slice(&checksum.hash(source_map_bytes));
 
-            header.extend_from_slice(&source_map_offset.to_be_bytes());
-            header.extend_from_slice(&source_map_length.to_be_bytes());
+            modules_header.extend_from_slice(&source_map_offset.to_be_bytes());
+            modules_header.extend_from_slice(&source_map_length.to_be_bytes());
           } else {
-            header.extend_from_slice(&0u32.to_be_bytes());
-            header.extend_from_slice(&0u32.to_be_bytes());
+            modules_header.extend_from_slice(&0u32.to_be_bytes());
+            modules_header.extend_from_slice(&0u32.to_be_bytes());
           }
 
           // add module kind to the header
-          header.push(*kind as u8);
+          modules_header.push(*kind as u8);
         }
         EszipV2Module::Redirect { target } => {
-          header.push(HeaderFrameKind::Redirect as u8);
+          modules_header.push(HeaderFrameKind::Redirect as u8);
           let target_bytes = target.as_bytes();
           let target_length = target_bytes.len() as u32;
-          header.extend_from_slice(&target_length.to_be_bytes());
-          header.extend_from_slice(target_bytes);
+          modules_header.extend_from_slice(&target_length.to_be_bytes());
+          modules_header.extend_from_slice(target_bytes);
         }
       }
     }
@@ -639,10 +846,10 @@ impl EszipV2 {
         npm_snapshot.root_packages.into_iter().collect();
       root_packages.sort();
       for (req, id) in root_packages {
-        append_string(&mut header, &req.to_string());
-        header.push(HeaderFrameKind::NpmSpecifier as u8);
+        append_string(&mut modules_header, &req.to_string());
+        modules_header.push(HeaderFrameKind::NpmSpecifier as u8);
         let id = ids_to_eszip_ids.get(&id).unwrap();
-        header.extend_from_slice(&id.to_be_bytes());
+        modules_header.extend_from_slice(&id.to_be_bytes());
       }
 
       for pkg in &npm_snapshot.packages {
@@ -664,25 +871,21 @@ impl EszipV2 {
     }
 
     // populate header length
-    let header_length =
-      (header.len() - ESZIP_V2_1_MAGIC.len() - size_of::<u32>()) as u32;
-    header[ESZIP_V2_1_MAGIC.len()..ESZIP_V2_1_MAGIC.len() + size_of::<u32>()]
-      .copy_from_slice(&header_length.to_be_bytes());
+    let modules_header_length =
+      (modules_header.len() - modules_header_start) as u32;
+    modules_header[modules_header_length_pos..modules_header_start]
+      .copy_from_slice(&modules_header_length.to_be_bytes());
 
     // add header hash
-    let header_bytes = &header[ESZIP_V2_1_MAGIC.len() + size_of::<u32>()..];
-    header.extend_from_slice(&hash_bytes(header_bytes));
+    let modules_header_bytes = &modules_header[modules_header_start..];
+    modules_header.extend_from_slice(&checksum.hash(modules_header_bytes));
 
-    let mut bytes = header;
+    let mut bytes = modules_header;
 
-    // add npm snapshot, if we are creating a v2.1 archive
-    assert_eq!(has_npm_snapshot, !npm_bytes.is_empty());
-    if !npm_bytes.is_empty() {
-      let npm_bytes_len = npm_bytes.len() as u32;
-      bytes.extend_from_slice(&npm_bytes_len.to_be_bytes());
-      bytes.extend_from_slice(&npm_bytes);
-      bytes.extend_from_slice(&hash_bytes(&npm_bytes));
-    }
+    let npm_bytes_len = npm_bytes.len() as u32;
+    bytes.extend_from_slice(&npm_bytes_len.to_be_bytes());
+    bytes.extend_from_slice(&npm_bytes);
+    bytes.extend_from_slice(&checksum.hash(&npm_bytes));
 
     // add sources
     let sources_len = sources.len() as u32;
@@ -706,6 +909,7 @@ impl EszipV2 {
   pub fn from_graph(
     graph: ModuleGraph,
     parser: &CapturingModuleParser,
+    transpile_options: TranspileOptions,
     mut emit_options: EmitOptions,
   ) -> Result<Self, anyhow::Error> {
     emit_options.inline_sources = true;
@@ -718,6 +922,7 @@ impl EszipV2 {
     fn visit_module(
       graph: &ModuleGraph,
       parser: &CapturingModuleParser,
+      transpile_options: &TranspileOptions,
       emit_options: &EmitOptions,
       modules: &mut LinkedHashMap<String, EszipV2Module>,
       specifier: &Url,
@@ -767,10 +972,10 @@ impl EszipV2 {
                 media_type: module.media_type,
                 scope_analysis: false,
               })?;
-              let TranspiledSource {
+              let EmittedSource {
                 text,
                 source_map: maybe_source_map,
-              } = parsed_source.transpile(emit_options)?;
+              } = parsed_source.transpile(transpile_options, emit_options)?.into_source();
               source = Arc::from(text.into_bytes());
               source_map = Arc::from(maybe_source_map.unwrap_or_default().into_bytes());
             }
@@ -797,6 +1002,7 @@ impl EszipV2 {
               visit_module(
                 graph,
                 parser,
+                transpile_options,
                 emit_options,
                 modules,
                 specifier,
@@ -826,7 +1032,15 @@ impl EszipV2 {
     }
 
     for root in &graph.roots {
-      visit_module(&graph, parser, &emit_options, &mut modules, root, false)?;
+      visit_module(
+        &graph,
+        parser,
+        &transpile_options,
+        &emit_options,
+        &mut modules,
+        root,
+        false,
+      )?;
     }
 
     for (specifier, target) in &graph.redirects {
@@ -839,6 +1053,7 @@ impl EszipV2 {
     Ok(Self {
       modules: EszipV2Modules(Arc::new(Mutex::new(modules))),
       npm_snapshot: None,
+      options: Options::default(),
     })
   }
 
@@ -937,13 +1152,14 @@ impl IntoIterator for EszipV2 {
 
 async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
   reader: &mut futures::io::BufReader<R>,
+  options: Options,
   npm_specifiers: HashMap<String, EszipNpmPackageIndex>,
 ) -> Result<Option<ValidSerializedNpmResolutionSnapshot>, ParseError> {
-  let snapshot = HashedSection::read(reader).await?;
-  if !snapshot.hash_valid() {
+  let snapshot = Section::read(reader, options).await?;
+  if !snapshot.is_checksum_valid() {
     return Err(ParseError::InvalidV2NpmSnapshotHash);
   }
-  let original_bytes = snapshot.bytes();
+  let original_bytes = snapshot.content();
   if original_bytes.is_empty() {
     return Ok(None);
   }
@@ -987,6 +1203,8 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
       dist: Default::default(),
       dependencies,
       optional_dependencies: Default::default(),
+      bin: None,
+      scripts: Default::default(),
     });
   }
   let mut root_packages = HashMap::with_capacity(npm_specifiers.len());
@@ -1092,54 +1310,72 @@ fn move_bytes(
   }
 }
 
-struct HashedSection(Vec<u8>);
+#[derive(Debug)]
+struct Section(Vec<u8>, Options);
 
-impl HashedSection {
+impl Section {
   /// Reads a section that's defined as:
   ///   Size (4) | Body (n) | Hash (32)
   async fn read<R: futures::io::AsyncRead + Unpin>(
-    reader: &mut futures::io::BufReader<R>,
-  ) -> Result<HashedSection, ParseError> {
-    let len = read_u32(reader).await? as usize;
-    HashedSection::read_with_size(reader, len).await
+    mut reader: R,
+    options: Options,
+  ) -> Result<Section, ParseError> {
+    let len = read_u32(&mut reader).await? as usize;
+    Section::read_with_size(reader, options, len).await
   }
 
   /// Reads a section that's defined as:
   ///   Body (n) | Hash (32)
   /// Where the `n` size is provided.
   async fn read_with_size<R: futures::io::AsyncRead + Unpin>(
-    reader: &mut futures::io::BufReader<R>,
+    mut reader: R,
+    options: Options,
     len: usize,
-  ) -> Result<HashedSection, ParseError> {
-    let mut body_and_hash = vec![0u8; len + 32];
-    reader.read_exact(&mut body_and_hash).await?;
+  ) -> Result<Section, ParseError> {
+    let checksum_size = options
+      .checksum_size()
+      .expect("Checksum size must be known") as usize;
+    let mut body_and_checksum = vec![0u8; len + checksum_size];
+    reader.read_exact(&mut body_and_checksum).await?;
 
-    Ok(HashedSection(body_and_hash))
+    Ok(Section(body_and_checksum, options))
   }
 
-  fn bytes(&self) -> &[u8] {
-    &self.0[..self.len()]
+  fn content(&self) -> &[u8] {
+    &self.0[..self.content_len()]
   }
 
-  fn len(&self) -> usize {
-    self.0.len() - 32
+  fn into_content(mut self) -> Vec<u8> {
+    self.0.truncate(self.content_len());
+    self.0
   }
 
-  fn hash(&self) -> &[u8] {
-    &self.0[self.len()..]
+  fn content_len(&self) -> usize {
+    self.total_len()
+      - self.1.checksum_size().expect("Checksum size must be known") as usize
   }
 
-  fn hash_valid(&self) -> bool {
-    let mut hasher = Sha256::new();
-    hasher.update(self.bytes());
-    let actual_hash = hasher.finalize();
-    let expected_hash = self.hash();
+  fn total_len(&self) -> usize {
+    self.0.len()
+  }
+
+  fn checksum_hash(&self) -> &[u8] {
+    &self.0[self.content_len()..]
+  }
+
+  fn is_checksum_valid(&self) -> bool {
+    let Some(checksum) = self.1.checksum else {
+      // degrade to not checksuming
+      return true;
+    };
+    let actual_hash = checksum.hash(self.content());
+    let expected_hash = self.checksum_hash();
     &*actual_hash == expected_hash
   }
 }
 
 async fn read_u32<R: futures::io::AsyncRead + Unpin>(
-  reader: &mut futures::io::BufReader<R>,
+  mut reader: R,
 ) -> Result<u32, ParseError> {
   let mut buf = [0u8; 4];
   reader.read_exact(&mut buf).await?;
@@ -1154,6 +1390,7 @@ mod tests {
   use std::sync::Arc;
 
   use deno_ast::EmitOptions;
+  use deno_ast::TranspileOptions;
   use deno_graph::source::CacheSetting;
   use deno_graph::source::LoadOptions;
   use deno_graph::source::LoadResponse;
@@ -1173,6 +1410,9 @@ mod tests {
   use pretty_assertions::assert_eq;
   use url::Url;
 
+  use super::Checksum;
+  use super::EszipV2;
+  use super::ESZIP_V2_2_MAGIC;
   use crate::ModuleKind;
 
   struct FileLoader {
@@ -1190,7 +1430,7 @@ mod tests {
 
   impl deno_graph::source::Loader for FileLoader {
     fn load(
-      &mut self,
+      &self,
       specifier: &ModuleSpecifier,
       _options: LoadOptions,
     ) -> deno_graph::source::LoadFuture {
@@ -1248,7 +1488,7 @@ mod tests {
 
     impl deno_graph::source::Loader for ExternalLoader {
       fn load(
-        &mut self,
+        &self,
         specifier: &ModuleSpecifier,
         options: LoadOptions,
       ) -> deno_graph::source::LoadFuture {
@@ -1285,7 +1525,7 @@ mod tests {
     graph
       .build(
         roots,
-        &mut ExternalLoader,
+        &ExternalLoader,
         BuildOptions {
           module_analyzer: &analyzer,
           ..Default::default()
@@ -1296,6 +1536,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1309,13 +1550,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           module_analyzer: &analyzer,
           ..Default::default()
@@ -1326,6 +1567,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1350,13 +1592,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///json.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           module_analyzer: &analyzer,
           ..Default::default()
@@ -1367,6 +1609,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1390,13 +1633,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///dynamic.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           module_analyzer: &analyzer,
           ..Default::default()
@@ -1407,6 +1650,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1429,13 +1673,13 @@ mod tests {
       vec![ModuleSpecifier::parse("file:///dynamic_data.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           module_analyzer: &analyzer,
           ..Default::default()
@@ -1446,6 +1690,7 @@ mod tests {
     let eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1455,6 +1700,7 @@ mod tests {
     assert_matches_file!(source, "./testdata/emit/dynamic_data.ts");
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn file_format_parse_redirect() {
     let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
@@ -1485,6 +1731,7 @@ mod tests {
     tokio::try_join!(fut, test).unwrap();
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn file_format_parse_json() {
     let file = std::fs::File::open("./src/testdata/json.eszip2").unwrap();
@@ -1514,6 +1761,7 @@ mod tests {
     tokio::try_join!(fut, test).unwrap();
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn file_format_roundtrippable() {
     let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
@@ -1548,11 +1796,11 @@ mod tests {
 
   #[tokio::test]
   async fn import_map() {
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
     let resp = deno_graph::source::Loader::load(
-      &mut loader,
+      &loader,
       &Url::parse("file:///import_map.json").unwrap(),
       LoadOptions {
         is_dynamic: false,
@@ -1580,7 +1828,7 @@ mod tests {
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
           module_analyzer: &analyzer,
@@ -1592,6 +1840,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1625,11 +1874,11 @@ mod tests {
   // https://github.com/denoland/eszip/issues/110
   #[tokio::test]
   async fn import_map_imported_from_program() {
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
     let resp = deno_graph::source::Loader::load(
-      &mut loader,
+      &loader,
       &Url::parse("file:///import_map.json").unwrap(),
       LoadOptions {
         is_dynamic: false,
@@ -1659,7 +1908,7 @@ mod tests {
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
           module_analyzer: &analyzer,
@@ -1671,6 +1920,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1691,11 +1941,11 @@ mod tests {
 
   #[tokio::test]
   async fn deno_jsonc_as_import_map() {
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/deno_jsonc_as_import_map".to_string(),
     };
     let resp = deno_graph::source::Loader::load(
-      &mut loader,
+      &loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
       LoadOptions {
         is_dynamic: false,
@@ -1728,7 +1978,7 @@ mod tests {
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
           module_analyzer: &analyzer,
@@ -1740,6 +1990,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1768,11 +2019,11 @@ mod tests {
 
   #[tokio::test]
   async fn eszipv2_iterator_yields_all_modules() {
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/deno_jsonc_as_import_map".to_string(),
     };
     let resp = deno_graph::source::Loader::load(
-      &mut loader,
+      &loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
       LoadOptions {
         is_dynamic: false,
@@ -1805,7 +2056,7 @@ mod tests {
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
           module_analyzer: &analyzer,
@@ -1817,6 +2068,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1863,13 +2115,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           module_analyzer: &analyzer,
           ..Default::default()
@@ -1897,6 +2149,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -1933,6 +2186,7 @@ mod tests {
     assert_eq!(module.kind, ModuleKind::JavaScript);
   }
 
+  #[cfg(feature = "sha256")]
   #[tokio::test]
   async fn npm_packages_loaded_file() {
     // packages
@@ -1992,13 +2246,13 @@ mod tests {
     let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
-    let mut loader = FileLoader {
+    let loader = FileLoader {
       base_dir: "./src/testdata/source".to_string(),
     };
     graph
       .build(
         roots,
-        &mut loader,
+        &loader,
         BuildOptions {
           module_analyzer: &analyzer,
           ..Default::default()
@@ -2015,6 +2269,7 @@ mod tests {
     let mut eszip = super::EszipV2::from_graph(
       graph,
       &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
       EmitOptions::default(),
     )
     .unwrap();
@@ -2049,6 +2304,183 @@ mod tests {
     assert_eq!(opaque_data.kind, ModuleKind::OpaqueData);
   }
 
+  #[tokio::test]
+  async fn v2_2_defaults_to_no_checksum() {
+    let eszip = main_eszip().await;
+    let bytes = eszip.into_bytes();
+    let (eszip, fut) = super::EszipV2::parse(BufReader::new(bytes.as_slice()))
+      .await
+      .unwrap();
+    fut.await.unwrap();
+    assert_eq!(eszip.options.checksum, Some(super::Checksum::NoChecksum));
+    assert!(!eszip.is_checksumed());
+    assert!(!eszip.should_be_checksumed());
+  }
+
+  #[cfg(feature = "sha256")]
+  #[tokio::test]
+  async fn v2_1_and_older_default_to_sha256_checksum() {
+    let file = std::fs::File::open("./src/testdata/json.eszip2").unwrap();
+    let (eszip, fut) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
+    fut.await.unwrap();
+    assert_eq!(eszip.options.checksum, Some(super::Checksum::Sha256));
+    assert_eq!(eszip.options.checksum_size(), Some(32));
+    assert!(eszip.is_checksumed());
+  }
+
+  #[cfg(feature = "xxhash3")]
+  #[tokio::test]
+  async fn v2_2_set_xxhash3_checksum() {
+    let mut eszip = main_eszip().await;
+    eszip.set_checksum(super::Checksum::XxHash3);
+    let main_source = eszip
+      .get_module("file:///main.ts")
+      .unwrap()
+      .source()
+      .await
+      .unwrap();
+    let bytes = eszip.into_bytes();
+    let main_xxhash = xxhash_rust::xxh3::xxh3_64(&main_source).to_be_bytes();
+    let xxhash_in_bytes = bytes
+      .windows(main_xxhash.len())
+      .any(|window| window == main_xxhash);
+    assert!(xxhash_in_bytes);
+    let (parsed_eszip, fut) = EszipV2::parse(BufReader::new(bytes.as_slice()))
+      .await
+      .unwrap();
+    fut.await.unwrap();
+    assert_eq!(
+      parsed_eszip.options.checksum,
+      Some(super::Checksum::XxHash3)
+    );
+    assert!(parsed_eszip.is_checksumed());
+  }
+
+  #[tokio::test]
+  async fn v2_2_options_in_header_are_optional() {
+    let empty_options = 0_u32.to_be_bytes();
+    let bytes = main_eszip().await.into_bytes();
+    let existing_options_size =
+      std::mem::size_of::<u32>() + std::mem::size_of::<u8>() * 4;
+    let options_start = ESZIP_V2_2_MAGIC.len();
+    // Replace the default options set by the library with an empty options header
+    let new_bytes = [
+      &bytes[..options_start],
+      empty_options.as_slice(),
+      &bytes[options_start + existing_options_size..],
+    ]
+    .concat();
+    let (new_eszip, fut) = EszipV2::parse(BufReader::new(new_bytes.as_slice()))
+      .await
+      .unwrap();
+    fut.await.unwrap();
+
+    assert_eq!(new_eszip.options.checksum, Some(Checksum::NoChecksum));
+    assert!(!new_eszip.is_checksumed());
+    assert!(!new_eszip.should_be_checksumed());
+  }
+
+  #[cfg(feature = "sha256")]
+  #[tokio::test]
+  #[should_panic]
+  async fn v2_2_unknown_checksum_function_degrades_to_no_checksum() {
+    // checksum 255; checksum_size 32
+    let option_bytes = &[0, 255, 1, 32];
+    let futuristic_options = [
+      4_u32.to_be_bytes().as_slice(),
+      option_bytes,
+      &<sha2::Sha256 as sha2::Digest>::digest(option_bytes).as_slice(),
+    ]
+    .concat();
+    let mut eszip = main_eszip().await;
+    // Using sha256/32Bytes as mock hash.
+    eszip.set_checksum(Checksum::Sha256);
+    let bytes = eszip.into_bytes();
+    let existing_options_size = std::mem::size_of::<u32>()
+      + std::mem::size_of::<u8>() * 4
+      + <sha2::Sha256 as sha2::Digest>::output_size();
+    let options_start = ESZIP_V2_2_MAGIC.len();
+    let new_bytes = [
+      &bytes[..options_start],
+      futuristic_options.as_slice(),
+      &bytes[options_start + existing_options_size..],
+    ]
+    .concat();
+    let (new_eszip, fut) = EszipV2::parse(BufReader::new(new_bytes.as_slice()))
+      .await
+      .unwrap();
+    fut.await.unwrap();
+
+    assert_eq!(new_eszip.options.checksum, None);
+    assert_eq!(new_eszip.options.checksum_size(), Some(32));
+    assert!(!new_eszip.is_checksumed());
+    assert!(new_eszip.should_be_checksumed());
+
+    // This should panic, as cannot re-encode without setting an explicit checksum configuration
+    new_eszip.into_bytes();
+  }
+
+  #[cfg(feature = "sha256")]
+  #[tokio::test]
+  async fn wrong_checksum() {
+    let mut eszip = main_eszip().await;
+    eszip.set_checksum(Checksum::Sha256);
+    let main_source = eszip
+      .get_module("file:///main.ts")
+      .unwrap()
+      .source()
+      .await
+      .unwrap();
+    let bytes = eszip.into_bytes();
+    let mut main_sha256 = <sha2::Sha256 as sha2::Digest>::digest(&main_source);
+    let sha256_in_bytes_start = bytes
+      .windows(main_sha256.len())
+      .position(|window| window == &*main_sha256)
+      .unwrap();
+    main_sha256.reverse();
+    let bytes = [
+      &bytes[..sha256_in_bytes_start],
+      main_sha256.as_slice(),
+      &bytes[sha256_in_bytes_start + main_sha256.len()..],
+    ]
+    .concat();
+    let (_eszip, fut) = EszipV2::parse(BufReader::new(bytes.as_slice()))
+      .await
+      .unwrap();
+    let result = fut.await;
+    assert!(result.is_err());
+    assert!(matches!(
+      result,
+      Err(crate::error::ParseError::InvalidV2SourceHash(_))
+    ));
+  }
+
+  #[tokio::test]
+  async fn v2_2_options_forward_compatibility() {
+    let option_bytes = &[255; 98];
+    let futuristic_options =
+      [98_u32.to_be_bytes().as_slice(), option_bytes].concat();
+    let bytes = main_eszip().await.into_bytes();
+    let existing_options_size =
+      std::mem::size_of::<u32>() + std::mem::size_of::<u8>() * 4;
+    let options_start = ESZIP_V2_2_MAGIC.len();
+    let new_bytes = [
+      &bytes[..options_start],
+      futuristic_options.as_slice(),
+      &bytes[options_start + existing_options_size..],
+    ]
+    .concat();
+    // Assert that unknown options are ignored just fine
+    let (_new_eszip, fut) =
+      EszipV2::parse(BufReader::new(new_bytes.as_slice()))
+        .await
+        .unwrap();
+    fut.await.unwrap();
+  }
+
   fn root_pkgs(pkgs: &[(&str, &str)]) -> HashMap<PackageReq, NpmPackageId> {
     pkgs
       .iter()
@@ -2079,6 +2511,35 @@ mod tests {
       system: Default::default(),
       dist: Default::default(),
       optional_dependencies: Default::default(),
+      bin: None,
+      scripts: Default::default(),
     }
+  }
+
+  async fn main_eszip() -> EszipV2 {
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    super::EszipV2::from_graph(
+      graph,
+      &analyzer.as_capturing_parser(),
+      TranspileOptions::default(),
+      EmitOptions::default(),
+    )
+    .unwrap()
   }
 }

@@ -6,7 +6,7 @@ import {
 import {
   CacheSetting,
   createCache,
-} from "https://deno.land/x/deno_cache@0.7.1/mod.ts";
+} from "jsr:@deno/cache-dir@0.8";
 export type { LoadResponse } from "./loader.ts";
 
 const encoder = new TextEncoder();

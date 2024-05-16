@@ -8,7 +8,6 @@ use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
 use deno_graph::source::LoadOptions;
 use deno_graph::source::Loader;
-use deno_graph::source::NullFileSystem;
 use deno_graph::source::ResolveError;
 use deno_graph::source::Resolver;
 use deno_graph::BuildOptions;
@@ -273,7 +272,7 @@ pub async fn build_eszip(
   let roots: Vec<deno_graph::ModuleSpecifier> =
     serde_wasm_bindgen::from_value(roots)
       .map_err(|e| js_sys::Error::new(&e.to_string()))?;
-  let mut loader = GraphLoader(loader);
+  let loader = GraphLoader(loader);
   let import_map_url: Option<Url> =
     serde_wasm_bindgen::from_value(import_map_url)
       .map_err(|e| js_sys::Error::new(&e.to_string()))?;
@@ -281,7 +280,7 @@ pub async fn build_eszip(
     import_map_url
   {
     let resp = deno_graph::source::Loader::load(
-      &mut loader,
+      &loader,
       &import_map_url,
       deno_graph::source::LoadOptions {
         is_dynamic: false,
@@ -321,12 +320,13 @@ pub async fn build_eszip(
   graph
     .build(
       roots,
-      &mut loader,
+      &loader,
       BuildOptions {
         resolver: Some(&resolver),
         module_analyzer: &analyzer,
         is_dynamic: false,
         imports: Vec::new(),
+        passthrough_jsr_specifiers: false,
         executor: Default::default(),
         file_system: Default::default(),
         jsr_url_provider: Default::default(),
@@ -342,6 +342,7 @@ pub async fn build_eszip(
   let mut eszip = eszip::EszipV2::from_graph(
     graph,
     &analyzer.as_capturing_parser(),
+    Default::default(),
     Default::default(),
   )
   .map_err(|e| js_sys::Error::new(&e.to_string()))?;
@@ -367,7 +368,7 @@ impl Loader for GraphLoader {
   }
 
   fn load(
-    &mut self,
+    &self,
     specifier: &ModuleSpecifier,
     options: LoadOptions,
   ) -> LoadFuture {

@@ -1,4 +1,4 @@
-import { build, emptyDir } from "https://deno.land/x/dnt@0.40.0/mod.ts";
+import { build, emptyDir } from "jsr:@deno/dnt@0.41.1";
 
 await emptyDir("./npm");
 Deno.mkdirSync("npm/esm", { recursive: true });
