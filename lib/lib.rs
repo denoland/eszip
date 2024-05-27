@@ -330,6 +330,7 @@ pub async fn build_eszip(
         executor: Default::default(),
         file_system: Default::default(),
         jsr_url_provider: Default::default(),
+        locker: None,
         npm_resolver: None,
         reporter: None,
         workspace_members: &[],
