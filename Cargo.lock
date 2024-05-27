@@ -492,13 +492,12 @@ dependencies = [
 
 [[package]]
 name = "deno_lockfile"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8835418ae924f25ab20f508bf6240193b22d893519d44432b670a27b8fb1efeb"
+checksum = "23120f905aec2deed858820113e089551025b74e261c5c404812cd8e61421379"
 dependencies = [
  "serde",
  "serde_json",
- "sha2",
  "thiserror",
 ]
 
@@ -515,9 +514,9 @@ dependencies = [
 
 [[package]]
 name = "deno_npm"
-version = "0.20.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d2c41ced17886dc0a8d889d5c2ac7cd4d2b357964c3ad7f76c7580673b2f89f"
+checksum = "b99fac4a31098e2466f97576b53a9860d8e7ad1df2792a22d5b3209ca3bd2924"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -527,6 +526,7 @@ dependencies = [
  "log",
  "monch",
  "serde",
+ "serde_json",
  "thiserror",
  "url",
 ]
