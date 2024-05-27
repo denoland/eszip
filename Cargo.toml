@@ -11,7 +11,7 @@ license = "MIT"
 members = ["lib"]
 
 [workspace.dependencies]
-deno_graph = "0.75.1"
+deno_graph = "0.77.0"
 import_map = "0.19.1"
 serde = "1"
 
