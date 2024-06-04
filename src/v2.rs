@@ -11,7 +11,6 @@ use std::task::Poll;
 use std::task::Waker;
 
 use deno_ast::EmitOptions;
-use deno_ast::EmittedSource;
 use deno_ast::SourceMapOption;
 use deno_ast::TranspileOptions;
 use deno_graph::CapturingModuleParser;
@@ -972,12 +971,9 @@ impl EszipV2 {
                 media_type: module.media_type,
                 scope_analysis: false,
               })?;
-              let EmittedSource {
-                text,
-                source_map: maybe_source_map,
-              } = parsed_source.transpile(transpile_options, emit_options)?.into_source();
-              source = Arc::from(text.into_bytes());
-              source_map = Arc::from(maybe_source_map.unwrap_or_default().into_bytes());
+              let emit = parsed_source.transpile(transpile_options, emit_options)?.into_source();
+              source = emit.source.into();
+              source_map = Arc::from(emit.source_map.unwrap_or_default());
             }
             _ => {
               return Err(anyhow::anyhow!(
