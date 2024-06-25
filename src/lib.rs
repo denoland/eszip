@@ -18,6 +18,7 @@ use v2::EszipV2Modules;
 pub use crate::error::ParseError;
 pub use crate::v1::EszipV1;
 pub use crate::v2::EszipV2;
+pub use crate::v2::FromGraphOptions;
 
 pub use deno_ast;
 pub use deno_graph;

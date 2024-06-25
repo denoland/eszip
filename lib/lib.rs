@@ -298,7 +298,7 @@ pub async fn build_eszip(
         specifier, content, ..
       } => {
         let import_map = import_map::parse_from_json_with_options(
-          &specifier,
+          specifier.clone(),
           &String::from_utf8(content.to_vec()).unwrap(),
           import_map::ImportMapOptions {
             address_hook: None,
@@ -340,12 +340,13 @@ pub async fn build_eszip(
   graph
     .valid()
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
-  let mut eszip = eszip::EszipV2::from_graph(
+  let mut eszip = eszip::EszipV2::from_graph(eszip::FromGraphOptions {
     graph,
-    &analyzer.as_capturing_parser(),
-    Default::default(),
-    Default::default(),
-  )
+    parser: analyzer.as_capturing_parser(),
+    transpile_options: Default::default(),
+    emit_options: Default::default(),
+    relative_file_base: None,
+  })
   .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   if let Some((import_map_specifier, import_map_content)) =
     maybe_import_map_data
