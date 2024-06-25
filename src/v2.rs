@@ -1,5 +1,6 @@
 // Copyright 2018-2024 the Deno authors. All rights reserved. MIT license.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
@@ -221,6 +222,17 @@ impl Options {
       .checksum_size
       .or_else(|| Some(self.checksum?.digest_size()))
   }
+}
+
+pub struct FromGraphOptions<'a> {
+  pub graph: ModuleGraph,
+  pub parser: CapturingModuleParser<'a>,
+  pub transpile_options: TranspileOptions,
+  pub emit_options: EmitOptions,
+  /// Base to make all descendant file:/// modules relative to.
+  ///
+  /// Note: When a path is above the base it will be left absolute.
+  pub relative_file_base: Option<&'a Url>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -905,12 +917,8 @@ impl EszipV2 {
   /// tree. The root module is added to the top of the archive, and the leaves
   /// to the end. This allows for efficient deserialization of the archive right
   /// into an isolate.
-  pub fn from_graph(
-    graph: ModuleGraph,
-    parser: &CapturingModuleParser,
-    transpile_options: TranspileOptions,
-    mut emit_options: EmitOptions,
-  ) -> Result<Self, anyhow::Error> {
+  pub fn from_graph(opts: FromGraphOptions) -> Result<Self, anyhow::Error> {
+    let mut emit_options = opts.emit_options;
     emit_options.inline_sources = true;
     if emit_options.source_map == SourceMapOption::Inline {
       emit_options.source_map = SourceMapOption::Separate;
@@ -918,14 +926,44 @@ impl EszipV2 {
 
     let mut modules = LinkedHashMap::new();
 
+    fn resolve_specifier_key<'a>(
+      specifier: &'a Url,
+      relative_file_base: Option<&Url>,
+    ) -> Result<Cow<'a, str>, anyhow::Error> {
+      fn make_relative<'a>(base: &Url, target: &'a Url) -> Cow<'a, str> {
+        match base.make_relative(target) {
+          Some(relative) => {
+            if relative.starts_with("../") {
+              Cow::Borrowed(target.as_str())
+            } else {
+              Cow::Owned(relative)
+            }
+          }
+          None => Cow::Borrowed(target.as_str()),
+        }
+      }
+
+      if specifier.scheme() == "file" {
+        if let Some(relative_file_base) = relative_file_base {
+          Ok(make_relative(relative_file_base, specifier))
+        } else {
+          Ok(Cow::Borrowed(specifier.as_str()))
+        }
+      } else {
+        Ok(Cow::Borrowed(specifier.as_str()))
+      }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn visit_module(
       graph: &ModuleGraph,
-      parser: &CapturingModuleParser,
+      parser: CapturingModuleParser,
       transpile_options: &TranspileOptions,
       emit_options: &EmitOptions,
       modules: &mut LinkedHashMap<String, EszipV2Module>,
       specifier: &Url,
       is_dynamic: bool,
+      relative_file_base: Option<&Url>,
     ) -> Result<(), anyhow::Error> {
       let module = match graph.try_get(specifier) {
         Ok(Some(module)) => module,
@@ -945,8 +983,9 @@ impl EszipV2 {
         }
       };
 
-      let specifier = module.specifier().as_str();
-      if modules.contains_key(specifier) {
+      let specifier_key =
+        resolve_specifier_key(module.specifier(), relative_file_base)?;
+      if modules.contains_key(specifier_key.as_ref()) {
         return Ok(());
       }
 
@@ -984,13 +1023,12 @@ impl EszipV2 {
             }
           };
 
-          let specifier = module.specifier.to_string();
           let eszip_module = EszipV2Module::Module {
             kind: ModuleKind::JavaScript,
             source: EszipV2SourceSlot::Ready(source),
             source_map: EszipV2SourceSlot::Ready(source_map),
           };
-          modules.insert(specifier, eszip_module);
+          modules.insert(specifier_key.into_owned(), eszip_module);
 
           // now walk the code dependencies
           for dep in module.dependencies.values() {
@@ -1003,6 +1041,7 @@ impl EszipV2 {
                 modules,
                 specifier,
                 dep.is_dynamic,
+                relative_file_base,
               )?;
             }
           }
@@ -1010,13 +1049,12 @@ impl EszipV2 {
           Ok(())
         }
         deno_graph::Module::Json(module) => {
-          let specifier = module.specifier.to_string();
           let eszip_module = EszipV2Module::Module {
             kind: ModuleKind::Json,
             source: EszipV2SourceSlot::Ready( module.source.clone().into()),
             source_map: EszipV2SourceSlot::Ready(Arc::new([])),
           };
-          modules.insert(specifier, eszip_module);
+          modules.insert(specifier_key.into_owned(), eszip_module);
           Ok(())
         }
         deno_graph::Module::External(_)
@@ -1027,23 +1065,26 @@ impl EszipV2 {
       }
     }
 
-    for root in &graph.roots {
+    for root in &opts.graph.roots {
       visit_module(
-        &graph,
-        parser,
-        &transpile_options,
+        &opts.graph,
+        opts.parser,
+        &opts.transpile_options,
         &emit_options,
         &mut modules,
         root,
         false,
+        opts.relative_file_base,
       )?;
     }
 
-    for (specifier, target) in &graph.redirects {
+    for (specifier, target) in &opts.graph.redirects {
       let module = EszipV2Module::Redirect {
         target: target.to_string(),
       };
-      modules.insert(specifier.to_string(), module);
+      let specifier_key =
+        resolve_specifier_key(specifier, opts.relative_file_base)?;
+      modules.insert(specifier_key.into_owned(), module);
     }
 
     Ok(Self {
@@ -1390,7 +1431,9 @@ mod tests {
   use deno_graph::source::CacheSetting;
   use deno_graph::source::LoadOptions;
   use deno_graph::source::LoadResponse;
+  use deno_graph::source::MemoryLoader;
   use deno_graph::source::ResolveError;
+  use deno_graph::source::Source;
   use deno_graph::BuildOptions;
   use deno_graph::CapturingModuleAnalyzer;
   use deno_graph::GraphKind;
@@ -1529,12 +1572,13 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    let eszip = super::EszipV2::from_graph(
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     let module = eszip.get_module("file:///external.ts").unwrap();
     assert_eq!(module.specifier, "file:///external.ts");
@@ -1560,12 +1604,13 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    let eszip = super::EszipV2::from_graph(
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
     assert_eq!(module.specifier, "file:///main.ts");
@@ -1602,12 +1647,13 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    let eszip = super::EszipV2::from_graph(
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     let module = eszip.get_module("file:///json.ts").unwrap();
     assert_eq!(module.specifier, "file:///json.ts");
@@ -1643,12 +1689,13 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    let eszip = super::EszipV2::from_graph(
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     let module = eszip.get_module("file:///dynamic.ts").unwrap();
     assert_eq!(module.specifier, "file:///dynamic.ts");
@@ -1683,17 +1730,136 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    let eszip = super::EszipV2::from_graph(
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     let module = eszip.get_module("file:///dynamic_data.ts").unwrap();
     assert_eq!(module.specifier, "file:///dynamic_data.ts");
     let source = module.source().await.unwrap();
     assert_matches_file!(source, "./testdata/emit/dynamic_data.ts");
+  }
+
+  #[tokio::test]
+  async fn from_graph_relative_base() {
+    let base = ModuleSpecifier::parse("file:///dir/").unwrap();
+    let roots = vec![ModuleSpecifier::parse("file:///dir/main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = MemoryLoader::new(
+      vec![
+        (
+          "file:///dir/main.ts".to_string(),
+          Source::Module {
+            specifier: "file:///dir/main.ts".to_string(),
+            maybe_headers: None,
+            content: "import './sub_dir/mod.ts';".to_string(),
+          },
+        ),
+        (
+          "file:///dir/sub_dir/mod.ts".to_string(),
+          Source::Module {
+            specifier: "file:///dir/sub_dir/mod.ts".to_string(),
+            maybe_headers: None,
+            content: "console.log(1);".to_string(),
+          },
+        ),
+      ],
+      vec![],
+    );
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: Some(&base),
+    })
+    .unwrap();
+    let module = eszip.get_module("main.ts").unwrap();
+    assert_eq!(module.specifier, "main.ts");
+    let source = module.source().await.unwrap();
+    assert_eq!(
+      String::from_utf8_lossy(&source),
+      "import './sub_dir/mod.ts';\n"
+    );
+    let module = eszip.get_module("sub_dir/mod.ts").unwrap();
+    assert_eq!(module.specifier, "sub_dir/mod.ts");
+  }
+
+  #[cfg(windows)]
+  #[tokio::test]
+  async fn from_graph_relative_base_windows_different_drives() {
+    let base = ModuleSpecifier::parse("file:///V:/dir/").unwrap();
+    let roots = vec![ModuleSpecifier::parse("file:///V:/dir/main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = MemoryLoader::new(
+      vec![
+        (
+          "file:///V:/dir/main.ts".to_string(),
+          Source::Module {
+            specifier: "file:///V:/dir/main.ts".to_string(),
+            maybe_headers: None,
+            // obviously this wouldn't work if someone put a V: specifier
+            // here, but nobody should be writing code like this so we
+            // just do our best effort to keep things working
+            content: "import 'file:///C:/other_drive/main.ts';".to_string(),
+          },
+        ),
+        (
+          "file:///C:/other_drive/main.ts".to_string(),
+          Source::Module {
+            specifier: "file:///C:/other_drive/main.ts".to_string(),
+            maybe_headers: None,
+            content: "console.log(1);".to_string(),
+          },
+        ),
+      ],
+      vec![],
+    );
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: Some(&base),
+    })
+    .unwrap();
+    let module = eszip.get_module("main.ts").unwrap();
+    assert_eq!(module.specifier, "main.ts");
+    let source = module.source().await.unwrap();
+    assert_eq!(
+      String::from_utf8_lossy(&source),
+      "import 'file:///C:/other_drive/main.ts';\n"
+    );
+    let module = eszip.get_module("file:///C:/other_drive/main.ts").unwrap();
+    assert_eq!(module.specifier, "file:///C:/other_drive/main.ts");
   }
 
   #[cfg(feature = "sha256")]
@@ -1814,7 +1980,7 @@ mod tests {
       _ => unimplemented!(),
     };
     let import_map = import_map::parse_from_json(
-      &specifier,
+      specifier.clone(),
       &String::from_utf8(content.to_vec()).unwrap(),
     )
     .unwrap();
@@ -1833,12 +1999,13 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    let mut eszip = super::EszipV2::from_graph(
+    let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
 
@@ -1892,7 +2059,7 @@ mod tests {
       _ => unimplemented!(),
     };
     let import_map = import_map::parse_from_json(
-      &specifier,
+      specifier.clone(),
       &String::from_utf8(content.to_vec()).unwrap(),
     )
     .unwrap();
@@ -1913,12 +2080,13 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    let mut eszip = super::EszipV2::from_graph(
+    let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
 
@@ -1983,12 +2151,13 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    let mut eszip = super::EszipV2::from_graph(
+    let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
 
@@ -2061,12 +2230,13 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    let mut eszip = super::EszipV2::from_graph(
+    let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
 
@@ -2142,12 +2312,13 @@ mod tests {
     }
     .into_valid()
     .unwrap();
-    let mut eszip = super::EszipV2::from_graph(
+    let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     eszip.add_npm_snapshot(original_snapshot.clone());
     let taken_snapshot = eszip.take_npm_snapshot();
@@ -2262,12 +2433,13 @@ mod tests {
     }
     .into_valid()
     .unwrap();
-    let mut eszip = super::EszipV2::from_graph(
+    let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap();
     eszip.add_npm_snapshot(original_snapshot.clone());
     let bytes = eszip.into_bytes();
@@ -2530,12 +2702,13 @@ mod tests {
       )
       .await;
     graph.valid().unwrap();
-    super::EszipV2::from_graph(
+    super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
-      &analyzer.as_capturing_parser(),
-      TranspileOptions::default(),
-      EmitOptions::default(),
-    )
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+    })
     .unwrap()
   }
 }

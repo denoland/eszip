@@ -177,12 +177,13 @@ async fn build_eszip(mb: usize) -> EszipV2 {
     )
     .await;
   graph.valid().unwrap();
-  EszipV2::from_graph(
+  EszipV2::from_graph(eszip::FromGraphOptions {
     graph,
-    &analyzer.as_capturing_parser(),
-    TranspileOptions::default(),
-    EmitOptions::default(),
-  )
+    parser: analyzer.as_capturing_parser(),
+    transpile_options: TranspileOptions::default(),
+    emit_options: EmitOptions::default(),
+    relative_file_base: None,
+  })
   .unwrap()
 }
 

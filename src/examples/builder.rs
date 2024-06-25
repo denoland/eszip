@@ -44,7 +44,7 @@ async fn main() {
         } => {
           let content = String::from_utf8(content.to_vec()).unwrap();
           let import_map =
-            import_map::parse_from_json(&specifier, &content).unwrap();
+            import_map::parse_from_json(specifier.clone(), &content).unwrap();
           (Some(import_map.import_map), Some((specifier, content)))
         }
         _ => unimplemented!(),
@@ -70,12 +70,13 @@ async fn main() {
 
   graph.valid().unwrap();
 
-  let mut eszip = eszip::EszipV2::from_graph(
+  let mut eszip = eszip::EszipV2::from_graph(eszip::FromGraphOptions {
     graph,
-    &analyzer.as_capturing_parser(),
-    TranspileOptions::default(),
-    EmitOptions::default(),
-  )
+    parser: analyzer.as_capturing_parser(),
+    transpile_options: TranspileOptions::default(),
+    emit_options: EmitOptions::default(),
+    relative_file_base: None,
+  })
   .unwrap();
   if let Some((import_map_specifier, import_map_content)) =
     maybe_import_map_data
