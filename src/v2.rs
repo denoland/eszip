@@ -229,7 +229,9 @@ pub struct FromGraphOptions<'a> {
   pub parser: CapturingModuleParser<'a>,
   pub transpile_options: TranspileOptions,
   pub emit_options: EmitOptions,
-  /// Base to optionally make all file:/// modules relative to.
+  /// Base to make all descendant file:/// modules relative to.
+  ///
+  /// Note: When a path is above the base it will be left absolute.
   pub relative_file_base: Option<&'a Url>,
 }
 
@@ -928,16 +930,22 @@ impl EszipV2 {
       specifier: &'a Url,
       relative_file_base: Option<&Url>,
     ) -> Result<Cow<'a, str>, anyhow::Error> {
+      fn make_relative<'a>(base: &Url, target: &'a Url) -> Cow<'a, str> {
+        match base.make_relative(target) {
+          Some(relative) => {
+            if relative.starts_with("../") {
+              Cow::Borrowed(target.as_str())
+            } else {
+              Cow::Owned(relative)
+            }
+          }
+          None => Cow::Borrowed(target.as_str()),
+        }
+      }
+
       if specifier.scheme() == "file" {
         if let Some(relative_file_base) = relative_file_base {
-          match relative_file_base.make_relative(specifier) {
-            Some(relative) => Ok(Cow::Owned(relative)),
-            None => anyhow::bail!(
-              "Could not make '{}' relative to base '{}'",
-              specifier,
-              relative_file_base
-            ),
-          }
+          Ok(make_relative(relative_file_base, specifier))
         } else {
           Ok(Cow::Borrowed(specifier.as_str()))
         }
@@ -1791,6 +1799,67 @@ mod tests {
     );
     let module = eszip.get_module("sub_dir/mod.ts").unwrap();
     assert_eq!(module.specifier, "sub_dir/mod.ts");
+  }
+
+  #[cfg(windows)]
+  #[tokio::test]
+  async fn from_graph_relative_base_windows_different_drives() {
+    let base = ModuleSpecifier::parse("file:///V:/dir/").unwrap();
+    let roots = vec![ModuleSpecifier::parse("file:///V:/dir/main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = MemoryLoader::new(
+      vec![
+        (
+          "file:///V:/dir/main.ts".to_string(),
+          Source::Module {
+            specifier: "file:///V:/dir/main.ts".to_string(),
+            maybe_headers: None,
+            // obviously this wouldn't work if someone put a V: specifier
+            // here, but nobody should be writing code like this so we
+            // just do our best effort to keep things working
+            content: "import 'file:///C:/other_drive/main.ts';".to_string(),
+          },
+        ),
+        (
+          "file:///C:/other_drive/main.ts".to_string(),
+          Source::Module {
+            specifier: "file:///C:/other_drive/main.ts".to_string(),
+            maybe_headers: None,
+            content: "console.log(1);".to_string(),
+          },
+        ),
+      ],
+      vec![],
+    );
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: Some(&base),
+    })
+    .unwrap();
+    let module = eszip.get_module("main.ts").unwrap();
+    assert_eq!(module.specifier, "main.ts");
+    let source = module.source().await.unwrap();
+    assert_eq!(
+      String::from_utf8_lossy(&source),
+      "import 'file:///C:/other_drive/main.ts';\n"
+    );
+    let module = eszip.get_module("file:///C:/other_drive/main.ts").unwrap();
+    assert_eq!(module.specifier, "file:///C:/other_drive/main.ts");
   }
 
   #[cfg(feature = "sha256")]
