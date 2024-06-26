@@ -244,9 +244,9 @@ impl<'a> EszipRelativeFileBaseUrl<'a> {
     Self(url)
   }
 
-  /// Attempts to make a target file specifier relative
-  /// to the base URL.
+  /// Gets the eszip module map key of the provided specifier.
   ///
+  /// * Descendant file specifiers will be made relative to the base.
   /// * Non-descendant file specifiers will stay as-is (absolute).
   /// * Non-file specifiers will stay as-is.
   pub fn specifier_key<'b>(&self, target: &'b Url) -> Cow<'b, str> {
