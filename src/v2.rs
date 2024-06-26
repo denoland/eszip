@@ -224,6 +224,53 @@ impl Options {
   }
 }
 
+/// A URL that can be designated as the base for relative URLs
+/// in an eszip.
+///
+/// After creation, this URL may be used to get the key for a
+/// module in the eszip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EszipRelativeFileBaseUrl<'a>(&'a Url);
+
+impl<'a> From<&'a Url> for EszipRelativeFileBaseUrl<'a> {
+  fn from(url: &'a Url) -> Self {
+    Self(url)
+  }
+}
+
+impl<'a> EszipRelativeFileBaseUrl<'a> {
+  pub fn new(url: &'a Url) -> Self {
+    debug_assert_eq!(url.scheme(), "file");
+    Self(url)
+  }
+
+  /// Gets the eszip module map key of the provided specifier.
+  ///
+  /// * Descendant file specifiers will be made relative to the base.
+  /// * Non-descendant file specifiers will stay as-is (absolute).
+  /// * Non-file specifiers will stay as-is.
+  pub fn specifier_key<'b>(&self, target: &'b Url) -> Cow<'b, str> {
+    if target.scheme() != "file" {
+      return Cow::Borrowed(target.as_str());
+    }
+
+    match self.0.make_relative(target) {
+      Some(relative) => {
+        if relative.starts_with("../") {
+          Cow::Borrowed(target.as_str())
+        } else {
+          Cow::Owned(relative)
+        }
+      }
+      None => Cow::Borrowed(target.as_str()),
+    }
+  }
+
+  pub fn inner(&self) -> &Url {
+    self.0
+  }
+}
+
 pub struct FromGraphOptions<'a> {
   pub graph: ModuleGraph,
   pub parser: CapturingModuleParser<'a>,
@@ -232,7 +279,7 @@ pub struct FromGraphOptions<'a> {
   /// Base to make all descendant file:/// modules relative to.
   ///
   /// Note: When a path is above the base it will be left absolute.
-  pub relative_file_base: Option<&'a Url>,
+  pub relative_file_base: Option<EszipRelativeFileBaseUrl<'a>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -928,27 +975,10 @@ impl EszipV2 {
 
     fn resolve_specifier_key<'a>(
       specifier: &'a Url,
-      relative_file_base: Option<&Url>,
+      relative_file_base: Option<EszipRelativeFileBaseUrl>,
     ) -> Result<Cow<'a, str>, anyhow::Error> {
-      fn make_relative<'a>(base: &Url, target: &'a Url) -> Cow<'a, str> {
-        match base.make_relative(target) {
-          Some(relative) => {
-            if relative.starts_with("../") {
-              Cow::Borrowed(target.as_str())
-            } else {
-              Cow::Owned(relative)
-            }
-          }
-          None => Cow::Borrowed(target.as_str()),
-        }
-      }
-
-      if specifier.scheme() == "file" {
-        if let Some(relative_file_base) = relative_file_base {
-          Ok(make_relative(relative_file_base, specifier))
-        } else {
-          Ok(Cow::Borrowed(specifier.as_str()))
-        }
+      if let Some(relative_file_base) = relative_file_base {
+        Ok(relative_file_base.specifier_key(specifier))
       } else {
         Ok(Cow::Borrowed(specifier.as_str()))
       }
@@ -963,7 +993,7 @@ impl EszipV2 {
       modules: &mut LinkedHashMap<String, EszipV2Module>,
       specifier: &Url,
       is_dynamic: bool,
-      relative_file_base: Option<&Url>,
+      relative_file_base: Option<EszipRelativeFileBaseUrl>,
     ) -> Result<(), anyhow::Error> {
       let module = match graph.try_get(specifier) {
         Ok(Some(module)) => module,
@@ -1787,7 +1817,7 @@ mod tests {
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
-      relative_file_base: Some(&base),
+      relative_file_base: Some((&base).into()),
     })
     .unwrap();
     let module = eszip.get_module("main.ts").unwrap();
@@ -1848,7 +1878,7 @@ mod tests {
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
-      relative_file_base: Some(&base),
+      relative_file_base: Some((&base).into()),
     })
     .unwrap();
     let module = eszip.get_module("main.ts").unwrap();
