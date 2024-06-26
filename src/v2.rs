@@ -244,7 +244,16 @@ impl<'a> EszipRelativeFileBaseUrl<'a> {
     Self(url)
   }
 
-  pub fn make_relative<'b>(&self, target: &'b Url) -> Cow<'b, str> {
+  /// Attempts to make a target file specifier relative
+  /// to the base URL.
+  ///
+  /// * Non-descendant file specifiers will stay as-is (absolute).
+  /// * Non-file specifiers will stay as-is.
+  pub fn specifier_key<'b>(&self, target: &'b Url) -> Cow<'b, str> {
+    if target.scheme() != "file" {
+      return Cow::Borrowed(target.as_str());
+    }
+
     match self.0.make_relative(target) {
       Some(relative) => {
         if relative.starts_with("../") {
@@ -968,12 +977,8 @@ impl EszipV2 {
       specifier: &'a Url,
       relative_file_base: Option<EszipRelativeFileBaseUrl>,
     ) -> Result<Cow<'a, str>, anyhow::Error> {
-      if specifier.scheme() == "file" {
-        if let Some(relative_file_base) = relative_file_base {
-          Ok(relative_file_base.make_relative(specifier))
-        } else {
-          Ok(Cow::Borrowed(specifier.as_str()))
-        }
+      if let Some(relative_file_base) = relative_file_base {
+        Ok(relative_file_base.specifier_key(specifier))
       } else {
         Ok(Cow::Borrowed(specifier.as_str()))
       }
