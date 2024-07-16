@@ -1368,7 +1368,7 @@ impl EszipV2 {
               }
             }
 
-            // The import does not specify a module, we need to resolve the package entrypoint
+            // If the import does not specify a module, we need to resolve the package entrypoint
             if nv_ref.sub_path().is_none() {
               if let Some(package_json) = &package.package_json {
                 // Prepare a FileSystem with the package modules for NodeResolver
