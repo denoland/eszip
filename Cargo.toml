@@ -44,13 +44,17 @@ default = ["sha256"]
 
 [dependencies]
 anyhow = "1"
+async-trait = "0.1.68"
 base64 = "0.21.0"
 deno_ast = { version = "0.39.0", features = ["transpiling"] }
+deno_fs = "0.68"
 deno_graph = { workspace = true }
+deno_node = "0.95"
 deno_npm = "0.21.0"
 deno_semver = "0.5.4"
 futures = "0.3.26"
 hashlink = "0.8.2"
+indexmap = "2"
 serde = { workspace = true }
 serde_json = "1"
 sha2 = {version = "0.10.1", optional = true}
@@ -62,7 +66,10 @@ xxhash-rust = { version = "0.8", optional = true }
 import_map = { workspace = true }
 pretty_assertions = "1"
 tokio = { version = "1", features = ["macros", "rt"] }
-reqwest = { version = "0.11.23", features = ["rustls-tls"] }
+reqwest = { version = "0.11.20", features = ["rustls-tls"] }
 jsonc-parser = { version = "0.23.0", features = ["serde"] }
 insta = "1.34.0"
 criterion = { version = "0.5", features = ["async_tokio"] }
+
+[patch.crates-io]
+deno_fs = { git = "https://github.com/denoland/deno.git", branch = "in-memory-fs-backport" }

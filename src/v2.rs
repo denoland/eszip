@@ -3,29 +3,39 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::future::Future;
 use std::hash::Hash;
 use std::mem::size_of;
+use std::path::Path;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::task::Poll;
 use std::task::Waker;
 
 use deno_ast::EmitOptions;
+use deno_ast::ModuleSpecifier;
 use deno_ast::SourceMapOption;
 use deno_ast::TranspileOptions;
+use deno_fs::InMemoryFs;
 use deno_graph::CapturingModuleParser;
 use deno_graph::ModuleGraph;
 use deno_graph::ModuleParser;
 use deno_graph::ParseOptions;
+use deno_node::NpmResolver;
 use deno_npm::resolution::SerializedNpmResolutionSnapshot;
 use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
 use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
 use deno_npm::NpmPackageId;
+use deno_semver::npm::NpmPackageNvReference;
+use deno_semver::package::PackageNv;
+use deno_semver::package::PackageNvReference;
 use deno_semver::package::PackageReq;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
 use hashlink::linked_hash_map::LinkedHashMap;
+use indexmap::IndexMap;
 pub use url::Url;
 
 use crate::error::ParseError;
@@ -280,6 +290,238 @@ pub struct FromGraphOptions<'a> {
   ///
   /// Note: When a path is above the base it will be left absolute.
   pub relative_file_base: Option<EszipRelativeFileBaseUrl<'a>>,
+  pub npm_packages: Option<FromGraphNpmPackages>,
+}
+
+/// Provide the source code of the Npm packages to include in the eszip
+///
+/// When building the eszip from a [`ModuleGraph`], use this struct to
+/// provide all the Npm packages that should be included in it. All the
+/// modules of all the packages in this struct are guaranteed to be included in the eszip.
+/// The npm modules that are imported from esm modules (using `npm:` specifiers) are included in
+/// the eszip following the graph order (BFS), for an optimal loading of these modules
+/// by Deno. The rest of the modules that might remain are appended at the end of the eszip.
+///
+/// Npm Packages are formed by modules, and optionally "meta" files. The most basic "meta" file
+/// that any Npm package usually have is a package.json, but there can additionally be other
+/// meta files like manifests and the like to assist in the loading of the package. Both
+/// modules and meta-modules have an arbitrary name identifying them within the eszip.
+#[derive(Debug, Default, Clone)]
+pub struct FromGraphNpmPackages(IndexMap<PackageNv, FromGraphNpmPackage>);
+
+impl FromGraphNpmPackages {
+  fn get_mut(
+    &mut self,
+    package_nv: &PackageNv,
+  ) -> Option<&mut FromGraphNpmPackage> {
+    self.0.get_mut(package_nv)
+  }
+
+  pub fn new() -> Self {
+    Default::default()
+  }
+
+  pub fn add_package_with_maybe_meta(
+    &mut self,
+    package_id: PackageNv,
+    package_json: Option<FromGraphNpmModule>,
+    meta_modules: Option<Vec<FromGraphNpmModule>>,
+    modules: IndexMap<NpmPackageNvReference, FromGraphNpmModule>,
+  ) {
+    self.0.insert(
+      package_id,
+      FromGraphNpmPackage {
+        package_json,
+        meta_modules: meta_modules
+          .or(FromGraphNpmPackage::default().meta_modules),
+        modules,
+      },
+    );
+  }
+
+  pub fn add_package<N, S>(
+    &mut self,
+    package_id: PackageNv,
+    package_json: (N, S),
+    modules: impl IntoIterator<Item = (NpmPackageNvReference, (N, S))>,
+  ) where
+    S: Into<Vec<u8>>,
+    N: Into<String>,
+  {
+    self.add_package_with_maybe_meta(
+      package_id,
+      Some(FromGraphNpmModule {
+        specifier: package_json.0.into(),
+        source: package_json.1.into(),
+      }),
+      None,
+      modules
+        .into_iter()
+        .map(|(reference, (specifier, source))| {
+          (
+            reference,
+            FromGraphNpmModule {
+              specifier: specifier.into(),
+              source: source.into(),
+            },
+          )
+        })
+        .collect(),
+    );
+  }
+
+  pub fn add_package_with_meta<N, S>(
+    &mut self,
+    package_id: PackageNv,
+    package_json: (N, S),
+    meta_modules: impl IntoIterator<Item = (N, S)>,
+    modules: impl IntoIterator<Item = (NpmPackageNvReference, (N, S))>,
+  ) where
+    N: Into<String>,
+    S: Into<Vec<u8>>,
+  {
+    self.add_package_with_maybe_meta(
+      package_id,
+      Some(FromGraphNpmModule {
+        specifier: package_json.0.into(),
+        source: package_json.1.into(),
+      }),
+      Some(
+        meta_modules
+          .into_iter()
+          .map(|(specifier, source)| FromGraphNpmModule {
+            specifier: specifier.into(),
+            source: source.into(),
+          })
+          .collect(),
+      ),
+      modules
+        .into_iter()
+        .map(|(reference, (specifier, source))| {
+          (
+            reference,
+            FromGraphNpmModule {
+              specifier: specifier.into(),
+              source: source.into(),
+            },
+          )
+        })
+        .collect(),
+    );
+  }
+
+  pub fn add_module(
+    &mut self,
+    package_nv_ref: NpmPackageNvReference,
+    specifier: impl Into<String>,
+    source: impl Into<Vec<u8>>,
+  ) {
+    if !self.0.contains_key(package_nv_ref.nv()) {
+      self
+        .0
+        .insert(package_nv_ref.nv().clone(), FromGraphNpmPackage::default());
+    }
+    let package = self.0.get_mut(package_nv_ref.nv()).unwrap();
+    package.modules.insert(
+      package_nv_ref,
+      FromGraphNpmModule {
+        specifier: specifier.into(),
+        source: source.into(),
+      },
+    );
+  }
+
+  pub fn add_meta(
+    &mut self,
+    package_nv_ref: &NpmPackageNvReference,
+    specifier: impl Into<String>,
+    source: impl Into<Vec<u8>>,
+  ) {
+    if !self.0.contains_key(package_nv_ref.nv()) {
+      self
+        .0
+        .insert(package_nv_ref.nv().clone(), FromGraphNpmPackage::default());
+    }
+    let package = self.0.get_mut(package_nv_ref.nv()).unwrap();
+    package.meta_modules.get_or_insert_with(Vec::new).push(
+      FromGraphNpmModule {
+        specifier: specifier.into(),
+        source: source.into(),
+      },
+    );
+  }
+
+  pub fn add_package_json(
+    &mut self,
+    package_nv_ref: &NpmPackageNvReference,
+    specifier: impl Into<String>,
+    source: impl Into<Vec<u8>>,
+  ) {
+    if !self.0.contains_key(package_nv_ref.nv()) {
+      self
+        .0
+        .insert(package_nv_ref.nv().clone(), FromGraphNpmPackage::default());
+    }
+    let package = self.0.get_mut(package_nv_ref.nv()).unwrap();
+    package.package_json = Some(FromGraphNpmModule {
+      specifier: specifier.into(),
+      source: source.into(),
+    });
+  }
+
+  fn drain(&mut self) -> impl Iterator<Item = FromGraphNpmModule> + '_ {
+    self.0.drain(..).flat_map(|(_, mut package)| {
+      package
+        .meta_modules
+        .into_iter()
+        // package.json is cloned instead of taken to assist in with module resolution.
+        // The way to determine if package.json is already in the eszip is by checking
+        // if the meta-modules are in it
+        .flat_map(move |metas| {
+          metas.into_iter().chain(package.package_json.take())
+        })
+        .chain(package.modules.into_values())
+    })
+  }
+}
+
+#[derive(Debug, Clone)]
+struct FromGraphNpmPackage {
+  package_json: Option<FromGraphNpmModule>,
+  meta_modules: Option<Vec<FromGraphNpmModule>>,
+  modules: IndexMap<NpmPackageNvReference, FromGraphNpmModule>,
+}
+
+impl Default for FromGraphNpmPackage {
+  fn default() -> Self {
+    Self {
+      // We want Some(Vec::new()) instead of None because in EszipV2::from_graph,
+      // FromGraphNpmPackages::take_meta_modules() is used to detect the first time a module of this
+      // package is imported, even if there aren't any meta modules
+      meta_modules: Some(Vec::new()),
+      package_json: Default::default(),
+      modules: Default::default(),
+    }
+  }
+}
+
+impl FromGraphNpmPackage {
+  fn take_meta_modules(&mut self) -> Option<Vec<FromGraphNpmModule>> {
+    self.meta_modules.take()
+  }
+
+  fn take_module(
+    &mut self,
+    nv_reference: &NpmPackageNvReference,
+  ) -> Option<FromGraphNpmModule> {
+    self.modules.shift_remove(nv_reference)
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct FromGraphNpmModule {
+  specifier: String,
+  source: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -984,30 +1226,41 @@ impl EszipV2 {
       }
     }
 
+    struct ModuleToVisit<'a> {
+      specifier: &'a ModuleSpecifier,
+      is_dynamic: bool,
+    }
+
     #[allow(clippy::too_many_arguments)]
-    fn visit_module(
-      graph: &ModuleGraph,
+    fn visit_module<'a>(
+      graph: &'a ModuleGraph,
       parser: CapturingModuleParser,
       transpile_options: &TranspileOptions,
       emit_options: &EmitOptions,
       modules: &mut LinkedHashMap<String, EszipV2Module>,
-      specifier: &Url,
-      is_dynamic: bool,
+      visited: ModuleToVisit,
       relative_file_base: Option<EszipRelativeFileBaseUrl>,
-    ) -> Result<(), anyhow::Error> {
-      let module = match graph.try_get(specifier) {
+      npm_packages: Option<&mut FromGraphNpmPackages>,
+    ) -> Result<
+      Option<impl DoubleEndedIterator<Item = ModuleToVisit<'a>>>,
+      anyhow::Error,
+    > {
+      let module = match graph.try_get(visited.specifier) {
         Ok(Some(module)) => module,
         Ok(None) => {
-          return Err(anyhow::anyhow!("module not found {}", specifier));
+          return Err(anyhow::anyhow!(
+            "module not found {}",
+            visited.specifier
+          ));
         }
         Err(err) => {
-          if is_dynamic {
+          if visited.is_dynamic {
             // dynamic imports are allowed to fail
-            return Ok(());
+            return Ok(None);
           }
           return Err(anyhow::anyhow!(
             "failed to load '{}': {}",
-            specifier,
+            visited.specifier,
             err
           ));
         }
@@ -1016,7 +1269,7 @@ impl EszipV2 {
       let specifier_key =
         resolve_specifier_key(module.specifier(), relative_file_base)?;
       if modules.contains_key(specifier_key.as_ref()) {
-        return Ok(());
+        return Ok(None);
       }
 
       match module {
@@ -1026,7 +1279,7 @@ impl EszipV2 {
           match module.media_type {
             deno_graph::MediaType::JavaScript | deno_graph::MediaType::Mjs => {
               source = Arc::from(module.source.clone());
-              source_map = Arc::new( []);
+              source_map = Arc::new([]);
             }
             deno_graph::MediaType::Jsx
             | deno_graph::MediaType::TypeScript
@@ -1040,7 +1293,9 @@ impl EszipV2 {
                 media_type: module.media_type,
                 scope_analysis: false,
               })?;
-              let emit = parsed_source.transpile(transpile_options, emit_options)?.into_source();
+              let emit = parsed_source
+                .transpile(transpile_options, emit_options)?
+                .into_source();
               source = emit.source.into();
               source_map = Arc::from(emit.source_map.unwrap_or_default());
             }
@@ -1048,7 +1303,7 @@ impl EszipV2 {
               return Err(anyhow::anyhow!(
                 "unsupported media type {} for {}",
                 module.media_type,
-                specifier
+                visited.specifier
               ));
             }
           };
@@ -1060,52 +1315,190 @@ impl EszipV2 {
           };
           modules.insert(specifier_key.into_owned(), eszip_module);
 
-          // now walk the code dependencies
-          for dep in module.dependencies.values() {
-            if let Some(specifier) = dep.get_code() {
-              visit_module(
-                graph,
-                parser,
-                transpile_options,
-                emit_options,
-                modules,
-                specifier,
-                dep.is_dynamic,
-                relative_file_base,
-              )?;
-            }
-          }
-
-          Ok(())
+          Ok(Some(module.dependencies.values().filter_map(
+            |dependency| {
+              Some(ModuleToVisit {
+                specifier: dependency.get_code()?,
+                is_dynamic: dependency.is_dynamic,
+              })
+            },
+          )))
         }
         deno_graph::Module::Json(module) => {
           let eszip_module = EszipV2Module::Module {
             kind: ModuleKind::Json,
-            source: EszipV2SourceSlot::Ready( module.source.clone().into()),
+            source: EszipV2SourceSlot::Ready(module.source.clone().into()),
             source_map: EszipV2SourceSlot::Ready(Arc::new([])),
           };
           modules.insert(specifier_key.into_owned(), eszip_module);
-          Ok(())
+          Ok(None)
         }
-        deno_graph::Module::External(_)
-        // we ignore any npm modules found in the graph and instead
-        // rely solely on the npm snapshot for this information
-        | deno_graph::Module::Npm(_)
-        | deno_graph::Module::Node(_) => Ok(()),
+        deno_graph::Module::Npm(npm_module) => {
+          let Some(npm_packages) = npm_packages else {
+            return Ok(None);
+          };
+          let package = npm_packages.get_mut(npm_module.nv_reference.nv());
+          if let Some(package) = package {
+            let mut nv_ref = npm_module.nv_reference.clone();
+
+            // The meta-modules are added to the eszip before the first module of an Npm package
+            let meta_modules = package.take_meta_modules();
+            if let Some(meta_modules) = meta_modules {
+              for meta_module in meta_modules {
+                modules.insert(
+                  meta_module.specifier,
+                  EszipV2Module::Module {
+                    kind: ModuleKind::OpaqueData,
+                    source: EszipV2SourceSlot::Ready(meta_module.source.into()),
+                    source_map: EszipV2SourceSlot::Ready(Arc::new([])),
+                  },
+                );
+              }
+              if let Some(package_json) = package.package_json.clone() {
+                modules.insert(
+                  package_json.specifier,
+                  EszipV2Module::Module {
+                    kind: ModuleKind::OpaqueData,
+                    source: EszipV2SourceSlot::Ready(
+                      package_json.source.into(),
+                    ),
+                    source_map: EszipV2SourceSlot::Ready(Arc::new([])),
+                  },
+                );
+              }
+            }
+
+            // The import does not specify a module, we need to resolve the package entrypoint
+            if nv_ref.sub_path().is_none() {
+              if let Some(package_json) = &package.package_json {
+                // Prepare a FileSystem with the package modules for NodeResolver
+                let in_memory_fs = InMemoryFs::default();
+                let mut files = vec![(
+                  // files must be namespaced due to thread-local cache in deno_node::package_json.rs
+                  format!("/{}/package.json", nv_ref.nv().name),
+                  String::from_utf8_lossy(&package_json.source).into_owned(),
+                )];
+                files.extend(package.modules.keys().filter_map(|nv_ref| {
+                  Some((
+                    format!("/{}/{}", nv_ref.nv().name, nv_ref.sub_path()?),
+                    // The source code is irrelevant for the entrypoint resolution
+                    String::new(),
+                  ))
+                }));
+                in_memory_fs.setup_text_files(files);
+
+                #[derive(Debug)]
+                struct NoopNpmResolver;
+                impl NpmResolver for NoopNpmResolver {
+                  fn resolve_package_folder_from_package(
+                    &self,
+                    _: &str,
+                    _: &ModuleSpecifier,
+                  ) -> Result<std::path::PathBuf, anyhow::Error>
+                  {
+                    unreachable!()
+                  }
+
+                  fn in_npm_package(&self, _: &ModuleSpecifier) -> bool {
+                    true
+                  }
+
+                  fn ensure_read_permission(
+                    &self,
+                    _: &mut dyn deno_node::NodePermissions,
+                    _: &std::path::Path,
+                  ) -> Result<(), anyhow::Error> {
+                    Ok(())
+                  }
+                }
+                let node_resolver = deno_node::NodeResolver::new(
+                  Rc::new(in_memory_fs),
+                  Rc::new(NoopNpmResolver),
+                );
+                let resolution = node_resolver
+                  .resolve_package_subpath_from_deno_module(
+                    Path::new(&format!("/{}", nv_ref.nv().name)),
+                    None,
+                    &npm_module.specifier,
+                    deno_node::NodeResolutionMode::Execution,
+                  )
+                  .ok()
+                  .flatten();
+                if let Some(resolution) = resolution {
+                  let sub_path = resolution
+                    .into_url()
+                    .path()
+                    .strip_prefix(&format!("/{}/", nv_ref.nv().name))
+                    .unwrap()
+                    .to_string();
+
+                  // Update nv_ref with the resolved sub_path (npm:package => npm:package/entrypoint)
+                  nv_ref = NpmPackageNvReference::new(PackageNvReference {
+                    nv: nv_ref.into_inner().nv,
+                    sub_path: Some(sub_path),
+                  });
+                }
+              }
+            }
+            let module = package.take_module(&nv_ref);
+            if let Some(module) = module {
+              modules.insert(
+                module.specifier,
+                EszipV2Module::Module {
+                  kind: ModuleKind::OpaqueData,
+                  source: EszipV2SourceSlot::Ready(module.source.into()),
+                  source_map: EszipV2SourceSlot::Ready(Arc::new([])),
+                },
+              );
+            }
+          }
+          Ok(None)
+        }
+        deno_graph::Module::External(_) | deno_graph::Module::Node(_) => {
+          Ok(None)
+        }
       }
     }
 
-    for root in &opts.graph.roots {
-      visit_module(
+    let mut npm_packages = opts.npm_packages;
+    // Modules are loaded in a breadth-first search traversal
+    let mut to_visit =
+      VecDeque::from_iter(opts.graph.roots.iter().map(|specifier| {
+        ModuleToVisit {
+          specifier,
+          is_dynamic: false,
+        }
+      }));
+    // npm packages are loaded sync during module evaluation, therefore they have priority over the rest of modules
+    let mut to_visit_npm = VecDeque::new();
+    // dynamic imports are loaded last, if at all.
+    let mut to_visit_dynamic = VecDeque::new();
+    while let Some(module) = to_visit_npm
+      .pop_front()
+      .or_else(|| to_visit.pop_front())
+      .or_else(|| to_visit_dynamic.pop_front())
+    {
+      let dependencies = visit_module(
         &opts.graph,
         opts.parser,
         &opts.transpile_options,
         &emit_options,
         &mut modules,
-        root,
-        false,
+        module,
         opts.relative_file_base,
+        npm_packages.as_mut(),
       )?;
+      if let Some(dependencies) = dependencies {
+        for module in dependencies {
+          if module.is_dynamic {
+            to_visit_dynamic.push_back(module);
+          } else if module.specifier.scheme() == "npm" {
+            to_visit_npm.push_back(module);
+          } else {
+            to_visit.push_back(module);
+          }
+        }
+      }
     }
 
     for (specifier, target) in &opts.graph.redirects {
@@ -1115,6 +1508,20 @@ impl EszipV2 {
       let specifier_key =
         resolve_specifier_key(specifier, opts.relative_file_base)?;
       modules.insert(specifier_key.into_owned(), module);
+    }
+
+    if let Some(npm_packages) = &mut npm_packages {
+      // Add the remaining npm packages (those not imported with npm specifiers) at the end of the eszip
+      for module in npm_packages.drain() {
+        modules.insert(
+          module.specifier,
+          EszipV2Module::Module {
+            kind: ModuleKind::OpaqueData,
+            source: EszipV2SourceSlot::Ready(module.source.into()),
+            source_map: EszipV2SourceSlot::Ready(Arc::new([])),
+          },
+        );
+      }
     }
 
     Ok(Self {
@@ -1456,6 +1863,7 @@ mod tests {
   use std::path::Path;
   use std::sync::Arc;
 
+  use async_trait::async_trait;
   use deno_ast::EmitOptions;
   use deno_ast::TranspileOptions;
   use deno_graph::source::CacheSetting;
@@ -1472,6 +1880,8 @@ mod tests {
   use deno_npm::resolution::SerializedNpmResolutionSnapshot;
   use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
   use deno_npm::NpmPackageId;
+  use deno_semver::npm::NpmPackageNvReference;
+  use deno_semver::package::PackageNv;
   use deno_semver::package::PackageReq;
   use futures::io::AllowStdIo;
   use futures::io::BufReader;
@@ -1482,6 +1892,7 @@ mod tests {
   use super::Checksum;
   use super::EszipV2;
   use super::ESZIP_V2_2_MAGIC;
+  use crate::v2::FromGraphNpmPackages;
   use crate::ModuleKind;
 
   struct FileLoader {
@@ -1495,6 +1906,28 @@ mod tests {
         include_str!($file)
       );
     };
+  }
+
+  macro_rules! assert_content_order {
+      ($bytes:expr, $expected_content:expr) => {
+      let mut bytes: &[u8] = &$bytes;
+      let expected_content: &[&[u8]] = $expected_content;
+      for &expected_content in expected_content {
+        let mut byte_windows = bytes.windows(expected_content.len());
+        let Some(expected_content_pos) =
+          byte_windows.position(|window| window == expected_content)
+        else {
+          panic!(
+            "expected content not found.\nExpected: {:?} ({})\nRemaining: {:?} ({})",
+            &expected_content, std::str::from_utf8(&expected_content).unwrap(),
+            bytes,
+            String::from_utf8_lossy(bytes)
+          );
+        };
+
+        bytes = &bytes[expected_content_pos + expected_content.len()..];
+      }
+    }
   }
 
   impl deno_graph::source::Loader for FileLoader {
@@ -1527,6 +1960,7 @@ mod tests {
           let result = deno_graph::source::load_data_url(specifier);
           Box::pin(async move { result })
         }
+        "npm" => Box::pin(async { Ok(None) }),
         _ => unreachable!(),
       }
     }
@@ -1546,6 +1980,52 @@ mod tests {
         .0
         .resolve(specifier, &referrer_range.specifier)
         .map_err(|err| ResolveError::Other(err.into()))
+    }
+  }
+
+  macro_rules! mock_npm_resolver {
+    ($resolver_name:ident { $($req_name:literal => $nv:literal),+$(,)?} ) => {
+      #[derive(Debug)]
+      struct $resolver_name;
+
+      #[async_trait(?Send)]
+      impl deno_graph::source::NpmResolver for $resolver_name {
+        fn resolve_builtin_node_module(
+          &self,
+          _: &deno_ast::ModuleSpecifier,
+        ) -> Result<
+          Option<String>,
+          deno_graph::source::UnknownBuiltInNodeModuleError,
+        > {
+          Ok(None)
+        }
+
+        fn on_resolve_bare_builtin_node_module(
+          &self,
+          _: &str,
+          _: &deno_graph::Range,
+        ) {
+          unreachable!()
+        }
+
+        fn load_and_cache_npm_package_info(&self, _: &str) {}
+
+        async fn resolve_pkg_reqs(
+          &self,
+          package_reqs: &[PackageReq],
+        ) -> deno_graph::NpmResolvePkgReqsResult {
+          deno_graph::NpmResolvePkgReqsResult {
+            results: package_reqs
+              .iter()
+              .map(|req| match &*req.name {
+                $($req_name => Ok(PackageNv::from_str($nv).unwrap())),+,
+                _ => unreachable!(),
+              })
+              .collect(),
+            dep_graph_result: Ok(()),
+          }
+        }
+      }
     }
   }
 
@@ -1608,6 +2088,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     let module = eszip.get_module("file:///external.ts").unwrap();
@@ -1640,6 +2121,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
@@ -1683,6 +2165,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     let module = eszip.get_module("file:///json.ts").unwrap();
@@ -1725,6 +2208,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     let module = eszip.get_module("file:///dynamic.ts").unwrap();
@@ -1766,6 +2250,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     let module = eszip.get_module("file:///dynamic_data.ts").unwrap();
@@ -1818,6 +2303,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: Some((&base).into()),
+      npm_packages: None,
     })
     .unwrap();
     let module = eszip.get_module("main.ts").unwrap();
@@ -2035,6 +2521,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
@@ -2116,6 +2603,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
@@ -2187,6 +2675,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
@@ -2266,6 +2755,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
@@ -2348,6 +2838,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     eszip.add_npm_snapshot(original_snapshot.clone());
@@ -2469,6 +2960,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap();
     eszip.add_npm_snapshot(original_snapshot.clone());
@@ -2480,6 +2972,439 @@ mod tests {
         .await
         .unwrap();
     assert!(eszip.take_npm_snapshot().is_none());
+  }
+
+  #[tokio::test]
+  async fn npm_module_source_included_in_eszip() {
+    let roots =
+      vec![ModuleSpecifier::parse("file:///npm_imports_main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+
+    mock_npm_resolver!(
+      NpmResolver {
+        "a" => "a@1.2.2",
+        "d" => "d@5.0.0",
+        "other" => "other@99.99.99",
+      }
+    );
+
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          npm_resolver: Some(&NpmResolver),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+
+    let mut from_graph_npm_packages = FromGraphNpmPackages::new();
+    from_graph_npm_packages.add_package(
+      PackageNv::from_str("a@1.2.2").unwrap(),
+      (
+        "a_1.2.2/package.json",
+        b"package.json of a@1.2.2".as_slice(),
+      ),
+      [
+        (
+          NpmPackageNvReference::from_str("npm:a@1.2.2/foo").unwrap(),
+          ("a_1.2.2/foo", b"source code of a@1.2.2/foo".as_slice()),
+        ),
+        (
+          NpmPackageNvReference::from_str("npm:a@1.2.2/bar").unwrap(),
+          ("a_1.2.2/bar", b"source code of a@1.2.2/bar"),
+        ),
+      ],
+    );
+    from_graph_npm_packages.add_package_with_meta(
+      PackageNv::from_str("d@5.0.0").unwrap(),
+      (
+        "d_5.0.0/package.json",
+        b"package.json of d@5.0.0".as_slice(),
+      ),
+      [
+        ("manifest1:d@5.0.0", b"manifest 1 of d@5.0.0".as_slice()),
+        ("manifest2:d@5.0.0", b"manifest 2 of d@5.0.0"),
+      ],
+      [
+        (
+          NpmPackageNvReference::from_str("npm:d@5.0.0/foo").unwrap(),
+          ("d_5.0.0/foo", b"source code of d@5.0.0/foo".as_slice()),
+        ),
+        (
+          NpmPackageNvReference::from_str("npm:d@5.0.0/bar").unwrap(),
+          ("d_5.0.0/bar", b"source code of d@5.0.0/bar"),
+        ),
+      ],
+    );
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+      npm_packages: Some(from_graph_npm_packages),
+    })
+    .unwrap();
+
+    let a_package_json = eszip.get_module("a_1.2.2/package.json").unwrap();
+    let a_foo = eszip.get_module("a_1.2.2/foo").unwrap();
+    let a_bar = eszip.get_module("a_1.2.2/bar").unwrap();
+    let d_package_json = eszip.get_module("d_5.0.0/package.json").unwrap();
+    let d_manifest_1 = eszip.get_module("manifest1:d@5.0.0").unwrap();
+    let d_manifest_2 = eszip.get_module("manifest2:d@5.0.0").unwrap();
+    let d_foo = eszip.get_module("d_5.0.0/foo").unwrap();
+    // All packages in FromGraphNpmPackages are included in the eszip. Those not in the graph are included at the end of the eszip
+    let d_bar = eszip.get_module("d_5.0.0/bar").unwrap();
+    // other@99.99.99 is in the graph and the snapshot, but not in the eszip because it was not included in the FromGraphNpmPackages
+    assert!(eszip.get_module("other_99.99.99/foo").is_none());
+
+    assert_eq!(
+      &*a_package_json.source().await.unwrap(),
+      b"package.json of a@1.2.2"
+    );
+    assert_eq!(
+      &*a_foo.source().await.unwrap(),
+      b"source code of a@1.2.2/foo"
+    );
+    assert_eq!(
+      &*a_bar.source().await.unwrap(),
+      b"source code of a@1.2.2/bar"
+    );
+    assert_eq!(
+      &*d_package_json.source().await.unwrap(),
+      b"package.json of d@5.0.0"
+    );
+    assert_eq!(
+      &*d_manifest_1.source().await.unwrap(),
+      b"manifest 1 of d@5.0.0"
+    );
+    assert_eq!(
+      &*d_manifest_2.source().await.unwrap(),
+      b"manifest 2 of d@5.0.0"
+    );
+    assert_eq!(
+      &*d_foo.source().await.unwrap(),
+      b"source code of d@5.0.0/foo"
+    );
+    assert_eq!(
+      &*d_bar.source().await.unwrap(),
+      b"source code of d@5.0.0/bar"
+    );
+  }
+
+  #[tokio::test]
+  async fn npm_modules_are_included_in_import_order() {
+    let roots =
+      vec![ModuleSpecifier::parse("file:///npm_imports_main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+
+    mock_npm_resolver!(
+      NpmResolver {
+        "a" => "a@1.2.2",
+        "d" => "d@5.0.0",
+        "other" => "other@99.99.99",
+      }
+    );
+
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          npm_resolver: Some(&NpmResolver),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+
+    let mut from_graph_npm_packages = FromGraphNpmPackages::new();
+    from_graph_npm_packages.add_package(
+      PackageNv::from_str("a@1.2.2").unwrap(),
+      (
+        "a_1.2.2/package.json",
+        b"package.json of a@1.2.2".as_slice(),
+      ),
+      [
+        (
+          NpmPackageNvReference::from_str("npm:a@1.2.2/foo").unwrap(),
+          ("a_1.2.2/foo", b"source code of a@1.2.2/foo".as_slice()),
+        ),
+        (
+          NpmPackageNvReference::from_str("npm:a@1.2.2/bar").unwrap(),
+          ("a_1.2.2/bar", b"source code of a@1.2.2/bar"),
+        ),
+      ],
+    );
+    from_graph_npm_packages.add_package_with_meta(
+      PackageNv::from_str("d@5.0.0").unwrap(),
+      (
+        "d_5.0.0/package.json",
+        b"package.json of d@5.0.0".as_slice(),
+      ),
+      [
+        ("manifest1:d@5.0.0", b"manifest 1 of d@5.0.0".as_slice()),
+        ("manifest2:d@5.0.0", b"manifest 2 of d@5.0.0"),
+      ],
+      [
+        (
+          NpmPackageNvReference::from_str("npm:d@5.0.0/foo").unwrap(),
+          ("d_5.0.0/foo", b"source code of d@5.0.0/foo".as_slice()),
+        ),
+        (
+          NpmPackageNvReference::from_str("npm:d@5.0.0/bar").unwrap(),
+          ("d_5.0.0/bar", b"source code of d@5.0.0/bar"),
+        ),
+      ],
+    );
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+      npm_packages: Some(from_graph_npm_packages),
+    })
+    .unwrap();
+
+    let eszip_bytes = eszip.into_bytes();
+    let expected_content: &[&[u8]] = &[
+      // root module: npm_imports_main.ts
+      b"import \"npm:d/foo\";\nimport \"./npm_imports_submodule.ts\";\nimport \"npm:other\";\nimport \"npm:a@^1.2/foo\";",
+      // npm packages are loaded eagerly during referrer evaluation
+      // First import is 'd'
+      b"manifest 1 of d@5.0.0",
+      b"manifest 2 of d@5.0.0",
+      b"package.json of d@5.0.0",
+      b"source code of d@5.0.0/foo",
+      // Then 'a'
+      b"package.json of a@1.2.2",
+      b"source code of a@1.2.2/foo",
+      // Then other imports are included breadth-first
+      b"import \"npm:a@^1.2/bar\";\nimport \"npm:other/bar\";",
+      b"source code of a@1.2.2/bar",
+      // Remaining npm modules are appended at the end of the eszip
+      b"source code of d@5.0.0/bar",
+    ];
+    assert_content_order!(eszip_bytes, expected_content);
+  }
+
+  #[tokio::test]
+  async fn npm_packages_not_in_the_graph_are_included_in_the_order_provided() {
+    let roots = vec![ModuleSpecifier::parse("file:///main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+
+    let mut from_graph_npm_packages = FromGraphNpmPackages::new();
+    from_graph_npm_packages.add_package_with_meta(
+      PackageNv::from_str("d@5.0.0").unwrap(),
+      (
+        "d_5.0.0/package.json",
+        b"package.json of d@5.0.0".as_slice(),
+      ),
+      [
+        ("manifest1:d@5.0.0", b"manifest 1 of d@5.0.0".as_slice()),
+        ("manifest2:d@5.0.0", b"manifest 2 of d@5.0.0"),
+      ],
+      [
+        (
+          NpmPackageNvReference::from_str("npm:d@5.0.0/foo").unwrap(),
+          ("d_5.0.0/foo", b"source code of d@5.0.0/foo".as_slice()),
+        ),
+        (
+          NpmPackageNvReference::from_str("npm:d@5.0.0/bar").unwrap(),
+          ("d_5.0.0/bar", b"source code of d@5.0.0/bar"),
+        ),
+      ],
+    );
+    from_graph_npm_packages.add_package(
+      PackageNv::from_str("a@1.2.2").unwrap(),
+      (
+        "a_1.2.2/package.json",
+        b"package.json of a@1.2.2".as_slice(),
+      ),
+      [
+        (
+          NpmPackageNvReference::from_str("npm:a@1.2.2/foo").unwrap(),
+          ("a_1.2.2/foo", b"source code of a@1.2.2/foo".as_slice()),
+        ),
+        (
+          NpmPackageNvReference::from_str("npm:a@1.2.2/bar").unwrap(),
+          ("a_1.2.2/bar", b"source code of a@1.2.2/bar"),
+        ),
+      ],
+    );
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+      npm_packages: Some(from_graph_npm_packages),
+    })
+    .unwrap();
+
+    let eszip_bytes = eszip.into_bytes();
+    let expected_content: &[&[u8]] = &[
+      // First import is 'd'
+      b"manifest 1 of d@5.0.0",
+      b"manifest 2 of d@5.0.0",
+      b"package.json of d@5.0.0",
+      b"source code of d@5.0.0/foo",
+      b"source code of d@5.0.0/bar",
+      // Then 'a'
+      b"package.json of a@1.2.2",
+      b"source code of a@1.2.2/foo",
+      b"source code of a@1.2.2/bar",
+    ];
+    assert_content_order!(eszip_bytes, expected_content);
+  }
+
+  #[tokio::test]
+  async fn npm_modules_package_resolution() {
+    let roots =
+      vec![ModuleSpecifier::parse("file:///npm_imports_main.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+
+    mock_npm_resolver!(
+      NpmResolver {
+        "a" => "a@1.2.2",
+        "d" => "d@5.0.0",
+        "other" => "other@99.99.99",
+      }
+    );
+
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          npm_resolver: Some(&NpmResolver),
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+
+    let mut from_graph_npm_packages = FromGraphNpmPackages::new();
+    from_graph_npm_packages.add_package(
+      PackageNv::from_str("other@99.99.99").unwrap(),
+      ("other/package.json", br#"{"main": "other.js"}"#.as_slice()),
+      [
+        (
+          NpmPackageNvReference::from_str("npm:other@99.99.99/other.js")
+            .unwrap(),
+          (
+            "other/other",
+            b"source code of other@99.99.99/other.js".as_slice(),
+          ),
+        ),
+        (
+          NpmPackageNvReference::from_str("npm:other@99.99.99/bar").unwrap(),
+          ("other/bar", b"source code of other@99.99.99/bar".as_slice()),
+        ),
+      ],
+    );
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+      npm_packages: Some(from_graph_npm_packages),
+    })
+    .unwrap();
+
+    let eszip_bytes = eszip.into_bytes();
+
+    // All npm packages present in FromGraphNpmPackages are included in the eszip. We want to make sure
+    // the package resolution is able to resolve npm:other => other@99.99.99/other and put the module
+    // in the order it is loaded
+    let expected_content: &[&[u8]] = &[
+      // root module: npm_imports_main.ts
+      b"import \"npm:d/foo\";\nimport \"./npm_imports_submodule.ts\";\nimport \"npm:other\";\nimport \"npm:a@^1.2/foo\";",
+      // npm packages are loaded eagerly during referrer evaluation
+      br#"{"main": "other.js"}"#,
+      b"source code of other@99.99.99/other.js",
+      b"import \"npm:a@^1.2/bar\";\nimport \"npm:other/bar\";",
+      b"source code of other@99.99.99/bar",
+    ];
+    assert_content_order!(eszip_bytes, expected_content);
+  }
+
+  #[tokio::test]
+  async fn into_bytes_sequences_modules_breadth_first() {
+    let roots = vec![ModuleSpecifier::parse("file:///parent.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+      npm_packages: None,
+    })
+    .unwrap();
+
+    let eszip_bytes = eszip.into_bytes();
+    let expected_content: &[&[u8]] = &[
+      b"import \"./child1.ts\";\nimport \"./child2.ts\";",
+      b"import \"./grandchild1.ts\";",
+      b"import \"./grandchild2.ts\";",
+      b"export const grandchild1 = \"grandchild1\";",
+      b"export const grandchild2 = \"grandchild2\";",
+    ];
+    assert_content_order!(eszip_bytes, expected_content);
   }
 
   #[tokio::test]
@@ -2738,6 +3663,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: None,
+      npm_packages: None,
     })
     .unwrap()
   }

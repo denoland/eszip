@@ -183,6 +183,7 @@ async fn build_eszip(mb: usize) -> EszipV2 {
     transpile_options: TranspileOptions::default(),
     emit_options: EmitOptions::default(),
     relative_file_base: None,
+    npm_packages: None,
   })
   .unwrap()
 }
