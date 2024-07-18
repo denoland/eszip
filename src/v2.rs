@@ -7,8 +7,6 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::hash::Hash;
 use std::mem::size_of;
-use std::path::Path;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::task::Poll;
@@ -18,19 +16,16 @@ use deno_ast::EmitOptions;
 use deno_ast::ModuleSpecifier;
 use deno_ast::SourceMapOption;
 use deno_ast::TranspileOptions;
-use deno_fs::InMemoryFs;
 use deno_graph::CapturingModuleParser;
 use deno_graph::ModuleGraph;
 use deno_graph::ModuleParser;
 use deno_graph::ParseOptions;
-use deno_node::NpmResolver;
 use deno_npm::resolution::SerializedNpmResolutionSnapshot;
 use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
 use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
 use deno_npm::NpmPackageId;
 use deno_semver::npm::NpmPackageNvReference;
 use deno_semver::package::PackageNv;
-use deno_semver::package::PackageNvReference;
 use deno_semver::package::PackageReq;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
@@ -421,19 +416,18 @@ impl FromGraphNpmPackages {
     specifier: impl Into<String>,
     source: impl Into<Vec<u8>>,
   ) {
-    if !self.packages.contains_key(package_nv_ref.nv()) {
-      self
-        .packages
-        .insert(package_nv_ref.nv().clone(), FromGraphNpmPackage::default());
-    }
-    let package = self.packages.get_mut(package_nv_ref.nv()).unwrap();
-    package.modules.insert(
-      package_nv_ref,
-      FromGraphNpmModule {
-        specifier: specifier.into(),
-        source: source.into(),
-      },
-    );
+    self
+      .packages
+      .entry(package_nv_ref.nv().clone())
+      .or_default()
+      .modules
+      .insert(
+        package_nv_ref,
+        FromGraphNpmModule {
+          specifier: specifier.into(),
+          source: source.into(),
+        },
+      );
   }
 
   pub fn add_meta(
@@ -442,18 +436,16 @@ impl FromGraphNpmPackages {
     specifier: impl Into<String>,
     source: impl Into<Vec<u8>>,
   ) {
-    if !self.packages.contains_key(package_nv_ref.nv()) {
-      self
-        .packages
-        .insert(package_nv_ref.nv().clone(), FromGraphNpmPackage::default());
-    }
-    let package = self.packages.get_mut(package_nv_ref.nv()).unwrap();
-    package.meta_modules.get_or_insert_with(Vec::new).push(
-      FromGraphNpmModule {
+    self
+      .packages
+      .entry(package_nv_ref.nv().clone())
+      .or_default()
+      .meta_modules
+      .get_or_insert_with(Vec::new)
+      .push(FromGraphNpmModule {
         specifier: specifier.into(),
         source: source.into(),
-      },
-    );
+      });
   }
 
   pub fn add_package_json(
@@ -462,13 +454,11 @@ impl FromGraphNpmPackages {
     specifier: impl Into<String>,
     source: impl Into<Vec<u8>>,
   ) {
-    if !self.packages.contains_key(package_nv_ref.nv()) {
-      self
-        .packages
-        .insert(package_nv_ref.nv().clone(), FromGraphNpmPackage::default());
-    }
-    let package = self.packages.get_mut(package_nv_ref.nv()).unwrap();
-    package.package_json = Some(FromGraphNpmModule {
+    self
+      .packages
+      .entry(package_nv_ref.nv().clone())
+      .or_default()
+      .package_json = Some(FromGraphNpmModule {
       specifier: specifier.into(),
       source: source.into(),
     });
