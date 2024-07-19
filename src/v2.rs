@@ -306,7 +306,7 @@ pub struct FromGraphOptions<'a> {
 pub struct FromGraphNpmPackages {
   packages: IndexMap<PackageNv, FromGraphNpmPackage>,
   // Track any package that has had any module or meta-module taken
-  taken: IndexSet<PackageNv>,
+  partially_taken: IndexSet<PackageNv>,
 }
 
 impl FromGraphNpmPackages {
@@ -464,18 +464,23 @@ impl FromGraphNpmPackages {
     });
   }
 
+  fn take_package(&mut self, nv: &PackageNv) -> Option<FromGraphNpmPackage> {
+    self.partially_taken.shift_remove(nv);
+    self.packages.shift_remove(nv)
+  }
+
   fn take_meta_modules(
     &mut self,
     nv: PackageNv,
   ) -> Option<Vec<FromGraphNpmModule>> {
     let meta_module = self.get_mut(&nv)?.meta_modules.take();
-    self.taken.insert(nv);
+    self.partially_taken.insert(nv);
     meta_module
   }
 
   fn take_package_json(&mut self, nv: PackageNv) -> Option<FromGraphNpmModule> {
     let package_json = self.get_mut(&nv)?.package_json.take();
-    self.taken.insert(nv);
+    self.partially_taken.insert(nv);
     package_json
   }
 
@@ -487,20 +492,22 @@ impl FromGraphNpmPackages {
       .get_mut(nv_reference.nv())?
       .modules
       .shift_remove(&nv_reference);
-    self.taken.insert(nv_reference.into_inner().nv);
+    self.partially_taken.insert(nv_reference.into_inner().nv);
     module
   }
 
   fn drain(&mut self) -> impl Iterator<Item = FromGraphNpmModule> + '_ {
-    let remaining_packages: IndexSet<_> = std::mem::take(&mut self.taken)
-      .into_iter()
-      .chain(self.packages.keys().cloned())
-      .collect();
+    // first drain those packages that have had at least one module taken
+    let remaining_packages: IndexSet<_> =
+      std::mem::take(&mut self.partially_taken)
+        .into_iter()
+        .chain(self.packages.keys().cloned())
+        .collect();
 
     remaining_packages
       .into_iter()
-      .filter_map(|nv| self.packages.shift_remove_entry(&nv))
-      .flat_map(|(_, package)| {
+      .filter_map(|nv| self.packages.shift_remove(&nv))
+      .flat_map(|package| {
         package
           .meta_modules
           .into_iter()
@@ -1242,8 +1249,11 @@ impl EszipV2 {
     }
 
     #[derive(Debug, Clone, Copy)]
-    enum ModuleToVisit<'a> {
+    enum ToVisit<'a> {
       PackageMeta {
+        module_specifier: &'a ModuleSpecifier,
+      },
+      Package {
         module_specifier: &'a ModuleSpecifier,
       },
       Module {
@@ -1252,7 +1262,7 @@ impl EszipV2 {
       },
     }
 
-    impl<'a> ModuleToVisit<'a> {
+    impl<'a> ToVisit<'a> {
       fn is_dynamic(self) -> bool {
         matches!(
           self,
@@ -1264,15 +1274,21 @@ impl EszipV2 {
       }
 
       fn specifier(self) -> &'a ModuleSpecifier {
-        let (Self::Module { specifier, .. }
-        | Self::PackageMeta {
-          module_specifier: specifier,
-        }) = self;
-        specifier
+        let (Self::Module {
+          specifier: module_specifier,
+          ..
+        }
+        | Self::PackageMeta { module_specifier }
+        | Self::Package { module_specifier }) = self;
+        module_specifier
       }
 
       fn should_visit_package_meta(self) -> bool {
         matches!(self, Self::PackageMeta { .. })
+      }
+
+      fn should_visit_whole_package(self) -> bool {
+        matches!(self, Self::Package { .. })
       }
     }
 
@@ -1283,11 +1299,11 @@ impl EszipV2 {
       transpile_options: &TranspileOptions,
       emit_options: &EmitOptions,
       modules: &mut LinkedHashMap<String, EszipV2Module>,
-      visited: ModuleToVisit,
+      visited: ToVisit,
       relative_file_base: Option<EszipRelativeFileBaseUrl>,
       npm_packages: Option<&mut FromGraphNpmPackages>,
     ) -> Result<
-      Option<impl DoubleEndedIterator<Item = ModuleToVisit<'a>>>,
+      Option<impl DoubleEndedIterator<Item = ToVisit<'a>>>,
       anyhow::Error,
     > {
       let module = match graph.try_get(visited.specifier()) {
@@ -1362,7 +1378,7 @@ impl EszipV2 {
 
           Ok(Some(module.dependencies.values().filter_map(
             |dependency| {
-              Some(ModuleToVisit::Module {
+              Some(ToVisit::Module {
                 specifier: dependency.get_code()?,
                 is_dynamic: dependency.is_dynamic,
               })
@@ -1412,6 +1428,28 @@ impl EszipV2 {
                 );
               }
             }
+          } else if visited.should_visit_whole_package() {
+            let package =
+              npm_packages.take_package(npm_module.nv_reference.nv());
+            if let Some(mut package) = package {
+              let modules_to_insert = package
+                .meta_modules
+                .into_iter()
+                .flatten()
+                .chain(package.package_json)
+                .chain(package.modules.shift_remove(&npm_module.nv_reference))
+                .chain(package.modules.into_values());
+              for module in modules_to_insert {
+                modules.insert(
+                  module.specifier,
+                  EszipV2Module::Module {
+                    kind: ModuleKind::OpaqueData,
+                    source: EszipV2SourceSlot::Ready(module.source.into()),
+                    source_map: EszipV2SourceSlot::Ready(Arc::new([])),
+                  },
+                );
+              }
+            }
           } else {
             let module =
               npm_packages.take_module(npm_module.nv_reference.clone());
@@ -1436,8 +1474,8 @@ impl EszipV2 {
 
     let mut npm_packages = opts.npm_packages;
     let mut to_visit =
-      VecDeque::from_iter(opts.graph.roots.iter().map(|specifier| {
-        ModuleToVisit::Module {
+      Vec::from_iter(opts.graph.roots.iter().rev().map(|specifier| {
+        ToVisit::Module {
           specifier,
           is_dynamic: false,
         }
@@ -1445,13 +1483,16 @@ impl EszipV2 {
     let mut to_visit_npm_meta = VecDeque::new();
     let mut to_visit_npm = VecDeque::new();
     let mut to_visit_dynamic = VecDeque::new();
-    // Modules are loaded in a breadth-first search traversal, except:
-    // - npm package's meta-modules are loaded sync during referrer loading, therefore they have priority over the rest of the referrer dependencies
+    // deno_core's module loading traverses the dependencies breadth first. However, v8 evaluates
+    // the source code depth-first. We prioritize module evaluation as it is performed sequentially,
+    // thus modules are ordered depth-first within the eszip. Except:
+    // - npm package's meta-modules are loaded sync during referrer loading, therefore they have
+    //   priority over the rest of the referrer dependencies
     // - npm cjs modules are loaded at the main module evaluation phase, after module loading
     // - dynamic imports are loaded at runtime, if ever
     while let Some(module) = to_visit_npm_meta
       .pop_front()
-      .or_else(|| to_visit.pop_front())
+      .or_else(|| to_visit.pop())
       .or_else(|| to_visit_npm.pop_front())
       .or_else(|| to_visit_dynamic.pop_front())
     {
@@ -1466,18 +1507,22 @@ impl EszipV2 {
         npm_packages.as_mut(),
       )?;
       if let Some(dependencies) = dependencies {
+        let mut level_deps = Vec::new();
         for module in dependencies {
           if module.is_dynamic() {
             to_visit_dynamic.push_back(module);
           } else if module.specifier().scheme() == "npm" {
-            to_visit_npm_meta.push_back(ModuleToVisit::PackageMeta {
+            to_visit_npm_meta.push_back(ToVisit::PackageMeta {
               module_specifier: module.specifier(),
             });
-            to_visit_npm.push_back(module);
+            to_visit_npm.push_back(ToVisit::Package {
+              module_specifier: module.specifier(),
+            });
           } else {
-            to_visit.push_back(module);
+            level_deps.push(module);
           }
         }
+        to_visit.extend(level_deps.into_iter().rev());
       }
     }
 
@@ -3150,6 +3195,17 @@ mod tests {
         ),
       ],
     );
+    from_graph_npm_packages.add_package(
+      PackageNv::from_str("z@0.1.2").unwrap(),
+      (
+        "z_0.1.2/package.json",
+        b"package.json of z@0.1.2".as_slice(),
+      ),
+      [(
+        NpmPackageNvReference::from_str("npm:z@0.1.2/foo").unwrap(),
+        ("z_0.1.2/foo", b"source code of z@0.1.2/foo".as_slice()),
+      )],
+    );
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
       parser: analyzer.as_capturing_parser(),
@@ -3171,14 +3227,17 @@ mod tests {
       b"package.json of d@5.0.0",
       // Then 'a'
       b"package.json of a@1.2.2",
-      // Then other imports are included breadth-first
+      // Then other imports are included depth-first
       b"import \"npm:a@^1.2/bar\";\nimport \"npm:other/bar\";",
-      // After esm modules, load cjs modules in import order
+      // After esm modules, load imported npm packages depth-first. We don't have a module graph for cjs,
+      // so best effort is to put all package together. However, packages are still ordered by import
       b"source code of d@5.0.0/foo",
+      b"source code of d@5.0.0/bar",
       b"source code of a@1.2.2/foo",
       b"source code of a@1.2.2/bar",
-      // Remaining npm modules are appended at the end of the eszip
-      b"source code of d@5.0.0/bar",
+      // Remaining npm packages are appended at the end of the eszip
+      b"package.json of z@0.1.2",
+      b"source code of z@0.1.2/foo",
     ];
     assert_content_order!(eszip_bytes, expected_content);
   }
@@ -3348,7 +3407,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn into_bytes_sequences_modules_breadth_first() {
+  async fn into_bytes_sequences_modules_depth_first() {
     let roots = vec![ModuleSpecifier::parse("file:///parent.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
     let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
@@ -3382,8 +3441,8 @@ mod tests {
     let expected_content: &[&[u8]] = &[
       b"import \"./child1.ts\";\nimport \"./child2.ts\";",
       b"import \"./grandchild1.ts\";",
-      b"import \"./grandchild2.ts\";",
       b"export const grandchild1 = \"grandchild1\";",
+      b"import \"./grandchild2.ts\";",
       b"export const grandchild2 = \"grandchild2\";",
     ];
     assert_content_order!(eszip_bytes, expected_content);
