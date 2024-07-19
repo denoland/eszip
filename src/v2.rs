@@ -324,14 +324,14 @@ impl FromGraphNpmPackages {
   pub fn add_package_with_maybe_meta(
     &mut self,
     package_id: PackageNv,
-    package_json: Option<FromGraphNpmModule>,
+    package_jsons: Option<Vec<FromGraphNpmModule>>,
     meta_modules: Option<Vec<FromGraphNpmModule>>,
     modules: IndexMap<NpmPackageNvReference, FromGraphNpmModule>,
   ) {
     self.packages.insert(
       package_id,
       FromGraphNpmPackage {
-        package_json,
+        package_jsons,
         meta_modules: meta_modules
           .or(FromGraphNpmPackage::default().meta_modules),
         modules,
@@ -342,7 +342,7 @@ impl FromGraphNpmPackages {
   pub fn add_package<N, S>(
     &mut self,
     package_id: PackageNv,
-    package_json: (N, S),
+    package_jsons: impl IntoIterator<Item = (N, S)>,
     modules: impl IntoIterator<Item = (NpmPackageNvReference, (N, S))>,
   ) where
     S: Into<Vec<u8>>,
@@ -350,10 +350,15 @@ impl FromGraphNpmPackages {
   {
     self.add_package_with_maybe_meta(
       package_id,
-      Some(FromGraphNpmModule {
-        specifier: package_json.0.into(),
-        source: package_json.1.into(),
-      }),
+      Some(
+        package_jsons
+          .into_iter()
+          .map(|package_json| FromGraphNpmModule {
+            specifier: package_json.0.into(),
+            source: package_json.1.into(),
+          })
+          .collect(),
+      ),
       None,
       modules
         .into_iter()
@@ -373,7 +378,7 @@ impl FromGraphNpmPackages {
   pub fn add_package_with_meta<N, S>(
     &mut self,
     package_id: PackageNv,
-    package_json: (N, S),
+    package_jsons: impl IntoIterator<Item = (N, S)>,
     meta_modules: impl IntoIterator<Item = (N, S)>,
     modules: impl IntoIterator<Item = (NpmPackageNvReference, (N, S))>,
   ) where
@@ -382,10 +387,15 @@ impl FromGraphNpmPackages {
   {
     self.add_package_with_maybe_meta(
       package_id,
-      Some(FromGraphNpmModule {
-        specifier: package_json.0.into(),
-        source: package_json.1.into(),
-      }),
+      Some(
+        package_jsons
+          .into_iter()
+          .map(|package_json| FromGraphNpmModule {
+            specifier: package_json.0.into(),
+            source: package_json.1.into(),
+          })
+          .collect(),
+      ),
       Some(
         meta_modules
           .into_iter()
@@ -458,10 +468,12 @@ impl FromGraphNpmPackages {
       .packages
       .entry(package_nv_ref.nv().clone())
       .or_default()
-      .package_json = Some(FromGraphNpmModule {
-      specifier: specifier.into(),
-      source: source.into(),
-    });
+      .package_jsons
+      .get_or_insert_with(Vec::new)
+      .push(FromGraphNpmModule {
+        specifier: specifier.into(),
+        source: source.into(),
+      });
   }
 
   fn take_package(&mut self, nv: &PackageNv) -> Option<FromGraphNpmPackage> {
@@ -478,8 +490,11 @@ impl FromGraphNpmPackages {
     meta_module
   }
 
-  fn take_package_json(&mut self, nv: PackageNv) -> Option<FromGraphNpmModule> {
-    let package_json = self.get_mut(&nv)?.package_json.take();
+  fn take_package_jsons(
+    &mut self,
+    nv: PackageNv,
+  ) -> Option<Vec<FromGraphNpmModule>> {
+    let package_json = self.get_mut(&nv)?.package_jsons.take();
     self.partially_taken.insert(nv);
     package_json
   }
@@ -511,34 +526,19 @@ impl FromGraphNpmPackages {
         package
           .meta_modules
           .into_iter()
+          .chain(package.package_jsons)
           .flatten()
-          .chain(package.package_json)
           .chain(package.modules.into_values())
       })
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct FromGraphNpmPackage {
-  package_json: Option<FromGraphNpmModule>,
+  package_jsons: Option<Vec<FromGraphNpmModule>>,
   meta_modules: Option<Vec<FromGraphNpmModule>>,
   modules: IndexMap<NpmPackageNvReference, FromGraphNpmModule>,
 }
-
-impl Default for FromGraphNpmPackage {
-  fn default() -> Self {
-    Self {
-      // We want Some(Vec::new()) instead of None because in EszipV2::from_graph,
-      // FromGraphNpmPackages::take_meta_modules() is used to detect the first time a module of this
-      // package is imported, even if there aren't any meta modules
-      meta_modules: Some(Vec::new()),
-      package_json: Default::default(),
-      modules: Default::default(),
-    }
-  }
-}
-
-impl FromGraphNpmPackage {}
 
 #[derive(Debug, Clone)]
 pub struct FromGraphNpmModule {
@@ -1402,31 +1402,20 @@ impl EszipV2 {
           if visited.should_visit_package_meta() {
             let meta_modules = npm_packages
               .take_meta_modules(npm_module.nv_reference.nv().clone());
-            if let Some(meta_modules) = meta_modules {
-              for meta_module in meta_modules {
-                modules.insert(
-                  meta_module.specifier,
-                  EszipV2Module::Module {
-                    kind: ModuleKind::OpaqueData,
-                    source: EszipV2SourceSlot::Ready(meta_module.source.into()),
-                    source_map: EszipV2SourceSlot::Ready(Arc::new([])),
-                  },
-                );
-              }
-              let package_json = npm_packages
-                .take_package_json(npm_module.nv_reference.nv().clone());
-              if let Some(package_json) = package_json {
-                modules.insert(
-                  package_json.specifier,
-                  EszipV2Module::Module {
-                    kind: ModuleKind::OpaqueData,
-                    source: EszipV2SourceSlot::Ready(
-                      package_json.source.into(),
-                    ),
-                    source_map: EszipV2SourceSlot::Ready(Arc::new([])),
-                  },
-                );
-              }
+            let package_jsons = npm_packages
+              .take_package_jsons(npm_module.nv_reference.nv().clone());
+
+            for meta_module in
+              meta_modules.into_iter().chain(package_jsons).flatten()
+            {
+              modules.insert(
+                meta_module.specifier,
+                EszipV2Module::Module {
+                  kind: ModuleKind::OpaqueData,
+                  source: EszipV2SourceSlot::Ready(meta_module.source.into()),
+                  source_map: EszipV2SourceSlot::Ready(Arc::new([])),
+                },
+              );
             }
           } else if visited.should_visit_whole_package() {
             let package =
@@ -1435,8 +1424,8 @@ impl EszipV2 {
               let modules_to_insert = package
                 .meta_modules
                 .into_iter()
+                .chain(package.package_jsons)
                 .flatten()
-                .chain(package.package_json)
                 .chain(package.modules.shift_remove(&npm_module.nv_reference))
                 .chain(package.modules.into_values());
               for module in modules_to_insert {
@@ -3033,10 +3022,10 @@ mod tests {
     let mut from_graph_npm_packages = FromGraphNpmPackages::new();
     from_graph_npm_packages.add_package(
       PackageNv::from_str("a@1.2.2").unwrap(),
-      (
+      [(
         "a_1.2.2/package.json",
         b"package.json of a@1.2.2".as_slice(),
-      ),
+      )],
       [
         (
           NpmPackageNvReference::from_str("npm:a@1.2.2/foo").unwrap(),
@@ -3050,10 +3039,10 @@ mod tests {
     );
     from_graph_npm_packages.add_package_with_meta(
       PackageNv::from_str("d@5.0.0").unwrap(),
-      (
+      [(
         "d_5.0.0/package.json",
         b"package.json of d@5.0.0".as_slice(),
-      ),
+      )],
       [
         ("manifest1:d@5.0.0", b"manifest 1 of d@5.0.0".as_slice()),
         ("manifest2:d@5.0.0", b"manifest 2 of d@5.0.0"),
@@ -3159,10 +3148,16 @@ mod tests {
     let mut from_graph_npm_packages = FromGraphNpmPackages::new();
     from_graph_npm_packages.add_package(
       PackageNv::from_str("a@1.2.2").unwrap(),
-      (
-        "a_1.2.2/package.json",
-        b"package.json of a@1.2.2".as_slice(),
-      ),
+      [
+        (
+          "a_1.2.2/package.json",
+          b"package.json of a@1.2.2".as_slice(),
+        ),
+        (
+          "a_1.2.2/bar/package.json",
+          b"package.json of a@1.2.2/bar".as_slice(),
+        ),
+      ],
       [
         (
           NpmPackageNvReference::from_str("npm:a@1.2.2/foo").unwrap(),
@@ -3176,10 +3171,10 @@ mod tests {
     );
     from_graph_npm_packages.add_package_with_meta(
       PackageNv::from_str("d@5.0.0").unwrap(),
-      (
+      [(
         "d_5.0.0/package.json",
         b"package.json of d@5.0.0".as_slice(),
-      ),
+      )],
       [
         ("manifest1:d@5.0.0", b"manifest 1 of d@5.0.0".as_slice()),
         ("manifest2:d@5.0.0", b"manifest 2 of d@5.0.0"),
@@ -3197,10 +3192,10 @@ mod tests {
     );
     from_graph_npm_packages.add_package(
       PackageNv::from_str("z@0.1.2").unwrap(),
-      (
+      [(
         "z_0.1.2/package.json",
         b"package.json of z@0.1.2".as_slice(),
-      ),
+      )],
       [(
         NpmPackageNvReference::from_str("npm:z@0.1.2/foo").unwrap(),
         ("z_0.1.2/foo", b"source code of z@0.1.2/foo".as_slice()),
@@ -3227,6 +3222,7 @@ mod tests {
       b"package.json of d@5.0.0",
       // Then 'a'
       b"package.json of a@1.2.2",
+      b"package.json of a@1.2.2/bar",
       // Then other imports are included depth-first
       b"import \"npm:a@^1.2/bar\";\nimport \"npm:other/bar\";",
       // After esm modules, load imported npm packages depth-first. We don't have a module graph for cjs,
@@ -3266,10 +3262,10 @@ mod tests {
     let mut from_graph_npm_packages = FromGraphNpmPackages::new();
     from_graph_npm_packages.add_package_with_meta(
       PackageNv::from_str("d@5.0.0").unwrap(),
-      (
+      [(
         "d_5.0.0/package.json",
         b"package.json of d@5.0.0".as_slice(),
-      ),
+      )],
       [
         ("manifest1:d@5.0.0", b"manifest 1 of d@5.0.0".as_slice()),
         ("manifest2:d@5.0.0", b"manifest 2 of d@5.0.0"),
@@ -3287,10 +3283,10 @@ mod tests {
     );
     from_graph_npm_packages.add_package(
       PackageNv::from_str("a@1.2.2").unwrap(),
-      (
+      [(
         "a_1.2.2/package.json",
         b"package.json of a@1.2.2".as_slice(),
-      ),
+      )],
       [
         (
           NpmPackageNvReference::from_str("npm:a@1.2.2/foo").unwrap(),
@@ -3363,7 +3359,7 @@ mod tests {
     let mut from_graph_npm_packages = FromGraphNpmPackages::new();
     from_graph_npm_packages.add_package(
       PackageNv::from_str("other@99.99.99").unwrap(),
-      ("other/package.json", br#"{"main": "other.js"}"#.as_slice()),
+      [("other/package.json", br#"{"main": "other.js"}"#.as_slice())],
       [
         (
           NpmPackageNvReference::from_str("npm:other@99.99.99/other.js")
