@@ -11,8 +11,8 @@ license = "MIT"
 members = ["lib"]
 
 [workspace.dependencies]
-deno_graph = { version = "0.80.0" }
-deno_ast = { version = "0.40.0" }
+deno_graph = { version = "0.80.1", default-features = false }
+deno_ast = { version = "0.40.0", features = ["transpiling"] }
 import_map = "0.20.0"
 serde = "1"
 
@@ -41,7 +41,7 @@ harness = false
 xxhash3 = ["xxhash-rust/xxh3"]
 sha256 = ["dep:sha2"]
 # backwards compatibility. Disabling sha256 will break compatibility with eszips older than v2.2
-default = ["sha256"]  
+default = ["sha256"]
 
 [dependencies]
 anyhow = "1"
@@ -67,3 +67,7 @@ reqwest = { version = "0.11.23", features = ["rustls-tls"] }
 jsonc-parser = { version = "0.23.0", features = ["serde"] }
 insta = "1.34.0"
 criterion = { version = "0.5", features = ["async_tokio"] }
+
+[patch.crates-io]
+deno_ast = { path = "../deno_ast" }
+deno_graph = { path = "../deno_graph" }

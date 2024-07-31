@@ -1040,7 +1040,14 @@ impl EszipV2 {
                 media_type: module.media_type,
                 scope_analysis: false,
               })?;
-              let emit = parsed_source.transpile(transpile_options, emit_options)?.into_source();
+              let emit_options = match relative_file_base {
+                Some(relative_file_base) if emit_options.source_map_base.is_none() => Cow::Owned(EmitOptions {
+                  source_map_base: Some(relative_file_base.inner().clone()),
+                  ..emit_options.clone()
+                }),
+                _ => Cow::Borrowed(emit_options),
+              };
+              let emit = parsed_source.transpile(transpile_options, &emit_options)?.into_source();
               source = emit.source.into();
               source_map = Arc::from(emit.source_map.unwrap_or_default());
             }
@@ -1829,6 +1836,24 @@ mod tests {
     );
     let module = eszip.get_module("sub_dir/mod.ts").unwrap();
     assert_eq!(module.specifier, "sub_dir/mod.ts");
+    let source_map = module.source_map().await.unwrap();
+    let value: serde_json::Value =
+      serde_json::from_str(&String::from_utf8_lossy(&source_map)).unwrap();
+    assert_eq!(
+      value,
+      serde_json::json!({
+        "version": 3,
+        "sources": [
+          // should be relative
+          "sub_dir/mod.ts"
+        ],
+        "sourcesContent": [
+          "console.log(1);"
+        ],
+        "names": [],
+        "mappings": "AAAA,QAAQ,GAAG,CAAC"
+      })
+    );
   }
 
   #[cfg(windows)]
