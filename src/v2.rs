@@ -3582,7 +3582,7 @@ mod tests {
     let futuristic_options = [
       4_u32.to_be_bytes().as_slice(),
       option_bytes,
-      &<sha2::Sha256 as sha2::Digest>::digest(option_bytes).as_slice(),
+      <sha2::Sha256 as sha2::Digest>::digest(option_bytes).as_slice(),
     ]
     .concat();
     let mut eszip = main_eszip().await;
