@@ -1355,13 +1355,19 @@ impl EszipV2 {
                 scope_analysis: false,
               })?;
               let emit_options = match relative_file_base {
-                Some(relative_file_base) if emit_options.source_map_base.is_none() => Cow::Owned(EmitOptions {
-                  source_map_base: Some(relative_file_base.inner().clone()),
-                  ..emit_options.clone()
-                }),
+                Some(relative_file_base)
+                  if emit_options.source_map_base.is_none() =>
+                {
+                  Cow::Owned(EmitOptions {
+                    source_map_base: Some(relative_file_base.inner().clone()),
+                    ..emit_options.clone()
+                  })
+                }
                 _ => Cow::Borrowed(emit_options),
               };
-              let emit = parsed_source.transpile(transpile_options, &emit_options)?.into_source();
+              let emit = parsed_source
+                .transpile(transpile_options, &emit_options)?
+                .into_source();
               source = emit.source.into();
               source_map = Arc::from(emit.source_map.unwrap_or_default());
             }
@@ -2402,6 +2408,7 @@ mod tests {
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
       relative_file_base: Some((&base).into()),
+      npm_packages: None,
     })
     .unwrap();
     let module = eszip.get_module("main.ts").unwrap();
