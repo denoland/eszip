@@ -45,6 +45,7 @@ default = ["sha256"]
 
 [dependencies]
 anyhow = "1"
+async-trait = "0.1.68"
 base64 = "0.21.0"
 deno_ast = { workspace = true }
 deno_graph = { workspace = true }
@@ -52,6 +53,7 @@ deno_npm = "0.21.0"
 deno_semver = "0.5.4"
 futures = "0.3.26"
 hashlink = "0.8.2"
+indexmap = "2"
 serde = { workspace = true }
 serde_json = "1"
 sha2 = {version = "0.10.1", optional = true}
