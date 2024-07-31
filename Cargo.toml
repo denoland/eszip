@@ -11,8 +11,8 @@ license = "MIT"
 members = ["lib"]
 
 [workspace.dependencies]
-deno_graph = { version = "0.80.0" }
-deno_ast = { version = "0.40.0" }
+deno_graph = { version = "0.81.0", default-features = false }
+deno_ast = { version = "0.41.2", features = ["transpiling"] }
 import_map = "0.20.0"
 serde = "1"
 
@@ -41,7 +41,7 @@ harness = false
 xxhash3 = ["xxhash-rust/xxh3"]
 sha256 = ["dep:sha2"]
 # backwards compatibility. Disabling sha256 will break compatibility with eszips older than v2.2
-default = ["sha256"]  
+default = ["sha256"]
 
 [dependencies]
 anyhow = "1"
