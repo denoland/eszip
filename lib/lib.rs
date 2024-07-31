@@ -346,6 +346,7 @@ pub async fn build_eszip(
     transpile_options: Default::default(),
     emit_options: Default::default(),
     relative_file_base: None,
+    npm_packages: None,
   })
   .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   if let Some((import_map_specifier, import_map_content)) =

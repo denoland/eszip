@@ -636,6 +636,7 @@ name = "eszip"
 version = "0.72.2"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64",
  "criterion",
  "deno_ast",
@@ -645,6 +646,7 @@ dependencies = [
  "futures",
  "hashlink",
  "import_map",
+ "indexmap",
  "insta",
  "jsonc-parser",
  "pretty_assertions",
