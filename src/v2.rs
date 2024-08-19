@@ -1156,7 +1156,8 @@ impl EszipV2 {
 
     // add npm snapshot entries to the header and fill the npm bytes
     if let Some(npm_snapshot) = self.npm_snapshot {
-      let npm_snapshot = npm_snapshot.into_serialized();
+      let mut npm_snapshot = npm_snapshot.into_serialized();
+      npm_snapshot.packages.sort_by(|a, b| a.id.cmp(&b.id)); // determinism
       let ids_to_eszip_ids = npm_snapshot
         .packages
         .iter()
@@ -1165,7 +1166,7 @@ impl EszipV2 {
         .collect::<HashMap<_, _>>();
 
       let mut root_packages: Vec<_> =
-        npm_snapshot.root_packages.into_iter().collect();
+        npm_snapshot.root_packages.iter().collect();
       root_packages.sort();
       for (req, id) in root_packages {
         append_string(&mut modules_header, &req.to_string());
@@ -1178,11 +1179,7 @@ impl EszipV2 {
         append_string(&mut npm_bytes, &pkg.id.as_serialized());
         let deps_len = pkg.dependencies.len() as u32;
         npm_bytes.extend_from_slice(&deps_len.to_be_bytes());
-        let mut deps: Vec<_> = pkg
-          .dependencies
-          .iter()
-          .map(|(a, b)| (a.clone(), b.clone()))
-          .collect();
+        let mut deps: Vec<_> = pkg.dependencies.iter().collect();
         deps.sort();
         for (req, id) in deps {
           append_string(&mut npm_bytes, &req.to_string());
@@ -2898,7 +2895,12 @@ mod tests {
         .await
         .unwrap();
     let snapshot = eszip.take_npm_snapshot().unwrap();
-    assert_eq!(snapshot.as_serialized(), original_snapshot.as_serialized());
+    assert_eq!(snapshot.into_serialized(), {
+      let mut original = original_snapshot.into_serialized();
+      // this will be sorted for determinism
+      original.packages.sort_by(|a, b| a.id.cmp(&b.id));
+      original
+    });
 
     // ensure the eszip still works otherwise
     fut.await.unwrap();
