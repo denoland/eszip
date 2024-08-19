@@ -2895,7 +2895,12 @@ mod tests {
         .await
         .unwrap();
     let snapshot = eszip.take_npm_snapshot().unwrap();
-    assert_eq!(snapshot.as_serialized(), original_snapshot.as_serialized());
+    assert_eq!(snapshot.into_serialized(), {
+      let mut original = original_snapshot.into_serialized();
+      // this will be sorted for determinism
+      original.packages.sort_by(|a, b| a.id.cmp(&b.id));
+      original
+    });
 
     // ensure the eszip still works otherwise
     fut.await.unwrap();
