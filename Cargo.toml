@@ -49,8 +49,8 @@ async-trait = "0.1.68"
 base64 = "0.21.0"
 deno_ast = { workspace = true }
 deno_graph = { workspace = true }
-deno_npm = "0.24.0"
-deno_semver = "0.5.10"
+deno_npm = "0.25.0"
+deno_semver = "0.5.11"
 futures = "0.3.26"
 hashlink = "0.8.2"
 indexmap = "2"
