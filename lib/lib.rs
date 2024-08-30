@@ -333,7 +333,6 @@ pub async fn build_eszip(
         locker: None,
         npm_resolver: None,
         reporter: None,
-        workspace_members: &[],
       },
     )
     .await;
