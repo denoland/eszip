@@ -3,8 +3,8 @@
 // CLI utility to build/list/extract/run ESZIPs
 
 import { build, Parser } from "./mod.ts";
-import { dirname, join } from "jsr:@std/path@0.223";
-import { assertStrictEquals } from "jsr:@std/assert@0.223";
+import { dirname, join } from "jsr:@std/path@1";
+import { assertStrictEquals } from "jsr:@std/assert@1";
 
 function hasV2Header(bytes: Uint8Array) {
   const magicV2 = new TextDecoder().decode(bytes.slice(0, 8));
