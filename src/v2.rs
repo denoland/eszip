@@ -965,8 +965,8 @@ impl EszipV2 {
   /// placed at the top of the archive, so it can be read before any other
   /// modules are loaded.
   ///
-  /// If a module with this specifier is already present, then this is a no-op
-  /// (except that this specifier will now be at the top of the archive).
+  /// If a module with this specifier is already present, its source is replaced
+  /// with the new source.
   pub fn add_import_map(
     &mut self,
     kind: ModuleKind,
@@ -974,25 +974,7 @@ impl EszipV2 {
     source: Arc<[u8]>,
   ) {
     debug_assert!(matches!(kind, ModuleKind::Json | ModuleKind::Jsonc));
-
-    let mut modules = self.modules.0.lock().unwrap();
-
-    // If an entry with the specifier already exists, we just move that to the
-    // top and return without inserting new source.
-    if modules.contains_key(&specifier) {
-      modules.to_front(&specifier);
-      return;
-    }
-
-    modules.insert(
-      specifier.clone(),
-      EszipV2Module::Module {
-        kind,
-        source: EszipV2SourceSlot::Ready(source),
-        source_map: EszipV2SourceSlot::Ready(Arc::new([])),
-      },
-    );
-    modules.to_front(&specifier);
+    self.add_to_front(kind, specifier.clone(), source, []);
   }
 
   /// Add an opaque data to the eszip.
@@ -1006,6 +988,26 @@ impl EszipV2 {
         source_map: EszipV2SourceSlot::Ready(Arc::new([])),
       },
     );
+  }
+
+  // Add a module to the front of the eszip
+  pub fn add_to_front(
+    &mut self,
+    kind: ModuleKind,
+    specifier: String,
+    data: impl Into<Arc<[u8]>>,
+    source_map: impl Into<Arc<[u8]>>,
+  ) {
+    let mut modules = self.modules.0.lock().unwrap();
+    modules.insert(
+      specifier.clone(),
+      EszipV2Module::Module {
+        kind,
+        source: EszipV2SourceSlot::Ready(data.into()),
+        source_map: EszipV2SourceSlot::Ready(source_map.into()),
+      },
+    );
+    modules.to_front(&specifier);
   }
 
   /// Adds an npm resolution snapshot to the eszip.
@@ -3473,6 +3475,38 @@ mod tests {
       b"export const grandchild1 = \"grandchild1\";",
       b"import \"./grandchild2.ts\";",
       b"export const grandchild2 = \"grandchild2\";",
+    ];
+    assert_content_order!(eszip_bytes, expected_content);
+  }
+
+  #[tokio::test]
+  async fn add_to_front_adds_module_to_the_front_instead_of_the_back() {
+    let mut eszip = super::EszipV2::default();
+
+    eszip.add_opaque_data(
+      String::from("third"),
+      Arc::from(*b"third source added with add_opaque_data"),
+    );
+    eszip.add_to_front(
+      ModuleKind::OpaqueData,
+      String::from("second"),
+      *b"second source added with add_to_front",
+      *b"second source map added with add_to_front",
+    );
+    eszip.add_to_front(
+      ModuleKind::OpaqueData,
+      String::from("first"),
+      *b"first source added with add_to_front",
+      *b"first source map added with add_to_front",
+    );
+
+    let eszip_bytes = eszip.into_bytes();
+    let expected_content: &[&[u8]] = &[
+      b"first source added with add_to_front",
+      b"second source added with add_to_front",
+      b"third source added with add_opaque_data",
+      b"first source map added with add_to_front",
+      b"second source map added with add_to_front",
     ];
     assert_content_order!(eszip_bytes, expected_content);
   }
