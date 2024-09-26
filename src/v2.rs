@@ -2526,6 +2526,7 @@ mod tests {
       &Url::parse("file:///import_map.json").unwrap(),
       LoadOptions {
         is_dynamic: false,
+        was_dynamic_root: false,
         cache_setting: CacheSetting::Use,
         maybe_checksum: None,
       },
@@ -2606,6 +2607,7 @@ mod tests {
       &Url::parse("file:///import_map.json").unwrap(),
       LoadOptions {
         is_dynamic: false,
+        was_dynamic_root: false,
         cache_setting: CacheSetting::Use,
         maybe_checksum: None,
       },
@@ -2675,6 +2677,7 @@ mod tests {
       &Url::parse("file:///deno.jsonc").unwrap(),
       LoadOptions {
         is_dynamic: false,
+        was_dynamic_root: false,
         cache_setting: CacheSetting::Use,
         maybe_checksum: None,
       },
@@ -2755,6 +2758,7 @@ mod tests {
       &Url::parse("file:///deno.jsonc").unwrap(),
       LoadOptions {
         is_dynamic: false,
+        was_dynamic_root: false,
         cache_setting: CacheSetting::Use,
         maybe_checksum: None,
       },
