@@ -284,6 +284,7 @@ pub async fn build_eszip(
       &import_map_url,
       deno_graph::source::LoadOptions {
         is_dynamic: false,
+        was_dynamic_root: false,
         cache_setting: deno_graph::source::CacheSetting::Use,
         maybe_checksum: None,
       },
