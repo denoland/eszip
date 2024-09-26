@@ -4,7 +4,7 @@
 // deno-fmt-ignore-file
 /// <reference types="./eszip_wasm.generated.d.ts" />
 
-// source-hash: bec4071faecb6264a33e3a962d7e8d839594d774
+// source-hash: d883ab4c3d56eae3a8947f669e2aec3ef3306c0f
 let wasm;
 
 const heap = new Array(128).fill(undefined);
@@ -431,18 +431,6 @@ const imports = {
       const ret = new TypeError(getStringFromWasm0(arg0, arg1));
       return addHeapObject(ret);
     },
-    __wbg_new_16b304a2cfa7ff4a: function () {
-      const ret = new Array();
-      return addHeapObject(ret);
-    },
-    __wbindgen_string_new: function (arg0, arg1) {
-      const ret = getStringFromWasm0(arg0, arg1);
-      return addHeapObject(ret);
-    },
-    __wbg_push_a5b05aedc7234f9f: function (arg0, arg1) {
-      const ret = getObject(arg0).push(getObject(arg1));
-      return ret;
-    },
     __wbg_new_28c511d9baebfa89: function (arg0, arg1) {
       const ret = new Error(getStringFromWasm0(arg0, arg1));
       return addHeapObject(ret);
@@ -466,6 +454,18 @@ const imports = {
     __wbg_new_63b92bc8671ed464: function (arg0) {
       const ret = new Uint8Array(getObject(arg0));
       return addHeapObject(ret);
+    },
+    __wbg_new_16b304a2cfa7ff4a: function () {
+      const ret = new Array();
+      return addHeapObject(ret);
+    },
+    __wbindgen_string_new: function (arg0, arg1) {
+      const ret = getStringFromWasm0(arg0, arg1);
+      return addHeapObject(ret);
+    },
+    __wbg_push_a5b05aedc7234f9f: function (arg0, arg1) {
+      const ret = getObject(arg0).push(getObject(arg1));
+      return ret;
     },
     __wbg_String_88810dfeb4021902: function (arg0, arg1) {
       const ret = String(getObject(arg1));
@@ -789,8 +789,8 @@ const imports = {
       const ret = getObject(arg0).queueMicrotask;
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper9913: function (arg0, arg1, arg2) {
-      const ret = makeMutClosure(arg0, arg1, 770, __wbg_adapter_46);
+    __wbindgen_closure_wrapper9928: function (arg0, arg1, arg2) {
+      const ret = makeMutClosure(arg0, arg1, 769, __wbg_adapter_46);
       return addHeapObject(ret);
     },
   },
