@@ -31,6 +31,7 @@ async fn main() {
         &import_map_url,
         deno_graph::source::LoadOptions {
           is_dynamic: false,
+          was_dynamic_root: false,
           cache_setting: CacheSetting::Use,
           maybe_checksum: None,
         },
