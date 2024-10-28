@@ -16,9 +16,9 @@ use deno_ast::EmitOptions;
 use deno_ast::ModuleSpecifier;
 use deno_ast::SourceMapOption;
 use deno_ast::TranspileOptions;
-use deno_graph::CapturingModuleParser;
+use deno_graph::CapturingEsParser;
+use deno_graph::EsParser;
 use deno_graph::ModuleGraph;
-use deno_graph::ModuleParser;
 use deno_graph::ParseOptions;
 use deno_npm::resolution::SerializedNpmResolutionSnapshot;
 use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
@@ -279,7 +279,7 @@ impl<'a> EszipRelativeFileBaseUrl<'a> {
 
 pub struct FromGraphOptions<'a> {
   pub graph: ModuleGraph,
-  pub parser: CapturingModuleParser<'a>,
+  pub parser: CapturingEsParser<'a>,
   pub transpile_options: TranspileOptions,
   pub emit_options: EmitOptions,
   /// Base to make all descendant file:/// modules relative to.
@@ -1294,7 +1294,7 @@ impl EszipV2 {
     #[allow(clippy::too_many_arguments)]
     fn visit_module<'a>(
       graph: &'a ModuleGraph,
-      parser: CapturingModuleParser,
+      parser: CapturingEsParser,
       transpile_options: &TranspileOptions,
       emit_options: &EmitOptions,
       modules: &mut LinkedHashMap<String, EszipV2Module>,
@@ -1347,7 +1347,7 @@ impl EszipV2 {
             | deno_graph::MediaType::Tsx
             | deno_graph::MediaType::Dts
             | deno_graph::MediaType::Dmts => {
-              let parsed_source = parser.parse_module(ParseOptions {
+              let parsed_source = parser.parse_program(ParseOptions {
                 specifier: &module.specifier,
                 source: module.source.clone(),
                 media_type: module.media_type,
@@ -1367,8 +1367,10 @@ impl EszipV2 {
               let emit = parsed_source
                 .transpile(transpile_options, &emit_options)?
                 .into_source();
-              source = emit.source.into();
-              source_map = Arc::from(emit.source_map.unwrap_or_default());
+              source = emit.text.into_bytes().into();
+              source_map = Arc::from(
+                emit.source_map.map(|s| s.into_bytes()).unwrap_or_default(),
+              );
             }
             _ => {
               return Err(anyhow::anyhow!(
