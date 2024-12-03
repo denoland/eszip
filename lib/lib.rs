@@ -342,6 +342,7 @@ pub async fn build_eszip(
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let mut eszip = eszip::EszipV2::from_graph(eszip::FromGraphOptions {
     graph,
+    module_kind_resolver: Default::default(),
     parser: analyzer.as_capturing_parser(),
     transpile_options: Default::default(),
     emit_options: Default::default(),
@@ -427,7 +428,7 @@ impl Resolver for GraphResolver {
     &self,
     specifier: &str,
     referrer_range: &deno_graph::Range,
-    _mode: deno_graph::source::ResolutionMode,
+    _kind: deno_graph::source::ResolutionKind,
   ) -> Result<deno_graph::ModuleSpecifier, ResolveError> {
     if let Some(import_map) = &self.0 {
       import_map
