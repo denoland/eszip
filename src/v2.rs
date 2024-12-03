@@ -66,7 +66,7 @@ impl EszipVersion {
     }
   }
 
-  pub fn to_magic(&self) -> &'static [u8; 8] {
+  pub fn to_magic(self) -> &'static [u8; 8] {
     match self {
       Self::V2 => ESZIP_V2_MAGIC,
       Self::V2_1 => ESZIP_V2_1_MAGIC,
@@ -1672,7 +1672,10 @@ impl EszipV2 {
 
     // Import map must be either JSON or JSONC (but JSONC is a special case;
     // it's allowed when embedded in a Deno's config file)
-    if import_map.kind == ModuleKind::JavaScript {
+    if matches!(
+      import_map.kind,
+      ModuleKind::Json | ModuleKind::Jsonc | ModuleKind::OpaqueData
+    ) {
       return None;
     }
 
@@ -2020,6 +2023,12 @@ mod tests {
     };
   }
 
+  macro_rules! assert_matches_file_bytes {
+    ($source:ident, $file:literal) => {
+      assert_eq!($source.to_vec(), include_bytes!($file));
+    };
+  }
+
   macro_rules! assert_content_order {
       ($bytes:expr, $expected_content:expr) => {
       let mut bytes: &[u8] = &$bytes;
@@ -2296,6 +2305,69 @@ mod tests {
     let source_map = module.source_map().await.unwrap();
     assert_eq!(&*source_map, &[0; 0]);
     assert_eq!(module.kind, ModuleKind::Json);
+  }
+
+  #[tokio::test]
+  async fn from_graph_wasm() {
+    let roots = vec![ModuleSpecifier::parse("file:///wasm.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      module_kind_resolver: Default::default(),
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+      npm_packages: None,
+    })
+    .unwrap();
+    let module = eszip.get_module("file:///wasm.ts").unwrap();
+    assert_eq!(module.specifier, "file:///wasm.ts");
+    let source = module.source().await.unwrap();
+    assert_matches_file!(source, "./testdata/source/wasm.ts");
+    let module = eszip.get_module("file:///math.wasm").unwrap();
+    assert_eq!(module.specifier, "file:///math.wasm");
+    let source = module.source().await.unwrap();
+    assert_matches_file_bytes!(source, "./testdata/source/math.wasm");
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, &[0; 0]);
+    assert_eq!(module.kind, ModuleKind::Wasm);
+  }
+
+  #[tokio::test]
+  async fn loads_eszip_with_wasm() {
+    let file = std::fs::File::open("./src/testdata/wasm.eszip2_3").unwrap();
+    let (eszip, fut) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
+    fut.await.unwrap();
+    let module = eszip.get_module("file:///wasm.ts").unwrap();
+    assert_eq!(module.specifier, "file:///wasm.ts");
+    let source = module.source().await.unwrap();
+    assert_matches_file!(source, "./testdata/source/wasm.ts");
+    let module = eszip.get_module("file:///math.wasm").unwrap();
+    assert_eq!(module.specifier, "file:///math.wasm");
+    let source = module.source().await.unwrap();
+    assert_matches_file_bytes!(source, "./testdata/source/math.wasm");
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, &[0; 0]);
+    assert_eq!(module.kind, ModuleKind::Wasm);
   }
 
   #[tokio::test]
