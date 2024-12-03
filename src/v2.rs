@@ -1672,7 +1672,7 @@ impl EszipV2 {
 
     // Import map must be either JSON or JSONC (but JSONC is a special case;
     // it's allowed when embedded in a Deno's config file)
-    if matches!(
+    if !matches!(
       import_map.kind,
       ModuleKind::Json | ModuleKind::Jsonc | ModuleKind::OpaqueData
     ) {
