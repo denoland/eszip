@@ -74,6 +74,7 @@ async fn main() {
   let mut eszip = eszip::EszipV2::from_graph(eszip::FromGraphOptions {
     graph,
     parser: analyzer.as_capturing_parser(),
+    module_kind_resolver: Default::default(),
     transpile_options: TranspileOptions::default(),
     emit_options: EmitOptions::default(),
     relative_file_base: None,
@@ -106,7 +107,7 @@ impl deno_graph::source::Resolver for Resolver {
     &self,
     specifier: &str,
     referrer_range: &deno_graph::Range,
-    _mode: deno_graph::source::ResolutionMode,
+    _kind: deno_graph::source::ResolutionKind,
   ) -> Result<deno_graph::ModuleSpecifier, ResolveError> {
     if let Some(import_map) = &self.0 {
       import_map
