@@ -15,6 +15,7 @@ use std::task::Waker;
 use deno_ast::EmitOptions;
 use deno_ast::ModuleSpecifier;
 use deno_ast::SourceMapOption;
+use deno_ast::TranspileModuleOptions;
 use deno_ast::TranspileOptions;
 use deno_graph::CapturingEsParser;
 use deno_graph::EsParser;
@@ -1365,7 +1366,11 @@ impl EszipV2 {
                 _ => Cow::Borrowed(emit_options),
               };
               let emit = parsed_source
-                .transpile(transpile_options, &emit_options)?
+                .transpile(
+                  transpile_options,
+                  &TranspileModuleOptions { module_kind: None },
+                  &emit_options,
+                )?
                 .into_source();
               source = emit.text.into_bytes().into();
               source_map = Arc::from(
@@ -1467,9 +1472,10 @@ impl EszipV2 {
           }
           Ok(None)
         }
-        deno_graph::Module::External(_) | deno_graph::Module::Node(_) => {
-          Ok(None)
-        }
+        // TODO: support wasm
+        deno_graph::Module::Wasm(_)
+        | deno_graph::Module::External(_)
+        | deno_graph::Module::Node(_) => Ok(None),
       }
     }
 
@@ -2001,7 +2007,7 @@ mod tests {
       &self,
       specifier: &str,
       referrer_range: &deno_graph::Range,
-      _mode: deno_graph::source::ResolutionMode,
+      _kind: deno_graph::source::ResolutionKind,
     ) -> Result<ModuleSpecifier, ResolveError> {
       self
         .0
