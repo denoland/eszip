@@ -1551,8 +1551,6 @@ impl EszipV2 {
           }
           Ok(None)
         }
-        // TODO: support wasm
-        deno_graph::Module::Wasm(_)
         | deno_graph::Module::External(_)
         | deno_graph::Module::Node(_) => Ok(None),
       }
