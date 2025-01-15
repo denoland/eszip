@@ -1,5 +1,9 @@
 // Copyright 2018-2024 the Deno authors. All rights reserved. MIT license.
 
+#![deny(clippy::print_stderr)]
+#![deny(clippy::print_stdout)]
+#![deny(clippy::unused_async)]
+
 mod error;
 pub mod v1;
 pub mod v2;
@@ -14,6 +18,7 @@ use futures::io::AsyncReadExt;
 use serde::Deserialize;
 use serde::Serialize;
 use v2::EszipV2Modules;
+use v2::EszipVersion;
 
 pub use crate::error::ParseError;
 pub use crate::v1::EszipV1;
@@ -47,8 +52,8 @@ impl Eszip {
     let mut reader = futures::io::BufReader::new(reader);
     let mut magic = [0; 8];
     reader.read_exact(&mut magic).await?;
-    if EszipV2::has_magic(&magic) {
-      let (eszip, fut) = EszipV2::parse_with_magic(&magic, reader).await?;
+    if let Some(version) = EszipVersion::from_magic(&magic) {
+      let (eszip, fut) = EszipV2::parse_with_version(version, reader).await?;
       Ok((Eszip::V2(eszip), Box::pin(fut)))
     } else {
       let mut buffer = Vec::new();
@@ -212,6 +217,7 @@ pub enum ModuleKind {
   Json = 1,
   Jsonc = 2,
   OpaqueData = 3,
+  Wasm = 4,
 }
 
 #[cfg(test)]

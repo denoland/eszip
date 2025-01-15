@@ -175,6 +175,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "boxed_error"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17d4f95e880cfd28c4ca5a006cf7f6af52b4bcb7b5866f573b2faa126fb7affb"
+dependencies = [
+ "quote",
+ "syn 2.0.90",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -473,6 +483,9 @@ checksum = "199c66ffd17ee1a948904d33f3d3f364573951c1f9fb3f859bfe7770bf33862a"
 dependencies = [
  "deno_error_macro",
  "libc",
+ "serde",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -500,7 +513,7 @@ dependencies = [
  "deno_unsync",
  "encoding_rs",
  "futures",
- "import_map",
+ "import_map 0.20.0",
  "indexmap",
  "log",
  "monch",
@@ -684,7 +697,7 @@ dependencies = [
  "deno_semver",
  "futures",
  "hashlink",
- "import_map",
+ "import_map 0.21.0",
  "indexmap",
  "insta",
  "jsonc-parser",
@@ -693,7 +706,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 1.0.64",
+ "thiserror 2.0.4",
  "tokio",
  "url",
  "xxhash-rust",
@@ -709,7 +722,7 @@ dependencies = [
  "eszip",
  "futures",
  "getrandom",
- "import_map",
+ "import_map 0.21.0",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
@@ -1204,6 +1217,23 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
+ "url",
+]
+
+[[package]]
+name = "import_map"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1215d4d92511fbbdaea50e750e91f2429598ef817f02b579158e92803b52c00a"
+dependencies = [
+ "boxed_error",
+ "deno_error",
+ "indexmap",
+ "log",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.4",
  "url",
 ]
 

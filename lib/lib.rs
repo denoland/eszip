@@ -342,6 +342,7 @@ pub async fn build_eszip(
     .map_err(|e| js_sys::Error::new(&e.to_string()))?;
   let mut eszip = eszip::EszipV2::from_graph(eszip::FromGraphOptions {
     graph,
+    module_kind_resolver: Default::default(),
     parser: analyzer.as_capturing_parser(),
     transpile_options: Default::default(),
     emit_options: Default::default(),

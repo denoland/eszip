@@ -74,6 +74,7 @@ async fn main() {
   let mut eszip = eszip::EszipV2::from_graph(eszip::FromGraphOptions {
     graph,
     parser: analyzer.as_capturing_parser(),
+    module_kind_resolver: Default::default(),
     transpile_options: TranspileOptions::default(),
     emit_options: EmitOptions::default(),
     relative_file_base: None,

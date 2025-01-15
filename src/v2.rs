@@ -43,7 +43,38 @@ pub use crate::ModuleKind;
 const ESZIP_V2_MAGIC: &[u8; 8] = b"ESZIP_V2";
 const ESZIP_V2_1_MAGIC: &[u8; 8] = b"ESZIP2.1";
 const ESZIP_V2_2_MAGIC: &[u8; 8] = b"ESZIP2.2";
-const LATEST_VERSION: &[u8; 8] = ESZIP_V2_2_MAGIC;
+const ESZIP_V2_3_MAGIC: &[u8; 8] = b"ESZIP2.3";
+const LATEST_VERSION: EszipVersion = EszipVersion::V2_3;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
+pub(crate) enum EszipVersion {
+  // these numbers are just for ordering
+  V2 = 0,
+  V2_1 = 1,
+  V2_2 = 2,
+  V2_3 = 3,
+}
+
+impl EszipVersion {
+  pub fn from_magic(magic: &[u8; 8]) -> Option<Self> {
+    match magic {
+      ESZIP_V2_MAGIC => Some(Self::V2),
+      ESZIP_V2_1_MAGIC => Some(Self::V2_1),
+      ESZIP_V2_2_MAGIC => Some(Self::V2_2),
+      ESZIP_V2_3_MAGIC => Some(Self::V2_3),
+      _ => None,
+    }
+  }
+
+  pub fn to_magic(self) -> &'static [u8; 8] {
+    match self {
+      Self::V2 => ESZIP_V2_MAGIC,
+      Self::V2_1 => ESZIP_V2_1_MAGIC,
+      Self::V2_2 => ESZIP_V2_2_MAGIC,
+      Self::V2_3 => ESZIP_V2_3_MAGIC,
+    }
+  }
+}
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
@@ -194,14 +225,14 @@ struct Options {
 }
 
 impl Options {
-  fn default_for_version(magic: &[u8; 8]) -> Self {
+  fn default_for_version(version: EszipVersion) -> Self {
     let defaults = Self {
       checksum: Some(Checksum::NoChecksum),
       checksum_size: Default::default(),
     };
     #[cfg(feature = "sha256")]
     let mut defaults = defaults;
-    if let ESZIP_V2_MAGIC | ESZIP_V2_1_MAGIC = magic {
+    if matches!(version, EszipVersion::V2 | EszipVersion::V2_1) {
       // versions prior to v2.2 default to checksuming with SHA256
       #[cfg(feature = "sha256")]
       {
@@ -278,9 +309,35 @@ impl<'a> EszipRelativeFileBaseUrl<'a> {
   }
 }
 
+/// Resolves whether the module is ESM or CommonJS for transpilation.
+pub trait ModuleKindResolver {
+  fn module_kind(
+    &self,
+    module: &deno_graph::JsModule,
+  ) -> Option<deno_ast::ModuleKind>;
+}
+
+impl<'a> Default for &'a dyn ModuleKindResolver {
+  fn default() -> &'a dyn ModuleKindResolver {
+    &NullModuleKindResolver
+  }
+}
+
+pub struct NullModuleKindResolver;
+
+impl ModuleKindResolver for NullModuleKindResolver {
+  fn module_kind(
+    &self,
+    _module: &deno_graph::JsModule,
+  ) -> Option<deno_ast::ModuleKind> {
+    None
+  }
+}
+
 pub struct FromGraphOptions<'a> {
   pub graph: ModuleGraph,
   pub parser: CapturingEsParser<'a>,
+  pub module_kind_resolver: &'a dyn ModuleKindResolver,
   pub transpile_options: TranspileOptions,
   pub emit_options: EmitOptions,
   /// Base to make all descendant file:/// modules relative to.
@@ -641,10 +698,11 @@ impl EszipV2SourceSlot {
 
 impl EszipV2 {
   pub fn has_magic(buffer: &[u8]) -> bool {
-    buffer.len() >= 8
-      && (buffer[..8] == *ESZIP_V2_MAGIC
-        || buffer[..8] == *ESZIP_V2_1_MAGIC
-        || buffer[..8] == *ESZIP_V2_2_MAGIC)
+    if buffer.len() < 8 {
+      false
+    } else {
+      EszipVersion::from_magic(&buffer[0..8].try_into().unwrap()).is_some()
+    }
   }
 
   /// Parse a EszipV2 from an AsyncRead stream. This function returns once the
@@ -663,15 +721,15 @@ impl EszipV2 {
     let mut magic = [0u8; 8];
     reader.read_exact(&mut magic).await?;
 
-    if !EszipV2::has_magic(&magic) {
+    let Some(version) = EszipVersion::from_magic(&magic) else {
       return Err(ParseError::InvalidV2);
-    }
+    };
 
-    Self::parse_with_magic(&magic, reader).await
+    Self::parse_with_version(version, reader).await
   }
 
-  pub(super) async fn parse_with_magic<R: futures::io::AsyncRead + Unpin>(
-    magic: &[u8; 8],
+  pub(super) async fn parse_with_version<R: futures::io::AsyncRead + Unpin>(
+    version: EszipVersion,
     mut reader: futures::io::BufReader<R>,
   ) -> Result<
     (
@@ -680,10 +738,10 @@ impl EszipV2 {
     ),
     ParseError,
   > {
-    let supports_npm = magic != ESZIP_V2_MAGIC;
-    let supports_options = magic == ESZIP_V2_2_MAGIC;
+    let supports_npm = version != EszipVersion::V2;
+    let supports_options = version >= EszipVersion::V2_2;
 
-    let mut options = Options::default_for_version(magic);
+    let mut options = Options::default_for_version(version);
 
     if supports_options {
       let mut pre_options = options;
@@ -779,6 +837,7 @@ impl EszipV2 {
             1 => ModuleKind::Json,
             2 => ModuleKind::Jsonc,
             3 => ModuleKind::OpaqueData,
+            4 => ModuleKind::Wasm,
             n => return Err(ParseError::InvalidV2ModuleKind(n, read)),
           };
           let source = if source_offset == 0 && source_len == 0 {
@@ -1075,7 +1134,7 @@ impl EszipV2 {
       "customizing the checksum size should not be posible"
     );
 
-    let mut options_header = LATEST_VERSION.to_vec();
+    let mut options_header = LATEST_VERSION.to_magic().to_vec();
 
     let options_header_length_pos = options_header.len();
     const OPTIONS_HEADER_LENGTH_SIZE: usize = size_of::<u32>();
@@ -1295,6 +1354,7 @@ impl EszipV2 {
     #[allow(clippy::too_many_arguments)]
     fn visit_module<'a>(
       graph: &'a ModuleGraph,
+      module_kind_provider: &dyn ModuleKindResolver,
       parser: CapturingEsParser,
       transpile_options: &TranspileOptions,
       emit_options: &EmitOptions,
@@ -1303,7 +1363,7 @@ impl EszipV2 {
       relative_file_base: Option<EszipRelativeFileBaseUrl>,
       npm_packages: Option<&mut FromGraphNpmPackages>,
     ) -> Result<
-      Option<impl DoubleEndedIterator<Item = ToVisit<'a>>>,
+      Option<Box<dyn DoubleEndedIterator<Item = ToVisit<'a>> + 'a>>,
       anyhow::Error,
     > {
       let module = match graph.try_get(visited.specifier()) {
@@ -1368,7 +1428,9 @@ impl EszipV2 {
               let emit = parsed_source
                 .transpile(
                   transpile_options,
-                  &TranspileModuleOptions { module_kind: None },
+                  &TranspileModuleOptions {
+                    module_kind: module_kind_provider.module_kind(module),
+                  },
                   &emit_options,
                 )?
                 .into_source();
@@ -1393,14 +1455,31 @@ impl EszipV2 {
           };
           modules.insert(specifier_key.into_owned(), eszip_module);
 
-          Ok(Some(module.dependencies.values().filter_map(
+          Ok(Some(Box::new(module.dependencies.values().filter_map(
             |dependency| {
               Some(ToVisit::Module {
                 specifier: dependency.get_code()?,
                 is_dynamic: dependency.is_dynamic,
               })
             },
-          )))
+          ))))
+        }
+        deno_graph::Module::Wasm(module) => {
+          let eszip_module = EszipV2Module::Module {
+            kind: ModuleKind::Wasm,
+            source: EszipV2SourceSlot::Ready(module.source.clone()),
+            source_map: EszipV2SourceSlot::Ready(Arc::new([])), // doesn't seem ideal
+          };
+          modules.insert(specifier_key.into_owned(), eszip_module);
+
+          Ok(Some(Box::new(module.dependencies.values().filter_map(
+            |dependency| {
+              Some(ToVisit::Module {
+                specifier: dependency.get_code()?,
+                is_dynamic: dependency.is_dynamic,
+              })
+            },
+          ))))
         }
         deno_graph::Module::Json(module) => {
           let eszip_module = EszipV2Module::Module {
@@ -1472,8 +1551,6 @@ impl EszipV2 {
           }
           Ok(None)
         }
-        // TODO: support wasm
-        deno_graph::Module::Wasm(_)
         | deno_graph::Module::External(_)
         | deno_graph::Module::Node(_) => Ok(None),
       }
@@ -1505,6 +1582,7 @@ impl EszipV2 {
     {
       let dependencies = visit_module(
         &opts.graph,
+        opts.module_kind_resolver,
         opts.parser,
         &opts.transpile_options,
         &emit_options,
@@ -1593,7 +1671,10 @@ impl EszipV2 {
 
     // Import map must be either JSON or JSONC (but JSONC is a special case;
     // it's allowed when embedded in a Deno's config file)
-    if import_map.kind == ModuleKind::JavaScript {
+    if !matches!(
+      import_map.kind,
+      ModuleKind::Json | ModuleKind::Jsonc | ModuleKind::OpaqueData
+    ) {
       return None;
     }
 
@@ -1941,6 +2022,12 @@ mod tests {
     };
   }
 
+  macro_rules! assert_matches_file_bytes {
+    ($source:ident, $file:literal) => {
+      assert_eq!($source.to_vec(), include_bytes!($file));
+    };
+  }
+
   macro_rules! assert_content_order {
       ($bytes:expr, $expected_content:expr) => {
       let mut bytes: &[u8] = &$bytes;
@@ -2117,6 +2204,7 @@ mod tests {
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2150,6 +2238,7 @@ mod tests {
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2194,6 +2283,7 @@ mod tests {
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2217,6 +2307,69 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn from_graph_wasm() {
+    let roots = vec![ModuleSpecifier::parse("file:///wasm.ts").unwrap()];
+    let analyzer = CapturingModuleAnalyzer::default();
+    let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+    let loader = FileLoader {
+      base_dir: "./src/testdata/source".to_string(),
+    };
+    graph
+      .build(
+        roots,
+        &loader,
+        BuildOptions {
+          module_analyzer: &analyzer,
+          ..Default::default()
+        },
+      )
+      .await;
+    graph.valid().unwrap();
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+      graph,
+      module_kind_resolver: Default::default(),
+      parser: analyzer.as_capturing_parser(),
+      transpile_options: TranspileOptions::default(),
+      emit_options: EmitOptions::default(),
+      relative_file_base: None,
+      npm_packages: None,
+    })
+    .unwrap();
+    let module = eszip.get_module("file:///wasm.ts").unwrap();
+    assert_eq!(module.specifier, "file:///wasm.ts");
+    let source = module.source().await.unwrap();
+    assert_matches_file!(source, "./testdata/source/wasm.ts");
+    let module = eszip.get_module("file:///math.wasm").unwrap();
+    assert_eq!(module.specifier, "file:///math.wasm");
+    let source = module.source().await.unwrap();
+    assert_matches_file_bytes!(source, "./testdata/source/math.wasm");
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, &[0; 0]);
+    assert_eq!(module.kind, ModuleKind::Wasm);
+  }
+
+  #[tokio::test]
+  async fn loads_eszip_with_wasm() {
+    let file = std::fs::File::open("./src/testdata/wasm.eszip2_3").unwrap();
+    let (eszip, fut) =
+      super::EszipV2::parse(BufReader::new(AllowStdIo::new(file)))
+        .await
+        .unwrap();
+    fut.await.unwrap();
+    let module = eszip.get_module("file:///wasm.ts").unwrap();
+    assert_eq!(module.specifier, "file:///wasm.ts");
+    let source = module.source().await.unwrap();
+    assert_matches_file!(source, "./testdata/source/wasm.ts");
+    let module = eszip.get_module("file:///math.wasm").unwrap();
+    assert_eq!(module.specifier, "file:///math.wasm");
+    let source = module.source().await.unwrap();
+    assert_matches_file_bytes!(source, "./testdata/source/math.wasm");
+    let source_map = module.source_map().await.unwrap();
+    assert_eq!(&*source_map, &[0; 0]);
+    assert_eq!(module.kind, ModuleKind::Wasm);
+  }
+
+  #[tokio::test]
   async fn from_graph_dynamic() {
     let roots = vec![ModuleSpecifier::parse("file:///dynamic.ts").unwrap()];
     let analyzer = CapturingModuleAnalyzer::default();
@@ -2237,6 +2390,7 @@ mod tests {
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2279,6 +2433,7 @@ mod tests {
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2332,6 +2487,7 @@ mod tests {
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2412,6 +2568,7 @@ mod tests {
     graph.valid().unwrap();
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2570,6 +2727,7 @@ mod tests {
     graph.valid().unwrap();
     let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2653,6 +2811,7 @@ mod tests {
     graph.valid().unwrap();
     let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2726,6 +2885,7 @@ mod tests {
     graph.valid().unwrap();
     let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2807,6 +2967,7 @@ mod tests {
     graph.valid().unwrap();
     let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -2890,6 +3051,7 @@ mod tests {
     .unwrap();
     let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -3017,6 +3179,7 @@ mod tests {
     .unwrap();
     let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -3107,6 +3270,7 @@ mod tests {
     );
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -3250,6 +3414,7 @@ mod tests {
     );
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -3347,6 +3512,7 @@ mod tests {
     );
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -3424,6 +3590,7 @@ mod tests {
     );
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -3472,6 +3639,7 @@ mod tests {
 
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
@@ -3776,6 +3944,7 @@ mod tests {
     graph.valid().unwrap();
     super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
+      module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
       transpile_options: TranspileOptions::default(),
       emit_options: EmitOptions::default(),
