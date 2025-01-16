@@ -2694,6 +2694,10 @@ name = "sys_traits"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b46ac05dfbe9fd3a9703eff20e17f5b31e7b6a54daf27a421dcd56c7a27ecdd"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "system-configuration"
