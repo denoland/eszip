@@ -49,6 +49,7 @@ anyhow = "1"
 async-trait = "0.1.68"
 base64 = "0.21.0"
 deno_ast = { workspace = true }
+deno_error.workspace = true
 deno_graph = { workspace = true }
 deno_npm = "0.27.2"
 deno_semver = "0.7.1"
