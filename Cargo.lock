@@ -744,6 +744,7 @@ dependencies = [
  "base64",
  "criterion",
  "deno_ast",
+ "deno_error",
  "deno_graph",
  "deno_npm",
  "deno_semver",

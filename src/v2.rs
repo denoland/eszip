@@ -1552,8 +1552,9 @@ impl EszipV2 {
           }
           Ok(None)
         }
-        | deno_graph::Module::External(_)
-        | deno_graph::Module::Node(_) => Ok(None),
+        deno_graph::Module::External(_) | deno_graph::Module::Node(_) => {
+          Ok(None)
+        }
       }
     }
 
@@ -1981,6 +1982,7 @@ mod tests {
   use async_trait::async_trait;
   use deno_ast::EmitOptions;
   use deno_ast::TranspileOptions;
+  use deno_error::JsErrorBox;
   use deno_graph::source::CacheSetting;
   use deno_graph::source::LoadOptions;
   use deno_graph::source::LoadResponse;
@@ -2078,7 +2080,12 @@ mod tests {
           })
         }
         "data" => {
-          let result = deno_graph::source::load_data_url(specifier);
+          let result =
+            deno_graph::source::load_data_url(specifier).map_err(|err| {
+              deno_graph::source::LoadError::Other(Arc::new(
+                JsErrorBox::from_err(err),
+              ))
+            });
           Box::pin(async move { result })
         }
         "npm" => Box::pin(async { Ok(None) }),
@@ -2100,7 +2107,7 @@ mod tests {
       self
         .0
         .resolve(specifier, &referrer_range.specifier)
-        .map_err(|err| ResolveError::Other(err.into()))
+        .map_err(ResolveError::ImportMap)
     }
   }
 
@@ -2708,7 +2715,7 @@ mod tests {
     };
     let import_map = import_map::parse_from_json(
       specifier.clone(),
-      &String::from_utf8(content.to_vec()).unwrap(),
+      core::str::from_utf8(&content).unwrap(),
     )
     .unwrap();
     let roots = vec![ModuleSpecifier::parse("file:///mapped.js").unwrap()];
@@ -2790,7 +2797,7 @@ mod tests {
     };
     let import_map = import_map::parse_from_json(
       specifier.clone(),
-      &String::from_utf8(content.to_vec()).unwrap(),
+      core::str::from_utf8(&content).unwrap(),
     )
     .unwrap();
     let roots =
@@ -2862,7 +2869,7 @@ mod tests {
     let import_map = import_map::parse_from_value(
       specifier.clone(),
       jsonc_parser::parse_to_serde_value(
-        &String::from_utf8(content.to_vec()).unwrap(),
+        core::str::from_utf8(&content).unwrap(),
         &Default::default(),
       )
       .unwrap()
@@ -2944,7 +2951,7 @@ mod tests {
     let import_map = import_map::parse_from_value(
       specifier.clone(),
       jsonc_parser::parse_to_serde_value(
-        &String::from_utf8(content.to_vec()).unwrap(),
+        core::str::from_utf8(&content).unwrap(),
         &Default::default(),
       )
       .unwrap()
@@ -3911,7 +3918,7 @@ mod tests {
         .iter()
         .map(|(key, value)| {
           (
-            key.to_string(),
+            deno_semver::StackString::from_str(key),
             NpmPackageId::from_serialized(value).unwrap(),
           )
         })

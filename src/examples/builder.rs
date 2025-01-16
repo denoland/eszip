@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use deno_ast::EmitOptions;
 use deno_ast::TranspileOptions;
+use deno_error::JsErrorBox;
 use deno_graph::source::CacheSetting;
 use deno_graph::source::ResolveError;
 use deno_graph::BuildOptions;
@@ -112,7 +113,7 @@ impl deno_graph::source::Resolver for Resolver {
     if let Some(import_map) = &self.0 {
       import_map
         .resolve(specifier, &referrer_range.specifier)
-        .map_err(|e| ResolveError::Other(e.into()))
+        .map_err(ResolveError::ImportMap)
     } else {
       Ok(deno_graph::resolve_import(
         specifier,
@@ -134,10 +135,25 @@ impl deno_graph::source::Loader for Loader {
 
     Box::pin(async move {
       match specifier.scheme() {
-        "data" => deno_graph::source::load_data_url(&specifier),
+        "data" => {
+          deno_graph::source::load_data_url(&specifier).map_err(|err| {
+            deno_graph::source::LoadError::Other(Arc::new(
+              JsErrorBox::from_err(err),
+            ))
+          })
+        }
         "file" => {
-          let path = std::fs::canonicalize(specifier.to_file_path().unwrap())?;
-          let content = std::fs::read(&path)?;
+          let path = std::fs::canonicalize(specifier.to_file_path().unwrap())
+            .map_err(|err| {
+            deno_graph::source::LoadError::Other(Arc::new(
+              JsErrorBox::from_err(err),
+            ))
+          })?;
+          let content = std::fs::read(&path).map_err(|err| {
+            deno_graph::source::LoadError::Other(Arc::new(
+              JsErrorBox::from_err(err),
+            ))
+          })?;
           Ok(Some(deno_graph::source::LoadResponse::Module {
             specifier: Url::from_file_path(&path).unwrap(),
             maybe_headers: None,
@@ -145,11 +161,19 @@ impl deno_graph::source::Loader for Loader {
           }))
         }
         "http" | "https" => {
-          let resp = reqwest::get(specifier.as_str()).await?;
+          let resp = reqwest::get(specifier.as_str()).await.map_err(|err| {
+            deno_graph::source::LoadError::Other(Arc::new(JsErrorBox::generic(
+              err.to_string(),
+            )))
+          })?;
           if resp.status() == StatusCode::NOT_FOUND {
             Ok(None)
           } else {
-            let resp = resp.error_for_status()?;
+            let resp = resp.error_for_status().map_err(|err| {
+              deno_graph::source::LoadError::Other(Arc::new(
+                JsErrorBox::generic(err.to_string()),
+              ))
+            })?;
             let mut headers = HashMap::new();
             for key in resp.headers().keys() {
               let key_str = key.to_string();
@@ -162,7 +186,11 @@ impl deno_graph::source::Loader for Loader {
               headers.insert(key_str, values_str);
             }
             let url = resp.url().clone();
-            let content = resp.bytes().await?;
+            let content = resp.bytes().await.map_err(|err| {
+              deno_graph::source::LoadError::Other(Arc::new(
+                JsErrorBox::generic(err.to_string()),
+              ))
+            })?;
             Ok(Some(deno_graph::source::LoadResponse::Module {
               specifier: url,
               maybe_headers: Some(headers),
@@ -170,10 +198,14 @@ impl deno_graph::source::Loader for Loader {
             }))
           }
         }
-        _ => Err(anyhow::anyhow!(
-          "unsupported scheme: {}",
-          specifier.scheme()
-        )),
+        _ => {
+          let err: Arc<dyn deno_error::JsErrorClass> =
+            Arc::new(JsErrorBox::generic(format!(
+              "unsupported scheme: {}",
+              specifier.scheme()
+            )));
+          Err(deno_graph::source::LoadError::Other(err))
+        }
       }
     })
   }

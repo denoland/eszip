@@ -50,6 +50,7 @@ base64 = "0.21.0"
 deno_ast = { workspace = true }
 deno_graph = { workspace = true }
 deno_npm = "0.27.2"
+deno_error = "0.5.5"
 deno_semver = "0.7.1"
 futures = "0.3.26"
 hashlink = "0.8.2"
