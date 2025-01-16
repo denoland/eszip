@@ -15,6 +15,7 @@ deno_graph = { version = "0.87.0", default-features = false }
 deno_ast = { version = "0.44.0", features = ["transpiling"] }
 import_map = "0.21.0"
 serde = "1"
+deno_error = "0.5.5"
 
 [profile.release]
 codegen-units = 1
@@ -50,7 +51,6 @@ base64 = "0.21.0"
 deno_ast = { workspace = true }
 deno_graph = { workspace = true }
 deno_npm = "0.27.2"
-deno_error = "0.5.5"
 deno_semver = "0.7.1"
 futures = "0.3.26"
 hashlink = "0.8.2"

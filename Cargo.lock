@@ -744,7 +744,6 @@ dependencies = [
  "base64",
  "criterion",
  "deno_ast",
- "deno_error",
  "deno_graph",
  "deno_npm",
  "deno_semver",
@@ -771,6 +770,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
+ "deno_error",
  "deno_graph",
  "eszip",
  "futures",
@@ -779,6 +779,7 @@ dependencies = [
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
+ "sys_traits",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
