@@ -28,6 +28,7 @@ use deno_npm::NpmPackageId;
 use deno_semver::npm::NpmPackageNvReference;
 use deno_semver::package::PackageNv;
 use deno_semver::package::PackageReq;
+use deno_semver::StackString;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
 use hashlink::linked_hash_map::LinkedHashMap;
@@ -1782,7 +1783,7 @@ async fn read_npm_section<R: futures::io::AsyncRead + Unpin>(
           ));
         }
       };
-      dependencies.insert(key, id.clone());
+      dependencies.insert(StackString::from_string(key), id.clone());
     }
     final_packages.push(SerializedNpmResolutionSnapshotPackage {
       id: id.clone(),
