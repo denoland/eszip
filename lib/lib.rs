@@ -3,6 +3,7 @@
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 
+use deno_error::JsErrorBox;
 use deno_graph::source::load_data_url;
 use deno_graph::source::CacheInfo;
 use deno_graph::source::LoadFuture;
@@ -329,7 +330,7 @@ pub async fn build_eszip(
         imports: Vec::new(),
         passthrough_jsr_specifiers: false,
         executor: Default::default(),
-        file_system: Default::default(),
+        file_system: &sys_traits::impls::RealSys,
         jsr_url_provider: Default::default(),
         locker: None,
         npm_resolver: None,
@@ -385,7 +386,13 @@ impl Loader for GraphLoader {
     }
 
     if specifier.scheme() == "data" {
-      Box::pin(std::future::ready(load_data_url(specifier)))
+      Box::pin(std::future::ready(load_data_url(specifier).map_err(
+        |err| {
+          deno_graph::source::LoadError::Other(Arc::new(JsErrorBox::from_err(
+            err,
+          )))
+        },
+      )))
     } else {
       let specifier = specifier.clone();
       let result = self.0.call2(
@@ -411,9 +418,12 @@ impl Loader for GraphLoader {
         response
           .map(|value| serde_wasm_bindgen::from_value(value).unwrap())
           .map_err(|err| {
-            anyhow::anyhow!(err
+            let err_str = err
               .as_string()
-              .unwrap_or_else(|| "an error occured during loading".to_string()))
+              .unwrap_or_else(|| "an error occured during loading".to_string());
+            deno_graph::source::LoadError::Other(Arc::new(JsErrorBox::generic(
+              err_str,
+            )))
           })
       })
     }
@@ -433,7 +443,7 @@ impl Resolver for GraphResolver {
     if let Some(import_map) = &self.0 {
       import_map
         .resolve(specifier, &referrer_range.specifier)
-        .map_err(|err| ResolveError::Other(err.into()))
+        .map_err(ResolveError::ImportMap)
     } else {
       Ok(deno_graph::resolve_import(
         specifier,
