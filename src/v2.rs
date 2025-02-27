@@ -89,8 +89,8 @@ enum HeaderFrameKind {
 pub struct EszipV2Modules(Arc<Mutex<LinkedHashMap<String, EszipV2Module>>>);
 
 impl EszipV2Modules {
-  pub(crate) async fn get_module_source<'a>(
-    &'a self,
+  pub(crate) async fn get_module_source(
+    &self,
     specifier: &str,
   ) -> Option<Arc<[u8]>> {
     poll_fn(|cx| {
@@ -114,8 +114,8 @@ impl EszipV2Modules {
     .await
   }
 
-  pub(crate) async fn take_module_source<'a>(
-    &'a self,
+  pub(crate) async fn take_module_source(
+    &self,
     specifier: &str,
   ) -> Option<Arc<[u8]>> {
     poll_fn(|cx| {
@@ -145,8 +145,8 @@ impl EszipV2Modules {
     .await
   }
 
-  pub(crate) async fn get_module_source_map<'a>(
-    &'a self,
+  pub(crate) async fn get_module_source_map(
+    &self,
     specifier: &str,
   ) -> Option<Arc<[u8]>> {
     poll_fn(|cx| {
@@ -170,8 +170,8 @@ impl EszipV2Modules {
     .await
   }
 
-  pub(crate) async fn take_module_source_map<'a>(
-    &'a self,
+  pub(crate) async fn take_module_source_map(
+    &self,
     specifier: &str,
   ) -> Option<Arc<[u8]>> {
     let source = poll_fn(|cx| {
