@@ -92,9 +92,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.81"
+version = "0.1.88"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e0c28dcc82d7c8ead5cb13beb15405b57b8546e93215673ff8ca0349a028107"
+checksum = "e539d3fca749fcee5236ab05e93a52867dd549cc157c8cb7f99595f3cedffdb5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -584,10 +584,11 @@ dependencies = [
 
 [[package]]
 name = "deno_lockfile"
-version = "0.24.0"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "632e835a53ed667d62fdd766c5780fe8361c831d3e3fbf1a760a0b7896657587"
+checksum = "bf38d2df0cfe7ca030a0328c2039afaba39d13c775be9d2cf5fd7705ad2b5c72"
 dependencies = [
+ "async-trait",
  "deno_semver",
  "serde",
  "serde_json",
@@ -608,9 +609,9 @@ dependencies = [
 
 [[package]]
 name = "deno_npm"
-version = "0.27.2"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4adceb4c34f10e837d0e3ae76e88dddefb13e83c05c1ef1699fa5519241c9d27"
+checksum = "352510920cdb72896495893f9baa344175df4f9317a24858c3c224a58f6f8d2d"
 dependencies = [
  "async-trait",
  "capacity_builder",
@@ -618,6 +619,7 @@ dependencies = [
  "deno_lockfile",
  "deno_semver",
  "futures",
+ "indexmap",
  "log",
  "monch",
  "serde",
