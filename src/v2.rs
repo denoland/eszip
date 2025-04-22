@@ -2120,24 +2120,6 @@ mod tests {
 
       #[async_trait(?Send)]
       impl deno_graph::source::NpmResolver for $resolver_name {
-        fn resolve_builtin_node_module(
-          &self,
-          _: &deno_ast::ModuleSpecifier,
-        ) -> Result<
-          Option<String>,
-          deno_graph::source::UnknownBuiltInNodeModuleError,
-        > {
-          Ok(None)
-        }
-
-        fn on_resolve_bare_builtin_node_module(
-          &self,
-          _: &str,
-          _: &deno_graph::Range,
-        ) {
-          unreachable!()
-        }
-
         fn load_and_cache_npm_package_info(&self, _: &str) {}
 
         async fn resolve_pkg_reqs(
