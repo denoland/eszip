@@ -327,6 +327,7 @@ pub async fn build_eszip(
         resolver: Some(&resolver),
         module_analyzer: &analyzer,
         is_dynamic: false,
+        skip_dynamic_deps: false,
         imports: Vec::new(),
         passthrough_jsr_specifiers: false,
         executor: Default::default(),
