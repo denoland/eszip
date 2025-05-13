@@ -11,8 +11,8 @@ license = "MIT"
 members = ["lib"]
 
 [workspace.dependencies]
-deno_graph = { version = "0.90.0", default-features = false }
-deno_ast = { version = "0.46.0", features = ["transpiling"] }
+deno_graph = { version = "0.91.0", default-features = false }
+deno_ast = { version = "0.47.0", features = ["transpiling"] }
 import_map = "0.21.0"
 serde = "1"
 deno_error = "0.5.6"
