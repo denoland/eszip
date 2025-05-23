@@ -2077,6 +2077,7 @@ mod tests {
             Ok(Some(LoadResponse::Module {
               content: source.into(),
               maybe_headers: None,
+              mtime: None,
               specifier,
             }))
           })
@@ -2153,7 +2154,7 @@ mod tests {
         specifier: &ModuleSpecifier,
         options: LoadOptions,
       ) -> deno_graph::source::LoadFuture {
-        if options.is_dynamic {
+        if options.in_dynamic_branch {
           unreachable!();
         }
         let scheme = specifier.scheme();
@@ -2175,6 +2176,7 @@ mod tests {
           Ok(Some(LoadResponse::Module {
             content: source.into(),
             maybe_headers: None,
+            mtime: None,
             specifier,
           }))
         })
@@ -2186,6 +2188,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &ExternalLoader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -2220,6 +2223,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -2265,6 +2269,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -2309,6 +2314,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -2372,6 +2378,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -2415,6 +2422,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -2469,6 +2477,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -2550,6 +2559,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -2682,7 +2692,7 @@ mod tests {
       &loader,
       &Url::parse("file:///import_map.json").unwrap(),
       LoadOptions {
-        is_dynamic: false,
+        in_dynamic_branch: false,
         was_dynamic_root: false,
         cache_setting: CacheSetting::Use,
         maybe_checksum: None,
@@ -2708,6 +2718,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
@@ -2764,7 +2775,7 @@ mod tests {
       &loader,
       &Url::parse("file:///import_map.json").unwrap(),
       LoadOptions {
-        is_dynamic: false,
+        in_dynamic_branch: false,
         was_dynamic_root: false,
         cache_setting: CacheSetting::Use,
         maybe_checksum: None,
@@ -2792,6 +2803,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
@@ -2835,7 +2847,7 @@ mod tests {
       &loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
       LoadOptions {
-        is_dynamic: false,
+        in_dynamic_branch: false,
         was_dynamic_root: false,
         cache_setting: CacheSetting::Use,
         maybe_checksum: None,
@@ -2866,6 +2878,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
@@ -2917,7 +2930,7 @@ mod tests {
       &loader,
       &Url::parse("file:///deno.jsonc").unwrap(),
       LoadOptions {
-        is_dynamic: false,
+        in_dynamic_branch: false,
         was_dynamic_root: false,
         cache_setting: CacheSetting::Use,
         maybe_checksum: None,
@@ -2948,6 +2961,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           resolver: Some(&ImportMapResolver(import_map.import_map)),
@@ -3016,6 +3030,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -3155,6 +3170,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -3211,6 +3227,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -3338,6 +3355,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -3454,6 +3472,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -3551,6 +3570,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -3620,6 +3640,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,
@@ -3928,6 +3949,7 @@ mod tests {
     graph
       .build(
         roots,
+        Vec::new(),
         &loader,
         BuildOptions {
           module_analyzer: &analyzer,

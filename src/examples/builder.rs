@@ -31,7 +31,7 @@ async fn main() {
         &loader,
         &import_map_url,
         deno_graph::source::LoadOptions {
-          is_dynamic: false,
+          in_dynamic_branch: false,
           was_dynamic_root: false,
           cache_setting: CacheSetting::Use,
           maybe_checksum: None,
@@ -61,6 +61,7 @@ async fn main() {
   graph
     .build(
       vec![url],
+      Vec::new(),
       &loader,
       BuildOptions {
         resolver: Some(&Resolver(maybe_import_map)),
@@ -157,6 +158,7 @@ impl deno_graph::source::Loader for Loader {
           Ok(Some(deno_graph::source::LoadResponse::Module {
             specifier: Url::from_file_path(&path).unwrap(),
             maybe_headers: None,
+            mtime: None,
             content: Arc::from(content),
           }))
         }
@@ -193,6 +195,7 @@ impl deno_graph::source::Loader for Loader {
             })?;
             Ok(Some(deno_graph::source::LoadResponse::Module {
               specifier: url,
+              mtime: None,
               maybe_headers: Some(headers),
               content: Arc::from(content.as_ref()),
             }))

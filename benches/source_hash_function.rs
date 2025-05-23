@@ -169,6 +169,7 @@ async fn build_eszip(mb: usize) -> EszipV2 {
   graph
     .build(
       roots,
+      Vec::new(),
       &loader,
       BuildOptions {
         module_analyzer: &analyzer,
