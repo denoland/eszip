@@ -284,7 +284,7 @@ pub async fn build_eszip(
       &loader,
       &import_map_url,
       deno_graph::source::LoadOptions {
-        is_dynamic: false,
+        in_dynamic_branch: false,
         was_dynamic_root: false,
         cache_setting: deno_graph::source::CacheSetting::Use,
         maybe_checksum: None,
@@ -322,13 +322,13 @@ pub async fn build_eszip(
   graph
     .build(
       roots,
+      Vec::new(),
       &loader,
       BuildOptions {
         resolver: Some(&resolver),
         module_analyzer: &analyzer,
         is_dynamic: false,
         skip_dynamic_deps: false,
-        imports: Vec::new(),
         passthrough_jsr_specifiers: false,
         executor: Default::default(),
         file_system: &sys_traits::impls::RealSys,
@@ -400,7 +400,7 @@ impl Loader for GraphLoader {
         &JsValue::null(),
         &JsValue::from(specifier.to_string()),
         &serde_wasm_bindgen::to_value(&JsLoadOptions {
-          is_dynamic: options.is_dynamic,
+          is_dynamic: options.in_dynamic_branch,
           cache_setting: options.cache_setting.as_js_str(),
           checksum: options.maybe_checksum.map(|c| c.into_string()),
         })
