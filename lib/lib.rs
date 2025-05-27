@@ -327,15 +327,8 @@ pub async fn build_eszip(
       BuildOptions {
         resolver: Some(&resolver),
         module_analyzer: &analyzer,
-        is_dynamic: false,
-        skip_dynamic_deps: false,
-        passthrough_jsr_specifiers: false,
-        executor: Default::default(),
         file_system: &sys_traits::impls::RealSys,
-        jsr_url_provider: Default::default(),
-        locker: None,
-        npm_resolver: None,
-        reporter: None,
+        ..Default::default()
       },
     )
     .await;
