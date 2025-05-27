@@ -4,7 +4,7 @@
 // deno-fmt-ignore-file
 /// <reference types="./eszip_wasm.generated.d.ts" />
 
-// source-hash: bceefd9c1e07769937a270ffae526a8287a76139
+// source-hash: e327e0ee6e58b74aace019b7180a9f78fec418b4
 let wasm;
 
 const cachedTextDecoder = typeof TextDecoder !== "undefined"
@@ -486,7 +486,7 @@ const imports = {
       const ret = getObject(arg0) === getObject(arg1);
       return ret;
     },
-    __wbg_readDirSync_11315911ce928716: function () {
+    __wbg_readDirSync_c66a88c4ad580cb8: function () {
       return handleError(function (arg0, arg1) {
         const ret = Deno.readDirSync(getStringFromWasm0(arg0, arg1));
         return addHeapObject(ret);
@@ -725,9 +725,13 @@ const imports = {
       const ret = Object.entries(getObject(arg0));
       return addHeapObject(ret);
     },
-    __wbg_static_accessor_BUILD_1b10d4ca252911e5: function () {
+    __wbg_static_accessor_BUILD_74186f15a33e94ad: function () {
       const ret = Deno.build;
       return addHeapObject(ret);
+    },
+    __wbindgen_is_null: function (arg0) {
+      const ret = getObject(arg0) === null;
+      return ret;
     },
     __wbg_instanceof_Date_f65cf97fb83fc369: function (arg0) {
       let result;
@@ -741,10 +745,6 @@ const imports = {
     },
     __wbg_getTime_2bc4375165f02d15: function (arg0) {
       const ret = getObject(arg0).getTime();
-      return ret;
-    },
-    __wbindgen_is_null: function (arg0) {
-      const ret = getObject(arg0) === null;
       return ret;
     },
     __wbindgen_bigint_get_as_i64: function (arg0, arg1) {
@@ -791,7 +791,7 @@ const imports = {
       const ret = getObject(arg0).queueMicrotask;
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper10353: function (arg0, arg1, arg2) {
+    __wbindgen_closure_wrapper10356: function (arg0, arg1, arg2) {
       const ret = makeMutClosure(arg0, arg1, 806, __wbg_adapter_46);
       return addHeapObject(ret);
     },
