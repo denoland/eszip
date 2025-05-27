@@ -563,9 +563,9 @@ dependencies = [
 
 [[package]]
 name = "deno_graph"
-version = "0.92.0"
+version = "0.93.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51fed59054a55f3cbd0db096168c58836ca9f94c7b7c1b0730f63064d7dc0f9e"
+checksum = "8f7b63c5334fd2ee41db14596a5b03c37ce90dff057c1da9f573de515a3bb2c0"
 dependencies = [
  "async-trait",
  "capacity_builder",
@@ -2755,12 +2755,24 @@ dependencies = [
 
 [[package]]
 name = "sys_traits"
-version = "0.1.8"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "638f0e61b5134e56b2abdf4c704fd44672603f15ca09013f314649056f3fee4d"
+checksum = "db83fa685d1637625266341c69bf6e810632f5a53502d5d03fde8fcbcd3153f2"
 dependencies = [
  "js-sys",
+ "sys_traits_macros",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "sys_traits_macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "181f22127402abcf8ee5c83ccd5b408933fec36a6095cf82cda545634692657e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
