@@ -11,7 +11,7 @@ license = "MIT"
 members = ["lib"]
 
 [workspace.dependencies]
-deno_graph = { version = "0.94.0", default-features = false }
+deno_graph = { version = "0.95.0", default-features = false }
 deno_ast = { version = "0.48.0", features = ["transpiling"] }
 import_map = "0.22.0"
 serde = "1"
@@ -50,7 +50,7 @@ async-trait = "0.1.68"
 base64 = "0.21.0"
 deno_ast = { workspace = true }
 deno_error.workspace = true
-deno_graph = { workspace = true }
+deno_graph = { workspace = true, features = ["swc"] }
 deno_npm = { version = "0.34.0" }
 deno_semver = "0.8.0"
 futures = "0.3.26"

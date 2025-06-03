@@ -317,7 +317,7 @@ pub async fn build_eszip(
     (None, None)
   };
   let resolver = GraphResolver(maybe_import_map);
-  let analyzer = deno_graph::CapturingModuleAnalyzer::default();
+  let analyzer = deno_graph::ast::CapturingModuleAnalyzer::default();
   let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
   graph
     .build(
