@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use deno_ast::{EmitOptions, TranspileOptions};
 use deno_graph::{
   source::{MemoryLoader, Source},
-  BuildOptions, CapturingModuleAnalyzer, GraphKind, ModuleGraph,
+  BuildOptions, ast::CapturingModuleAnalyzer, GraphKind, ModuleGraph,
   ModuleSpecifier,
 };
 use eszip::{v2::Checksum, EszipV2};
