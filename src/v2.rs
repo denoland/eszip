@@ -1400,7 +1400,7 @@ impl EszipV2 {
           let source_map: Arc<[u8]>;
           match module.media_type {
             deno_graph::MediaType::JavaScript | deno_graph::MediaType::Mjs => {
-              source = Arc::from(module.source.clone());
+              source = Arc::from(module.source.text.clone());
               source_map = Arc::new([]);
             }
             deno_graph::MediaType::Jsx
@@ -1411,7 +1411,7 @@ impl EszipV2 {
             | deno_graph::MediaType::Dmts => {
               let parsed_source = parser.parse_program(ParseOptions {
                 specifier: &module.specifier,
-                source: module.source.clone(),
+                source: module.source.text.clone(),
                 media_type: module.media_type,
                 scope_analysis: false,
               })?;
@@ -1485,7 +1485,7 @@ impl EszipV2 {
         deno_graph::Module::Json(module) => {
           let eszip_module = EszipV2Module::Module {
             kind: ModuleKind::Json,
-            source: EszipV2SourceSlot::Ready(module.source.clone().into()),
+            source: EszipV2SourceSlot::Ready(module.source.text.clone().into()),
             source_map: EszipV2SourceSlot::Ready(Arc::new([])),
           };
           modules.insert(specifier_key.into_owned(), eszip_module);
@@ -1985,6 +1985,7 @@ mod tests {
   use deno_ast::EmitOptions;
   use deno_ast::TranspileOptions;
   use deno_error::JsErrorBox;
+  use deno_graph::ast::CapturingModuleAnalyzer;
   use deno_graph::source::CacheSetting;
   use deno_graph::source::LoadOptions;
   use deno_graph::source::LoadResponse;
@@ -1992,7 +1993,6 @@ mod tests {
   use deno_graph::source::ResolveError;
   use deno_graph::source::Source;
   use deno_graph::BuildOptions;
-  use deno_graph::ast::CapturingModuleAnalyzer;
   use deno_graph::GraphKind;
   use deno_graph::ModuleGraph;
   use deno_graph::ModuleSpecifier;
