@@ -486,7 +486,7 @@ const imports = {
       const ret = getObject(arg0) === getObject(arg1);
       return ret;
     },
-    __wbg_readDirSync_c66a88c4ad580cb8: function () {
+    __wbg_readDirSync_e6d443f4e3a6b1da: function () {
       return handleError(function (arg0, arg1) {
         const ret = Deno.readDirSync(getStringFromWasm0(arg0, arg1));
         return addHeapObject(ret);
@@ -725,8 +725,8 @@ const imports = {
       const ret = Object.entries(getObject(arg0));
       return addHeapObject(ret);
     },
-    __wbg_static_accessor_BUILD_74186f15a33e94ad: function () {
-      const ret = Deno.build;
+    __wbg_static_accessor_BUILD_OS_e57aca8eb7ed7824: function () {
+      const ret = Deno.build.os;
       return addHeapObject(ret);
     },
     __wbindgen_is_null: function (arg0) {
@@ -791,8 +791,8 @@ const imports = {
       const ret = getObject(arg0).queueMicrotask;
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper10374: function (arg0, arg1, arg2) {
-      const ret = makeMutClosure(arg0, arg1, 808, __wbg_adapter_46);
+    __wbindgen_closure_wrapper10392: function (arg0, arg1, arg2) {
+      const ret = makeMutClosure(arg0, arg1, 809, __wbg_adapter_46);
       return addHeapObject(ret);
     },
   },
