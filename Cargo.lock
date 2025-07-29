@@ -617,9 +617,9 @@ dependencies = [
 
 [[package]]
 name = "deno_lockfile"
-version = "0.29.0"
+version = "0.30.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b66d23224880993944b71a6f552ba14e1bd61b63909ecad45eaff988b6bc90f"
+checksum = "0d4346e56cda020df5da35a3ec2624f09bd77c9f5ed18d903915007825fe9d3f"
 dependencies = [
  "async-trait",
  "deno_semver",
@@ -642,9 +642,9 @@ dependencies = [
 
 [[package]]
 name = "deno_npm"
-version = "0.34.0"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bac919755882524e95f2ed8b1770c1d95265a82d9a1db3fb004efa8c226fc8e"
+checksum = "536a02c258d4a3fcbbbb898562e230bbe5939ac2eb7c2058718508304e4ab7cf"
 dependencies = [
  "async-trait",
  "capacity_builder",
