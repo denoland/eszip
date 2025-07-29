@@ -1,0 +1,1 @@
+export function copy_bytes(from, to, dst) { new Uint8Array(to.buffer).set(from, dst) }
