@@ -1,6 +1,6 @@
 [package]
 name = "eszip"
-version = "0.97.0"
+version = "0.96.0"
 authors = ["the Deno authors"]
 edition = "2021"
 repository = "https://github.com/denoland/eszip"
@@ -51,7 +51,7 @@ base64 = "0.21.0"
 deno_ast = { workspace = true }
 deno_error.workspace = true
 deno_graph = { workspace = true, features = ["swc"] }
-deno_npm = { version = "0.37.0" }
+deno_npm = { version = "0.38.0" }
 deno_semver = "0.9.0"
 futures = "0.3.26"
 hashlink = "0.8.2"
