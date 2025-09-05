@@ -17,18 +17,18 @@ use deno_ast::ModuleSpecifier;
 use deno_ast::SourceMapOption;
 use deno_ast::TranspileModuleOptions;
 use deno_ast::TranspileOptions;
+use deno_graph::ModuleGraph;
 use deno_graph::ast::CapturingEsParser;
 use deno_graph::ast::EsParser;
 use deno_graph::ast::ParseOptions;
-use deno_graph::ModuleGraph;
+use deno_npm::NpmPackageId;
 use deno_npm::resolution::SerializedNpmResolutionSnapshot;
 use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
 use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
-use deno_npm::NpmPackageId;
+use deno_semver::StackString;
 use deno_semver::npm::NpmPackageNvReference;
 use deno_semver::package::PackageNv;
 use deno_semver::package::PackageReq;
-use deno_semver::StackString;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
 use hashlink::linked_hash_map::LinkedHashMap;
@@ -36,10 +36,10 @@ use indexmap::IndexMap;
 use indexmap::IndexSet;
 pub use url::Url;
 
-use crate::error::ParseError;
 use crate::Module;
 use crate::ModuleInner;
 pub use crate::ModuleKind;
+use crate::error::ParseError;
 
 const ESZIP_V2_MAGIC: &[u8; 8] = b"ESZIP_V2";
 const ESZIP_V2_1_MAGIC: &[u8; 8] = b"ESZIP2.1";
@@ -122,7 +122,7 @@ impl EszipV2Modules {
       let mut modules = self.0.lock().unwrap();
       let module = modules.get_mut(specifier).unwrap();
       let slot = match module {
-        EszipV2Module::Module { ref mut source, .. } => source,
+        EszipV2Module::Module { source, .. } => source,
         EszipV2Module::Redirect { .. } => {
           panic!("redirects are already resolved")
         }
@@ -946,7 +946,7 @@ impl EszipV2 {
           let mut modules = modules.lock().unwrap();
           let module = modules.get_mut(&specifier).expect("module not found");
           match module {
-            EszipV2Module::Module { ref mut source, .. } => {
+            EszipV2Module::Module { source, .. } => {
               let slot = std::mem::replace(
                 source,
                 EszipV2SourceSlot::Ready(Arc::from(
@@ -986,9 +986,7 @@ impl EszipV2 {
           let mut modules = modules.lock().unwrap();
           let module = modules.get_mut(&specifier).expect("module not found");
           match module {
-            EszipV2Module::Module {
-              ref mut source_map, ..
-            } => {
+            EszipV2Module::Module { source_map, .. } => {
               let slot = std::mem::replace(
                 source_map,
                 EszipV2SourceSlot::Ready(Arc::from(
@@ -1698,7 +1696,7 @@ impl EszipV2 {
             inner: ModuleInner::V2(self.modules.clone()),
           });
         }
-        EszipV2Module::Redirect { ref target } => {
+        EszipV2Module::Redirect { target } => {
           specifier = target;
           if visited.contains(specifier) {
             return None;
@@ -1985,6 +1983,10 @@ mod tests {
   use deno_ast::EmitOptions;
   use deno_ast::TranspileOptions;
   use deno_error::JsErrorBox;
+  use deno_graph::BuildOptions;
+  use deno_graph::GraphKind;
+  use deno_graph::ModuleGraph;
+  use deno_graph::ModuleSpecifier;
   use deno_graph::ast::CapturingModuleAnalyzer;
   use deno_graph::source::CacheSetting;
   use deno_graph::source::LoadOptions;
@@ -1992,13 +1994,9 @@ mod tests {
   use deno_graph::source::MemoryLoader;
   use deno_graph::source::ResolveError;
   use deno_graph::source::Source;
-  use deno_graph::BuildOptions;
-  use deno_graph::GraphKind;
-  use deno_graph::ModuleGraph;
-  use deno_graph::ModuleSpecifier;
+  use deno_npm::NpmPackageId;
   use deno_npm::resolution::SerializedNpmResolutionSnapshot;
   use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
-  use deno_npm::NpmPackageId;
   use deno_semver::npm::NpmPackageNvReference;
   use deno_semver::package::PackageNv;
   use deno_semver::package::PackageReq;
@@ -2009,10 +2007,10 @@ mod tests {
   use url::Url;
 
   use super::Checksum;
-  use super::EszipV2;
   use super::ESZIP_V2_2_MAGIC;
-  use crate::v2::FromGraphNpmPackages;
+  use super::EszipV2;
   use crate::ModuleKind;
+  use crate::v2::FromGraphNpmPackages;
 
   struct FileLoader {
     base_dir: String,

@@ -223,10 +223,10 @@ pub enum ModuleKind {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use futures::io::AllowStdIo;
-  use futures::stream;
   use futures::StreamExt;
   use futures::TryStreamExt;
+  use futures::io::AllowStdIo;
+  use futures::stream;
 
   #[tokio::test]
   async fn parse_v1() {
