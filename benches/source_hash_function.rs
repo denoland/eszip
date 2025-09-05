@@ -1,11 +1,11 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use deno_ast::{EmitOptions, TranspileOptions};
 use deno_graph::{
+  BuildOptions, GraphKind, ModuleGraph, ModuleSpecifier,
+  ast::CapturingModuleAnalyzer,
   source::{MemoryLoader, Source},
-  BuildOptions, ast::CapturingModuleAnalyzer, GraphKind, ModuleGraph,
-  ModuleSpecifier,
 };
-use eszip::{v2::Checksum, EszipV2};
+use eszip::{EszipV2, v2::Checksum};
 use futures::io::{AllowStdIo, BufReader};
 
 #[cfg(feature = "sha256")]
