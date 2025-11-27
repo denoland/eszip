@@ -4,7 +4,7 @@
 // deno-fmt-ignore-file
 /// <reference types="./eszip_wasm.generated.d.ts" />
 
-// source-hash: 31b03eaa637aeb456387ad555abd60c2568fed65
+// source-hash: 3d3e71999a9458db98914e5f6343275cdefcad78
 let wasm;
 
 const cachedTextDecoder = typeof TextDecoder !== "undefined"
@@ -455,6 +455,10 @@ const imports = {
       const ret = new Uint8Array(getObject(arg0));
       return addHeapObject(ret);
     },
+    __wbg_new_5dd86ebc917d9f52: function (arg0, arg1) {
+      const ret = new TypeError(getStringFromWasm0(arg0, arg1));
+      return addHeapObject(ret);
+    },
     __wbg_new_16b304a2cfa7ff4a: function () {
       const ret = new Array();
       return addHeapObject(ret);
@@ -466,10 +470,6 @@ const imports = {
     __wbg_push_a5b05aedc7234f9f: function (arg0, arg1) {
       const ret = getObject(arg0).push(getObject(arg1));
       return ret;
-    },
-    __wbg_new_5dd86ebc917d9f52: function (arg0, arg1) {
-      const ret = new TypeError(getStringFromWasm0(arg0, arg1));
-      return addHeapObject(ret);
     },
     __wbg_String_88810dfeb4021902: function (arg0, arg1) {
       const ret = String(getObject(arg1));
@@ -791,8 +791,8 @@ const imports = {
       const ret = getObject(arg0).queueMicrotask;
       return addHeapObject(ret);
     },
-    __wbindgen_closure_wrapper10871: function (arg0, arg1, arg2) {
-      const ret = makeMutClosure(arg0, arg1, 866, __wbg_adapter_46);
+    __wbindgen_closure_wrapper10929: function (arg0, arg1, arg2) {
+      const ret = makeMutClosure(arg0, arg1, 873, __wbg_adapter_46);
       return addHeapObject(ret);
     },
   },
