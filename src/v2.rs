@@ -27,7 +27,9 @@ use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
 use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
 use deno_semver::StackString;
 use deno_semver::npm::NpmPackageNvReference;
+use deno_semver::npm::NpmPackageReqReference;
 use deno_semver::package::PackageNv;
+use deno_semver::package::PackageNvReference;
 use deno_semver::package::PackageReq;
 use futures::future::poll_fn;
 use futures::io::AsyncReadExt;
@@ -346,6 +348,7 @@ pub struct FromGraphOptions<'a> {
   /// Note: When a path is above the base it will be left absolute.
   pub relative_file_base: Option<EszipRelativeFileBaseUrl<'a>>,
   pub npm_packages: Option<FromGraphNpmPackages>,
+  pub npm_snapshot: ValidSerializedNpmResolutionSnapshot,
 }
 
 /// Provide the source code of the Npm packages to include in the eszip
@@ -1069,16 +1072,6 @@ impl EszipV2 {
     modules.to_front(&specifier);
   }
 
-  /// Adds an npm resolution snapshot to the eszip.
-  pub fn add_npm_snapshot(
-    &mut self,
-    snapshot: ValidSerializedNpmResolutionSnapshot,
-  ) {
-    if !snapshot.as_serialized().packages.is_empty() {
-      self.npm_snapshot = Some(snapshot);
-    }
-  }
-
   /// Takes an npm resolution snapshot from the eszip.
   pub fn take_npm_snapshot(
     &mut self,
@@ -1361,6 +1354,7 @@ impl EszipV2 {
       visited: ToVisit,
       relative_file_base: Option<EszipRelativeFileBaseUrl>,
       npm_packages: Option<&mut FromGraphNpmPackages>,
+      npm_snapshot: &ValidSerializedNpmResolutionSnapshot,
     ) -> Result<
       Option<Box<dyn DoubleEndedIterator<Item = ToVisit<'a>> + 'a>>,
       anyhow::Error,
@@ -1489,16 +1483,26 @@ impl EszipV2 {
           modules.insert(specifier_key.into_owned(), eszip_module);
           Ok(None)
         }
-        deno_graph::Module::Npm(npm_module) => {
+        deno_graph::Module::Npm(_) => {
           let Some(npm_packages) = npm_packages else {
             return Ok(None);
           };
 
+          let req_ref =
+            NpmPackageReqReference::from_specifier(module.specifier())?;
+          let serialize_npm_snapshot = npm_snapshot.as_serialized();
+          let pkg_id = serialize_npm_snapshot.root_packages.get(req_ref.req())
+            .ok_or_else(|| anyhow::anyhow!("Could not resolve package req '{}' from graph because it was missing in the provided npm snapshot.", req_ref.req()))?;
+          let pkg_nv = &pkg_id.nv;
+          let pkg_nv_reference =
+            NpmPackageNvReference::new(PackageNvReference {
+              nv: pkg_nv.clone(),
+              sub_path: req_ref.sub_path().map(|s| s.into()),
+            });
+
           if visited.should_visit_package_meta() {
-            let meta_modules = npm_packages
-              .take_meta_modules(npm_module.nv_reference.nv().clone());
-            let package_jsons = npm_packages
-              .take_package_jsons(npm_module.nv_reference.nv().clone());
+            let meta_modules = npm_packages.take_meta_modules(pkg_nv.clone());
+            let package_jsons = npm_packages.take_package_jsons(pkg_nv.clone());
 
             for meta_module in
               meta_modules.into_iter().chain(package_jsons).flatten()
@@ -1513,15 +1517,14 @@ impl EszipV2 {
               );
             }
           } else if visited.should_visit_whole_package() {
-            let package =
-              npm_packages.take_package(npm_module.nv_reference.nv());
+            let package = npm_packages.take_package(pkg_nv);
             if let Some(mut package) = package {
               let modules_to_insert = package
                 .meta_modules
                 .into_iter()
                 .chain(package.package_jsons)
                 .flatten()
-                .chain(package.modules.shift_remove(&npm_module.nv_reference))
+                .chain(package.modules.shift_remove(&pkg_nv_reference))
                 .chain(package.modules.into_values());
               for module in modules_to_insert {
                 modules.insert(
@@ -1535,8 +1538,7 @@ impl EszipV2 {
               }
             }
           } else {
-            let module =
-              npm_packages.take_module(npm_module.nv_reference.clone());
+            let module = npm_packages.take_module(pkg_nv_reference);
             if let Some(module) = module {
               modules.insert(
                 module.specifier,
@@ -1590,6 +1592,7 @@ impl EszipV2 {
         module,
         opts.relative_file_base,
         npm_packages.as_mut(),
+        &opts.npm_snapshot,
       )?;
       if let Some(dependencies) = dependencies {
         let mut level_deps = Vec::new();
@@ -1636,7 +1639,7 @@ impl EszipV2 {
 
     Ok(Self {
       modules: EszipV2Modules(Arc::new(Mutex::new(modules))),
-      npm_snapshot: None,
+      npm_snapshot: Some(opts.npm_snapshot),
       options: Options::default(),
     })
   }
@@ -2203,6 +2206,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     let module = eszip.get_module("file:///external.ts").unwrap();
@@ -2238,6 +2242,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     let module = eszip.get_module("file:///main.ts").unwrap();
@@ -2284,6 +2289,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     let module = eszip.get_module("file:///json.ts").unwrap();
@@ -2329,6 +2335,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     let module = eszip.get_module("file:///wasm.ts").unwrap();
@@ -2393,6 +2400,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     let module = eszip.get_module("file:///dynamic.ts").unwrap();
@@ -2437,6 +2445,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     let module = eszip.get_module("file:///dynamic_data.ts").unwrap();
@@ -2492,6 +2501,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: Some((&base).into()),
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     let module = eszip.get_module("main.ts").unwrap();
@@ -2574,6 +2584,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: Some((&base).into()),
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     let module = eszip.get_module("main.ts").unwrap();
@@ -2734,6 +2745,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
@@ -2819,6 +2831,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     eszip.add_import_map(ModuleKind::Json, specifier.to_string(), content);
@@ -2894,6 +2907,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
@@ -2977,6 +2991,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
     eszip.add_import_map(ModuleKind::Jsonc, specifier.to_string(), content);
@@ -3054,7 +3069,7 @@ mod tests {
     }
     .into_valid()
     .unwrap();
-    let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
       module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
@@ -3062,13 +3077,9 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: original_snapshot.clone(),
     })
     .unwrap();
-    eszip.add_npm_snapshot(original_snapshot.clone());
-    let taken_snapshot = eszip.take_npm_snapshot();
-    assert!(taken_snapshot.is_some());
-    assert!(eszip.take_npm_snapshot().is_none());
-    eszip.add_npm_snapshot(taken_snapshot.unwrap());
     let bytes = eszip.into_bytes();
     insta::assert_debug_snapshot!(bytes);
     let cursor = Cursor::new(bytes);
@@ -3077,6 +3088,7 @@ mod tests {
         .await
         .unwrap();
     let snapshot = eszip.take_npm_snapshot().unwrap();
+    assert!(eszip.take_npm_snapshot().is_none());
     assert_eq!(snapshot.into_serialized(), {
       let mut original = original_snapshot.into_serialized();
       // this will be sorted for determinism
@@ -3183,7 +3195,7 @@ mod tests {
     }
     .into_valid()
     .unwrap();
-    let mut eszip = super::EszipV2::from_graph(super::FromGraphOptions {
+    let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
       module_kind_resolver: Default::default(),
       parser: analyzer.as_capturing_parser(),
@@ -3191,9 +3203,9 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: original_snapshot.clone(),
     })
     .unwrap();
-    eszip.add_npm_snapshot(original_snapshot.clone());
     let bytes = eszip.into_bytes();
     insta::assert_debug_snapshot!(bytes);
     let cursor = Cursor::new(bytes);
@@ -3275,6 +3287,20 @@ mod tests {
         ),
       ],
     );
+    let npm_snapshot = SerializedNpmResolutionSnapshot {
+      root_packages: root_pkgs(&[
+        ("a@1.2.2", "a@1.2.2"),
+        ("d@5.0.0", "d@5.0.0"),
+        ("other@99.99.99", "other@99.99.99"),
+      ]),
+      packages: Vec::from([
+        new_package("a@1.2.2", &[]),
+        new_package("d@5.0.0", &[]),
+        new_package("other@99.99.99", &[]),
+      ]),
+    }
+    .into_valid()
+    .unwrap();
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
       module_kind_resolver: Default::default(),
@@ -3283,6 +3309,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: Some(from_graph_npm_packages),
+      npm_snapshot,
     })
     .unwrap();
 
@@ -3420,6 +3447,22 @@ mod tests {
         ("z_0.1.2/foo", b"source code of z@0.1.2/foo".as_slice()),
       )],
     );
+    let npm_snapshot = SerializedNpmResolutionSnapshot {
+      root_packages: root_pkgs(&[
+        ("a@1.2.2", "a@1.2.2"),
+        ("d@5.0.0", "d@5.0.0"),
+        ("z@0.1.2", "z@0.1.2"),
+        ("other@99.99.99", "other@99.99.99"),
+      ]),
+      packages: Vec::from([
+        new_package("a@1.2.2", &[]),
+        new_package("d@5.0.0", &[]),
+        new_package("z@0.1.2", &[]),
+        new_package("other@99.99.99", &[]),
+      ]),
+    }
+    .into_valid()
+    .unwrap();
     let eszip = super::EszipV2::from_graph(super::FromGraphOptions {
       graph,
       module_kind_resolver: Default::default(),
@@ -3428,6 +3471,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: Some(from_graph_npm_packages),
+      npm_snapshot,
     })
     .unwrap();
 
@@ -3527,6 +3571,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: Some(from_graph_npm_packages),
+      npm_snapshot: Default::default(),
     })
     .unwrap();
 
@@ -3606,6 +3651,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: Some(from_graph_npm_packages),
+      npm_snapshot: Default::default(),
     })
     .unwrap();
 
@@ -3656,6 +3702,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap();
 
@@ -3964,6 +4011,7 @@ mod tests {
       emit_options: EmitOptions::default(),
       relative_file_base: None,
       npm_packages: None,
+      npm_snapshot: Default::default(),
     })
     .unwrap()
   }
