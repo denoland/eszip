@@ -774,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "eszip"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "anyhow",
  "async-trait",
