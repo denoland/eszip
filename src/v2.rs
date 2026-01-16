@@ -27,7 +27,6 @@ use deno_npm::resolution::SerializedNpmResolutionSnapshotPackage;
 use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
 use deno_semver::StackString;
 use deno_semver::npm::NpmPackageNvReference;
-use deno_semver::npm::NpmPackageReqReference;
 use deno_semver::package::PackageNv;
 use deno_semver::package::PackageNvReference;
 use deno_semver::package::PackageReq;
@@ -1483,13 +1482,12 @@ impl EszipV2 {
           modules.insert(specifier_key.into_owned(), eszip_module);
           Ok(None)
         }
-        deno_graph::Module::Npm(_) => {
+        deno_graph::Module::Npm(module) => {
           let Some(npm_packages) = npm_packages else {
             return Ok(None);
           };
 
-          let req_ref =
-            NpmPackageReqReference::from_specifier(module.specifier())?;
+          let req_ref = &module.pkg_req_ref;
           let serialize_npm_snapshot = npm_snapshot.as_serialized();
           let pkg_id = serialize_npm_snapshot.root_packages.get(req_ref.req())
             .ok_or_else(|| anyhow::anyhow!("Could not resolve package req '{}' from graph because it was missing in the provided npm snapshot.", req_ref.req()))?;
@@ -2111,12 +2109,12 @@ mod tests {
       self
         .0
         .resolve(specifier, &referrer_range.specifier)
-        .map_err(ResolveError::ImportMap)
+        .map_err(ResolveError::from_err)
     }
   }
 
   macro_rules! mock_npm_resolver {
-    ($resolver_name:ident { $($req_name:literal => $nv:literal),+$(,)?} ) => {
+    ($resolver_name:ident { $($req_name:literal),+$(,)?} ) => {
       #[derive(Debug)]
       struct $resolver_name;
 
@@ -2132,7 +2130,7 @@ mod tests {
             results: package_reqs
               .iter()
               .map(|req| match &*req.name {
-                $($req_name => Ok(PackageNv::from_str($nv).unwrap())),+,
+                $($req_name => Ok(())),+,
                 _ => unreachable!(),
               })
               .collect(),
@@ -3228,9 +3226,9 @@ mod tests {
 
     mock_npm_resolver!(
       NpmResolver {
-        "a" => "a@1.2.2",
-        "d" => "d@5.0.0",
-        "other" => "other@99.99.99",
+        "a",
+        "d",
+        "other",
       }
     );
 
@@ -3289,9 +3287,9 @@ mod tests {
     );
     let npm_snapshot = SerializedNpmResolutionSnapshot {
       root_packages: root_pkgs(&[
-        ("a@1.2.2", "a@1.2.2"),
-        ("d@5.0.0", "d@5.0.0"),
-        ("other@99.99.99", "other@99.99.99"),
+        ("a@^1.2", "a@1.2.2"),
+        ("d", "d@5.0.0"),
+        ("other", "other@99.99.99"),
       ]),
       packages: Vec::from([
         new_package("a@1.2.2", &[]),
@@ -3371,9 +3369,9 @@ mod tests {
 
     mock_npm_resolver!(
       NpmResolver {
-        "a" => "a@1.2.2",
-        "d" => "d@5.0.0",
-        "other" => "other@99.99.99",
+        "a",
+        "d",
+        "other",
       }
     );
 
@@ -3449,10 +3447,10 @@ mod tests {
     );
     let npm_snapshot = SerializedNpmResolutionSnapshot {
       root_packages: root_pkgs(&[
-        ("a@1.2.2", "a@1.2.2"),
-        ("d@5.0.0", "d@5.0.0"),
+        ("a@^1.2", "a@1.2.2"),
+        ("d", "d@5.0.0"),
         ("z@0.1.2", "z@0.1.2"),
-        ("other@99.99.99", "other@99.99.99"),
+        ("other", "other@99.99.99"),
       ]),
       packages: Vec::from([
         new_package("a@1.2.2", &[]),
@@ -3604,9 +3602,9 @@ mod tests {
 
     mock_npm_resolver!(
       NpmResolver {
-        "a" => "a@1.2.2",
-        "d" => "d@5.0.0",
-        "other" => "other@99.99.99",
+        "a",
+        "d",
+        "other",
       }
     );
 
