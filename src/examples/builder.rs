@@ -115,7 +115,7 @@ impl deno_graph::source::Resolver for Resolver {
     if let Some(import_map) = &self.0 {
       import_map
         .resolve(specifier, &referrer_range.specifier)
-        .map_err(ResolveError::ImportMap)
+        .map_err(ResolveError::from_err)
     } else {
       Ok(deno_graph::resolve_import(
         specifier,
