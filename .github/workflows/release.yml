@@ -20,11 +20,11 @@ jobs:
 
     steps:
       - name: Clone repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.DENOBOT_PAT }}
 
-      - uses: denoland/setup-deno@v1
+      - uses: denoland/setup-deno@v2
       - uses: dsherret/rust-toolchain-file@v1
 
       - name: Tag and release
