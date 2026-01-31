@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "build": "cp LICENSE js/LICENSE && RUSTFLAGS=--cfg=web_sys_unstable_apis deno run -A jsr:@deno/wasmbuild@0.17.1 --all-features --out js",
+    "build": "cp LICENSE js/LICENSE && RUSTFLAGS=--cfg=web_sys_unstable_apis deno run --trace-ops -A jsr:@deno/wasmbuild@0.17.1 --all-features --out js",
     "node": "deno run -A ./build_npm.ts 0.0.0",
     "test": "deno test -A js/",
     "fmt": "deno fmt && cargo fmt --all"
