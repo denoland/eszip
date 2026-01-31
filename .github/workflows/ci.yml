@@ -32,7 +32,7 @@ jobs:
       - name: Install Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: 48126d6a93e9809f9964b0ab65c9acd51baf41f0
+          deno-version: a8d4565575e23f2297e5c044aa362d3c2143840b
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
