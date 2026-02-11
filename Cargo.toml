@@ -1,73 +1,34 @@
 [package]
-name = "eszip"
-version = "0.109.0"
+name = "eszip_wasm"
+version = "0.0.0"
 authors = ["the Deno authors"]
-edition = "2024"
-repository = "https://github.com/denoland/eszip"
+edition = "2021"
 description = "A utility that can download JavaScript and TypeScript module graphs and store them locally in a special zip file"
 license = "MIT"
 
-[workspace]
-members = ["lib"]
-
-[workspace.dependencies]
-deno_graph = { version = "0.107.0", default-features = false }
-deno_ast = { version = "0.53.0", features = ["transpiling"] }
-import_map = "0.24.0"
-serde = "1"
-deno_error = "0.7.0"
+[lib]
+name = "eszip_wasm"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
 
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = "z"
 
-[lib]
-name = "eszip"
-path = "src/lib.rs"
-
-[[example]]
-name = "eszip_builder"
-path = "src/examples/builder.rs"
-
-[[example]]
-name = "eszip_viewer"
-path = "src/examples/viewer.rs"
-
-[[bench]]
-name = "source_hash_function"
-harness = false
-
-[features]
-xxhash3 = ["xxhash-rust/xxh3"]
-sha256 = ["dep:sha2"]
-# backwards compatibility. Disabling sha256 will break compatibility with eszips older than v2.2
-default = ["sha256"]
-
 [dependencies]
 anyhow = "1"
-async-trait = "0.1.68"
-base64 = "0.21.0"
-deno_ast = { workspace = true }
-deno_error.workspace = true
-deno_graph = { workspace = true, features = ["swc"] }
-deno_npm = { version = "0.43.0" }
-deno_semver = "0.9.0"
-futures = "0.3.26"
-hashlink = "0.8.2"
-indexmap = "2"
-serde = { workspace = true }
-serde_json = "1"
-sha2 = { version = "0.10.1", optional = true }
-thiserror = "2"
-url = "2.2.2"
-xxhash-rust = { version = "0.8", optional = true }
-
-[dev-dependencies]
-import_map = { workspace = true }
-pretty_assertions = "1"
-tokio = { version = "1", features = ["macros", "rt"] }
-reqwest = { version = "0.11.23", features = ["rustls-tls"] }
-jsonc-parser = { version = "0.23.0", features = ["serde"] }
-insta = "1.34.0"
-criterion = { version = "0.5", features = ["async_tokio"] }
+console_error_panic_hook = "0.1.7"
+deno_error = "0.7.0"
+deno_graph = { version = "0.107.0", default-features = false }
+eszip = "0.109.0"
+getrandom = { version = "*", features = ["js"] }
+import_map = "0.24.0"
+js-sys = "0.3.69"
+futures = "0.3.19"
+wasm-bindgen = "=0.2.92"
+wasm-bindgen-futures = "=0.4.42"
+serde = "1"
+serde-wasm-bindgen = "0.5.0"
+web-sys = { version = "=0.3.69", features = ["ReadableStreamByobReader"] }
+sys_traits = { version = "0.1.12", features = ["real", "wasm"] }

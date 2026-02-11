@@ -3,17 +3,12 @@ name: release
 on:
   workflow_dispatch:
     inputs:
-      releaseKind:
-        description: 'Kind of release'
-        default: 'minor'
-        type: choice
-        options:
-          - patch
-          - minor
+      version:
+        description: 'Version to release (e.g. 0.110.0)'
         required: true
 
 jobs:
-  rust:
+  release:
     name: release
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -24,11 +19,6 @@ jobs:
         with:
           token: ${{ secrets.DENOBOT_PAT }}
 
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: canary
-      - uses: dsherret/rust-toolchain-file@v1
-
       - name: Tag and release
         env:
           GITHUB_TOKEN: ${{ secrets.DENOBOT_PAT }}
@@ -36,4 +26,5 @@ jobs:
         run: |
           git config user.email "denobot@users.noreply.github.com"
           git config user.name "denobot"
-          deno run -A jsr:@deno/rust-automation@0.22.1/tasks/publish-release --${{github.event.inputs.releaseKind}} eszip
+          git tag v${{ github.event.inputs.version }}
+          git push origin v${{ github.event.inputs.version }}
