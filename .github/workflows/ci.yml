@@ -2,28 +2,11 @@ name: ci
 on: [push, pull_request]
 
 jobs:
-  build-rust:
-    runs-on: ubuntu-latest
-    env:
-      RUST_BACKTRACE: full
-      # https://github.com/rust-unofficial/patterns/blob/master/anti_patterns/deny-warnings.md
-      RUSTFLAGS: -D warnings
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install rust
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Clippy
-        run: |
-          cargo clippy --all-targets --locked --no-default-features
-          cargo clippy --all-targets --locked
-          cargo clippy --all-targets --locked --all-features
-      - name: Test
-        run: cargo test --all-features --locked
-
   build-javascript:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -62,7 +45,5 @@ jobs:
         if: |
           github.repository == 'denoland/eszip' &&
           startsWith(github.ref, 'refs/tags/')
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          cd npm/ && npm publish
+          cd npm/ && npm publish --provenance --access public

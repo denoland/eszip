@@ -2,384 +2,447 @@
 
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
-#![deny(clippy::unused_async)]
 
-mod error;
-pub mod v1;
-pub mod v2;
-
-use std::sync::Arc;
-
-use deno_npm::resolution::ValidSerializedNpmResolutionSnapshot;
-use futures::future::BoxFuture;
-use futures::future::LocalBoxFuture;
-use futures::io::AsyncBufReadExt;
-use futures::io::AsyncReadExt;
-use serde::Deserialize;
+use deno_error::JsErrorBox;
+use deno_graph::source::load_data_url;
+use deno_graph::source::CacheInfo;
+use deno_graph::source::LoadFuture;
+use deno_graph::source::LoadOptions;
+use deno_graph::source::Loader;
+use deno_graph::source::ResolveError;
+use deno_graph::source::Resolver;
+use deno_graph::BuildOptions;
+use deno_graph::GraphKind;
+use deno_graph::ModuleGraph;
+use deno_graph::ModuleSpecifier;
+use eszip::ModuleKind;
+use futures::io::AsyncRead;
+use futures::io::BufReader;
+use import_map::ImportMap;
+use js_sys::Promise;
+use js_sys::TypeError;
+use js_sys::Uint8Array;
 use serde::Serialize;
-use v2::EszipV2Modules;
-use v2::EszipVersion;
+use std::cell::RefCell;
+use std::future::Future;
+use std::io::Error;
+use std::io::ErrorKind;
+use std::pin::Pin;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::task::Context;
+use std::task::Poll;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::JsFuture;
+use web_sys::ReadableStreamByobReader;
 
-pub use crate::error::ParseError;
-pub use crate::v1::EszipV1;
-pub use crate::v2::EszipRelativeFileBaseUrl;
-pub use crate::v2::EszipV2;
-pub use crate::v2::FromGraphOptions;
-
-pub use deno_ast;
-pub use deno_graph;
-
-pub enum Eszip {
-  V1(EszipV1),
-  V2(EszipV2),
+/// A `Stream` holds a Byob reader and the
+/// future of the current `reader.read` operation.
+struct Stream {
+  inner: Option<ReadableStreamByobReader>,
+  fut: Option<JsFuture>,
 }
 
-type EszipParserOutput<R> = Result<futures::io::BufReader<R>, ParseError>;
-
-/// This future needs to polled to parse the eszip file.
-type EszipParserFuture<R> = BoxFuture<'static, EszipParserOutput<R>>;
-/// This future needs to polled to parse the eszip file.
-type EszipParserLocalFuture<R> = LocalBoxFuture<'static, EszipParserOutput<R>>;
-
-impl Eszip {
-  /// Parse a byte stream into an Eszip. This function completes when the header
-  /// is fully received. This does not mean that the entire file is fully
-  /// received or parsed yet. To finish parsing, the future returned by this
-  /// function in the second tuple slot needs to be polled.
-  pub async fn parse<R: futures::io::AsyncRead + Unpin + Send + 'static>(
-    reader: R,
-  ) -> Result<(Eszip, EszipParserFuture<R>), ParseError> {
-    let mut reader = futures::io::BufReader::new(reader);
-    let mut magic = [0; 8];
-    reader.read_exact(&mut magic).await?;
-    if let Some(version) = EszipVersion::from_magic(&magic) {
-      let (eszip, fut) = EszipV2::parse_with_version(version, reader).await?;
-      Ok((Eszip::V2(eszip), Box::pin(fut)))
-    } else {
-      let mut buffer = Vec::new();
-      let mut reader_w_magic = magic.chain(&mut reader);
-      reader_w_magic.read_to_end(&mut buffer).await?;
-      let eszip = EszipV1::parse(&buffer)?;
-      let fut = async move { Ok::<_, ParseError>(reader) };
-      Ok((Eszip::V1(eszip), Box::pin(fut)))
-    }
-  }
-
-  /// Parse a byte stream into an Eszip. This function completes when the header
-  /// is fully received. This does not mean that the entire file is fully
-  /// received or parsed yet. To finish parsing, the future returned by this
-  /// function in the second tuple slot needs to be polled.
-  ///
-  /// As opposed to [`Eszip::parse`], this method accepts `!Send` reader. The
-  /// returned future does not implement `Send` either.
-  pub async fn parse_local<R: futures::io::AsyncRead + Unpin + 'static>(
-    reader: R,
-  ) -> Result<(Eszip, EszipParserLocalFuture<R>), ParseError> {
-    let mut reader = futures::io::BufReader::new(reader);
-    reader.fill_buf().await?;
-    let buffer = reader.buffer();
-    if EszipV2::has_magic(buffer) {
-      let (eszip, fut) = EszipV2::parse(reader).await?;
-      Ok((Eszip::V2(eszip), Box::pin(fut)))
-    } else {
-      let mut buffer = Vec::new();
-      reader.read_to_end(&mut buffer).await?;
-      let eszip = EszipV1::parse(&buffer)?;
-      let fut = async move { Ok::<_, ParseError>(reader) };
-      Ok((Eszip::V1(eszip), Box::pin(fut)))
-    }
-  }
-
-  /// Get the module metadata for a given module specifier. This function will
-  /// follow redirects. The returned module has functions that can be used to
-  /// obtain the module source and source map. The module returned from this
-  /// function is guaranteed to be a valid module, which can be loaded into v8.
-  ///
-  /// Note that this function should be used to obtain a module; if you wish to
-  /// get an import map, use [`get_import_map`](Self::get_import_map) instead.
-  pub fn get_module(&self, specifier: &str) -> Option<Module> {
-    match self {
-      Eszip::V1(eszip) => eszip.get_module(specifier),
-      Eszip::V2(eszip) => eszip.get_module(specifier),
-    }
-  }
-
-  /// Get the import map for a given specifier.
-  ///
-  /// Note that this function should be used to obtain an import map; the returned
-  /// "Module" is not necessarily a valid module that can be loaded into v8 (in
-  /// other words, JSONC may be returned). If you wish to get a valid module,
-  /// use [`get_module`](Self::get_module) instead.
-  pub fn get_import_map(&self, specifier: &str) -> Option<Module> {
-    match self {
-      Eszip::V1(eszip) => eszip.get_import_map(specifier),
-      Eszip::V2(eszip) => eszip.get_import_map(specifier),
-    }
-  }
-
-  /// Takes the npm snapshot out of the eszip.
-  pub fn take_npm_snapshot(
-    &mut self,
-  ) -> Option<ValidSerializedNpmResolutionSnapshot> {
-    match self {
-      Eszip::V1(_) => None,
-      Eszip::V2(eszip) => eszip.take_npm_snapshot(),
+impl Stream {
+  fn new(inner: ReadableStreamByobReader) -> Self {
+    Self {
+      inner: Some(inner),
+      fut: None,
     }
   }
 }
 
-/// Get an iterator over all the modules (including an import map, if any) in
-/// this eszip archive.
+#[wasm_bindgen]
+extern "C" {
+  /// Result of a read on BYOB reader.
+  /// { value: Uint8Array, done: boolean }
+  pub type ReadResult;
+  #[wasm_bindgen(method, getter, js_name = done)]
+  pub fn is_done(this: &ReadResult) -> bool;
+
+  #[wasm_bindgen(method, getter, js_name = value)]
+  pub fn value(this: &ReadResult) -> Option<Uint8Array>;
+}
+
+/// A `ParserStream` is a wrapper around
+/// Byob stream that also supports reading
+/// through in-memory buffers.
 ///
-/// Note that the iterator will iterate over the specifiers' "snapshot" of the
-/// archive. If a new module is added to the archive after the iterator is
-/// created via `into_iter()`, that module will not be iterated over.
-impl IntoIterator for Eszip {
-  type Item = (String, Module);
-  type IntoIter = std::vec::IntoIter<Self::Item>;
-
-  fn into_iter(self) -> Self::IntoIter {
-    match self {
-      Eszip::V1(eszip) => eszip.into_iter(),
-      Eszip::V2(eszip) => eszip.into_iter(),
-    }
-  }
+/// We need this because `#[wasm_bindgen]`
+/// structs cannot have type parameters.
+enum ParserStream {
+  Byob(Stream),
+  Buffer(Vec<u8>),
 }
 
-pub struct Module {
-  pub specifier: String,
-  pub kind: ModuleKind,
-  inner: ModuleInner,
-}
+impl AsyncRead for ParserStream {
+  fn poll_read(
+    mut self: Pin<&mut Self>,
+    cx: &mut Context<'_>,
+    buf: &mut [u8],
+  ) -> Poll<Result<usize, Error>> {
+    match *self {
+      ParserStream::Byob(ref mut stream) => {
+        // If we have a pending future, poll it.
+        // otherwise, schedule a new one.
+        let fut = match stream.fut.as_mut() {
+          Some(fut) => fut,
+          None => {
+            let length = buf.len();
+            let buffer = Uint8Array::new_with_length(length as u32);
+            match &stream.inner {
+              Some(reader) => {
+                let fut =
+                  JsFuture::from(reader.read_with_array_buffer_view(&buffer));
+                stream.fut.insert(fut)
+              }
+              None => return Poll::Ready(Ok(0)),
+            }
+          }
+        };
+        let result = match Pin::new(fut).poll(cx) {
+          Poll::Ready(result) => result,
+          Poll::Pending => return Poll::Pending,
+        };
+        // Clear slot for next `read()`.
+        stream.fut = None;
 
-pub enum ModuleInner {
-  V1(EszipV1),
-  V2(EszipV2Modules),
-}
+        match result {
+          Ok(result) => {
+            let result = result.unchecked_into::<ReadResult>();
+            match result.is_done() {
+              true => {
+                // Drop the readable stream.
+                stream.inner = None;
+                Poll::Ready(Ok(0))
+              }
+              false => {
+                let value = result.value().unwrap_throw();
+                let length = value.byte_length() as usize;
 
-impl Module {
-  /// Get source code of the module.
-  pub async fn source(&self) -> Option<Arc<[u8]>> {
-    match &self.inner {
-      ModuleInner::V1(eszip_v1) => eszip_v1.get_module_source(&self.specifier),
-      ModuleInner::V2(eszip_v2) => {
-        eszip_v2.get_module_source(&self.specifier).await
+                value.copy_to(buf);
+
+                Poll::Ready(Ok(length))
+              }
+            }
+          }
+          Err(e) => Poll::Ready(Err(Error::new(
+            ErrorKind::Other,
+            js_sys::Object::try_from(&e)
+              .map(|e| e.to_string().as_string().unwrap_throw())
+              .unwrap_or("Unknown error".to_string()),
+          ))),
+        }
+      }
+      ParserStream::Buffer(ref mut buffer) => {
+        // Put the requested bytes into the buffer and
+        // assign the remaining bytes back into the sink.
+        let amt = std::cmp::min(buffer.len(), buf.len());
+        let (a, b) = buffer.split_at(amt);
+        buf[..amt].copy_from_slice(a);
+        *buffer = b.to_vec();
+        Poll::Ready(Ok(amt))
       }
     }
   }
+}
 
-  /// Take source code of the module. This will remove the source code from memory and
-  /// the subsequent calls to `take_source()` will return `None`.
-  /// For V1, this will take the entire module and returns the source code. We don't need
-  /// to preserve module metadata for V1.
-  pub async fn take_source(&self) -> Option<Arc<[u8]>> {
-    match &self.inner {
-      ModuleInner::V1(eszip_v1) => eszip_v1.take(&self.specifier),
-      ModuleInner::V2(eszip_v2) => {
-        eszip_v2.take_module_source(&self.specifier).await
-      }
+type LoaderFut<T> =
+  Pin<Box<dyn Future<Output = Result<BufReader<T>, eszip::ParseError>>>>;
+type ParseResult<T> = (eszip::EszipV2, LoaderFut<T>);
+
+#[wasm_bindgen]
+pub struct Parser {
+  parser: Rc<RefCell<Option<ParseResult<ParserStream>>>>,
+}
+
+#[wasm_bindgen]
+impl Parser {
+  #[wasm_bindgen(constructor)]
+  pub fn new() -> Self {
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    Self {
+      parser: Rc::new(RefCell::new(None)),
     }
   }
 
-  /// Get source map of the module.
-  pub async fn source_map(&self) -> Option<Arc<[u8]>> {
-    match &self.inner {
-      ModuleInner::V1(_) => None,
-      ModuleInner::V2(eszip) => {
-        eszip.get_module_source_map(&self.specifier).await
-      }
-    }
+  /// Parse from a BYOB readable stream.
+  pub fn parse(&self, stream: ReadableStreamByobReader) -> Promise {
+    let reader = BufReader::new(ParserStream::Byob(Stream::new(stream)));
+    self.parse_reader(reader)
   }
 
-  /// Take source map of the module. This will remove the source map from memory and
-  /// the subsequent calls to `take_source_map()` will return `None`.
-  pub async fn take_source_map(&self) -> Option<Arc<[u8]>> {
-    match &self.inner {
-      ModuleInner::V1(_) => None,
-      ModuleInner::V2(eszip) => {
-        eszip.take_module_source_map(&self.specifier).await
+  /// Parse from an in-memory buffer.
+  #[wasm_bindgen(js_name = parseBytes)]
+  pub fn parse_bytes(&self, buffer: Vec<u8>) -> Promise {
+    let reader = BufReader::new(ParserStream::Buffer(buffer));
+    self.parse_reader(reader)
+  }
+
+  fn parse_reader(&self, reader: BufReader<ParserStream>) -> Promise {
+    let parser = Rc::clone(&self.parser);
+
+    wasm_bindgen_futures::future_to_promise(async move {
+      let (eszip, loader) = eszip::EszipV2::parse(reader).await.unwrap();
+      let specifiers = eszip.specifiers();
+      parser.borrow_mut().replace((eszip, Box::pin(loader)));
+      Ok(
+        specifiers
+          .iter()
+          .map(JsValue::from)
+          .collect::<js_sys::Array>()
+          .into(),
+      )
+    })
+  }
+
+  /// Load module sources.
+  pub fn load(&mut self) -> Promise {
+    let parser = Rc::clone(&self.parser);
+
+    wasm_bindgen_futures::future_to_promise(async move {
+      let mut p = parser.borrow_mut();
+      let (_, loader) = p.as_mut().unwrap_throw();
+      loader.await.unwrap();
+      Ok(JsValue::UNDEFINED)
+    })
+  }
+
+  /// Get a module source.
+  #[wasm_bindgen(js_name = getModuleSource)]
+  pub fn get_module_source(&self, specifier: String) -> Promise {
+    let parser = Rc::clone(&self.parser);
+
+    wasm_bindgen_futures::future_to_promise(async move {
+      let p = parser.borrow();
+      let (eszip, _) = p.as_ref().unwrap();
+      let module = eszip
+        .get_module(&specifier)
+        .or_else(|| eszip.get_import_map(&specifier))
+        .ok_or(TypeError::new(&format!("module '{}' not found", specifier)))?;
+
+      // Drop the borrow for the loader
+      // to mutably borrow.
+      drop(p);
+      let source = module.source().await.ok_or(TypeError::new(&format!(
+        "source for '{}' already taken",
+        specifier
+      )))?;
+      let source = std::str::from_utf8(&source).unwrap();
+      Ok(source.to_string().into())
+    })
+  }
+
+  /// Get a module sourcemap.
+  #[wasm_bindgen(js_name = getModuleSourceMap)]
+  pub fn get_module_source_map(&self, specifier: String) -> Promise {
+    let parser = Rc::clone(&self.parser);
+
+    wasm_bindgen_futures::future_to_promise(async move {
+      let p = parser.borrow();
+      let (eszip, _) = p.as_ref().unwrap();
+      let module = eszip
+        .get_module(&specifier)
+        .or_else(|| eszip.get_import_map(&specifier))
+        .ok_or(TypeError::new(&format!("module '{}' not found", specifier)))?;
+
+      // Drop the borrow for the loader
+      // to mutably borrow.
+      drop(p);
+      match module.source_map().await {
+        Some(source_map) => {
+          let source_map = std::str::from_utf8(&source_map).unwrap();
+          Ok(source_map.to_string().into())
+        }
+        None => Ok(JsValue::NULL),
       }
-    }
+    })
   }
 }
 
-/// This is the kind of module that is being stored. This is the same enum as is
-/// present in [deno_core::ModuleType] except that this has additional variant
-/// `Jsonc` which is used when an import map is embedded in Deno's config file
-/// that can be JSONC.
-/// Note that a module of type `Jsonc` can be used only as an import map, not as
-/// a normal module.
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ModuleKind {
-  JavaScript = 0,
-  Json = 1,
-  Jsonc = 2,
-  OpaqueData = 3,
-  Wasm = 4,
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use futures::StreamExt;
-  use futures::TryStreamExt;
-  use futures::io::AllowStdIo;
-  use futures::stream;
-
-  #[tokio::test]
-  async fn parse_v1() {
-    let file = std::fs::File::open("./src/testdata/basic.json").unwrap();
-    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
-    fut.await.unwrap();
-    assert!(matches!(eszip, Eszip::V1(_)));
-    eszip.get_module("https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js").unwrap();
-  }
-
-  #[cfg(feature = "sha256")]
-  #[tokio::test]
-  async fn parse_v2() {
-    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
-    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
-    fut.await.unwrap();
-    assert!(matches!(eszip, Eszip::V2(_)));
-    eszip.get_module("file:///main.ts").unwrap();
-  }
-
-  #[tokio::test]
-  async fn take_source_v1() {
-    let file = std::fs::File::open("./src/testdata/basic.json").unwrap();
-    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
-    fut.await.unwrap();
-    assert!(matches!(eszip, Eszip::V1(_)));
-    let specifier = "https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js";
-    let module = eszip.get_module(specifier).unwrap();
-    assert_eq!(module.specifier, specifier);
-    // We're taking the source from memory.
-    let source = module.take_source().await.unwrap();
-    assert!(!source.is_empty());
-    // Source maps are not supported in v1 and should always return None.
-    assert!(module.source_map().await.is_none());
-    // Module shouldn't be available anymore.
-    assert!(eszip.get_module(specifier).is_none());
-  }
-
-  #[cfg(feature = "sha256")]
-  #[tokio::test]
-  async fn take_source_v2() {
-    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
-    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
-    fut.await.unwrap();
-    assert!(matches!(eszip, Eszip::V2(_)));
-    let specifier = "file:///main.ts";
-    let module = eszip.get_module(specifier).unwrap();
-    // We're taking the source from memory.
-    let source = module.take_source().await.unwrap();
-    assert!(!source.is_empty());
-    let module = eszip.get_module(specifier).unwrap();
-    assert_eq!(module.specifier, specifier);
-    // Source shouldn't be available anymore.
-    assert!(module.source().await.is_none());
-    // We didn't take the source map, so it should still be available.
-    assert!(module.source_map().await.is_some());
-    // Now we're taking the source map.
-    let source_map = module.take_source_map().await.unwrap();
-    assert!(!source_map.is_empty());
-    // Source map shouldn't be available anymore.
-    assert!(module.source_map().await.is_none());
-  }
-
-  #[tokio::test]
-  async fn test_eszip_v1_iterator() {
-    let file = std::fs::File::open("./src/testdata/basic.json").unwrap();
-    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
-    tokio::spawn(fut);
-    assert!(matches!(eszip, Eszip::V1(_)));
-
-    struct Expected {
-      specifier: String,
-      source: &'static str,
-      kind: ModuleKind,
-    }
-
-    let expected = vec![
-      Expected {
-        specifier: "https://gist.githubusercontent.com/lucacasonato/f3e21405322259ca4ed155722390fda2/raw/e25acb49b681e8e1da5a2a33744b7a36d538712d/hello.js".to_string(),
-        source: "addEventListener(\"fetch\", (event)=>{\n    event.respondWith(new Response(\"Hello World\", {\n        headers: {\n            \"content-type\": \"text/plain\"\n        }\n    }));\n});\n//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIjxodHRwczovL2dpc3QuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2x1Y2FjYXNvbmF0by9mM2UyMTQwNTMyMjI1OWNhNGVkMTU1NzIyMzkwZmRhMi9yYXcvZTI1YWNiNDliNjgxZThlMWRhNWEyYTMzNzQ0YjdhMzZkNTM4NzEyZC9oZWxsby5qcz4iXSwic291cmNlc0NvbnRlbnQiOlsiYWRkRXZlbnRMaXN0ZW5lcihcImZldGNoXCIsIChldmVudCkgPT4ge1xuICBldmVudC5yZXNwb25kV2l0aChuZXcgUmVzcG9uc2UoXCJIZWxsbyBXb3JsZFwiLCB7XG4gICAgaGVhZGVyczogeyBcImNvbnRlbnQtdHlwZVwiOiBcInRleHQvcGxhaW5cIiB9LFxuICB9KSk7XG59KTsiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IkFBQUEsZ0JBQUEsRUFBQSxLQUFBLElBQUEsS0FBQTtBQUNBLFNBQUEsQ0FBQSxXQUFBLEtBQUEsUUFBQSxFQUFBLFdBQUE7QUFDQSxlQUFBO2FBQUEsWUFBQSxJQUFBLFVBQUEifQ==",
-        kind: ModuleKind::JavaScript,
+/// Serialize a module graph into eszip.
+#[wasm_bindgen(js_name = build)]
+pub async fn build_eszip(
+  roots: JsValue,
+  loader: js_sys::Function,
+  import_map_url: JsValue,
+) -> Result<Uint8Array, JsValue> {
+  std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+  let roots: Vec<deno_graph::ModuleSpecifier> =
+    serde_wasm_bindgen::from_value(roots)
+      .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  let loader = GraphLoader(loader);
+  let import_map_url: Option<ModuleSpecifier> =
+    serde_wasm_bindgen::from_value(import_map_url)
+      .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  let (maybe_import_map, maybe_import_map_data) = if let Some(import_map_url) =
+    import_map_url
+  {
+    let resp = deno_graph::source::Loader::load(
+      &loader,
+      &import_map_url,
+      deno_graph::source::LoadOptions {
+        in_dynamic_branch: false,
+        was_dynamic_root: false,
+        cache_setting: deno_graph::source::CacheSetting::Use,
+        maybe_checksum: None,
       },
-    ];
+    )
+    .await
+    .map_err(|e| js_sys::Error::new(&e.to_string()))?
+    .ok_or_else(|| {
+      js_sys::Error::new(&format!("import map not found at '{import_map_url}'"))
+    })?;
+    match resp {
+      deno_graph::source::LoadResponse::Module {
+        specifier, content, ..
+      } => {
+        let import_map = import_map::parse_from_json_with_options(
+          specifier.clone(),
+          &String::from_utf8(content.to_vec()).unwrap(),
+          import_map::ImportMapOptions {
+            address_hook: None,
+            // always do this for simplicity
+            expand_imports: true,
+          },
+        )
+        .unwrap();
+        (Some(import_map.import_map), Some((specifier, content)))
+      }
+      _ => unimplemented!(),
+    }
+  } else {
+    (None, None)
+  };
+  let resolver = GraphResolver(maybe_import_map);
+  let analyzer = deno_graph::ast::CapturingModuleAnalyzer::default();
+  let mut graph = ModuleGraph::new(GraphKind::CodeOnly);
+  graph
+    .build(
+      roots,
+      Vec::new(),
+      &loader,
+      BuildOptions {
+        resolver: Some(&resolver),
+        module_analyzer: &analyzer,
+        file_system: &sys_traits::impls::RealSys,
+        ..Default::default()
+      },
+    )
+    .await;
+  graph
+    .valid()
+    .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  let mut eszip = eszip::EszipV2::from_graph(eszip::FromGraphOptions {
+    graph,
+    module_kind_resolver: Default::default(),
+    parser: analyzer.as_capturing_parser(),
+    transpile_options: Default::default(),
+    emit_options: Default::default(),
+    relative_file_base: None,
+    npm_packages: None,
+    npm_snapshot: Default::default(),
+  })
+  .map_err(|e| js_sys::Error::new(&e.to_string()))?;
+  if let Some((import_map_specifier, import_map_content)) =
+    maybe_import_map_data
+  {
+    eszip.add_import_map(
+      ModuleKind::Json,
+      import_map_specifier.to_string(),
+      Arc::from(import_map_content),
+    )
+  }
+  Ok(Uint8Array::from(eszip.into_bytes().as_slice()))
+}
 
-    for (got, expected) in eszip.into_iter().zip(expected) {
-      let (got_specifier, got_module) = got;
+// Taken from deno_graph
+// https://github.com/denoland/deno_graph/blob/main/src/js_graph.rs#L43
+pub struct GraphLoader(js_sys::Function);
 
-      assert_eq!(got_specifier, expected.specifier);
-      assert_eq!(got_module.kind, expected.kind);
-      assert_eq!(
-        String::from_utf8_lossy(&got_module.source().await.unwrap()),
-        expected.source
+impl Loader for GraphLoader {
+  fn get_cache_info(&self, _: &ModuleSpecifier) -> Option<CacheInfo> {
+    None
+  }
+
+  fn load(
+    &self,
+    specifier: &ModuleSpecifier,
+    options: LoadOptions,
+  ) -> LoadFuture {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct JsLoadOptions {
+      pub is_dynamic: bool,
+      pub cache_setting: &'static str,
+      pub checksum: Option<String>,
+    }
+
+    if specifier.scheme() == "data" {
+      Box::pin(std::future::ready(load_data_url(specifier).map_err(
+        |err| {
+          deno_graph::source::LoadError::Other(Arc::new(JsErrorBox::from_err(
+            err,
+          )))
+        },
+      )))
+    } else {
+      let specifier = specifier.clone();
+      let result = self.0.call2(
+        &JsValue::null(),
+        &JsValue::from(specifier.to_string()),
+        &serde_wasm_bindgen::to_value(&JsLoadOptions {
+          is_dynamic: options.in_dynamic_branch,
+          cache_setting: options.cache_setting.as_js_str(),
+          checksum: options.maybe_checksum.map(|c| c.into_string()),
+        })
+        .unwrap(),
       );
+      Box::pin(async move {
+        let response = match result {
+          Ok(result) => {
+            wasm_bindgen_futures::JsFuture::from(js_sys::Promise::resolve(
+              &result,
+            ))
+            .await
+          }
+          Err(err) => Err(err),
+        };
+        response
+          .map(|value| serde_wasm_bindgen::from_value(value).unwrap())
+          .map_err(|err| {
+            let err_str = err
+              .as_string()
+              .unwrap_or_else(|| "an error occured during loading".to_string());
+            deno_graph::source::LoadError::Other(Arc::new(JsErrorBox::generic(
+              err_str,
+            )))
+          })
+      })
     }
   }
+}
 
-  #[cfg(feature = "sha256")]
-  #[tokio::test]
-  async fn test_eszip_v2_iterator() {
-    let file = std::fs::File::open("./src/testdata/redirect.eszip2").unwrap();
-    let (eszip, fut) = Eszip::parse(AllowStdIo::new(file)).await.unwrap();
-    tokio::spawn(fut);
-    assert!(matches!(eszip, Eszip::V2(_)));
+#[derive(Debug)]
+pub struct GraphResolver(Option<ImportMap>);
 
-    struct Expected {
-      specifier: String,
-      source: &'static str,
-      kind: ModuleKind,
+impl Resolver for GraphResolver {
+  fn resolve(
+    &self,
+    specifier: &str,
+    referrer_range: &deno_graph::Range,
+    _kind: deno_graph::source::ResolutionKind,
+  ) -> Result<deno_graph::ModuleSpecifier, ResolveError> {
+    if let Some(import_map) = &self.0 {
+      import_map
+        .resolve(specifier, &referrer_range.specifier)
+        .map_err(ResolveError::from_err)
+    } else {
+      Ok(deno_graph::resolve_import(
+        specifier,
+        &referrer_range.specifier,
+      )?)
     }
-
-    let expected = vec![
-      Expected {
-        specifier: "file:///main.ts".to_string(),
-        source: "export * as a from \"./a.ts\";\n",
-        kind: ModuleKind::JavaScript,
-      },
-      Expected {
-        specifier: "file:///b.ts".to_string(),
-        source: "export const b = \"b\";\n",
-        kind: ModuleKind::JavaScript,
-      },
-      Expected {
-        specifier: "file:///a.ts".to_string(),
-        source: "export const b = \"b\";\n",
-        kind: ModuleKind::JavaScript,
-      },
-    ];
-
-    for (got, expected) in eszip.into_iter().zip(expected) {
-      let (got_specifier, got_module) = got;
-
-      assert_eq!(got_specifier, expected.specifier);
-      assert_eq!(got_module.kind, expected.kind);
-      assert_eq!(
-        String::from_utf8_lossy(&got_module.source().await.unwrap()),
-        expected.source
-      );
-    }
-  }
-
-  #[tokio::test]
-  async fn parse_small_chunks_reader() {
-    let bytes = std::fs::read("./src/testdata/redirect.eszip2")
-      .unwrap()
-      .chunks(2)
-      .map(|chunk| chunk.to_vec())
-      .collect::<Vec<_>>();
-    let reader = stream::iter(bytes)
-      .map(std::io::Result::Ok)
-      .into_async_read();
-
-    let (eszip, fut) = Eszip::parse(reader).await.unwrap();
-    fut.await.unwrap();
-    assert!(matches!(eszip, Eszip::V2(_)));
   }
 }
