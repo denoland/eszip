@@ -12,6 +12,7 @@ const eszip = await build([
         "content-type": "text/typescript",
       },
       content: "export const a = 1;",
+      kind: "module",
     };
   }
 
@@ -21,6 +22,7 @@ const eszip = await build([
       "content-type": "application/typescript",
     },
     content: `import { a } from "https://example.com/dep1.ts";`,
+    kind: "module",
   };
 });
 
